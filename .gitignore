@@ -62,17 +62,12 @@ tmp/
 # Test artifacts (contains secret keys and nullifiers)
 .test-artifacts.json
 
-# Circom build artifacts (all reproducible - users should run npm run setup:circuit)
-circuits/build/*
+# Circom build artifacts (fetch with pnpm circuits:fetch)
+circuits/build/
 circuits/*_test.circom
 *.ptau
 *.zkey
 *.r1cs
-
-# Production request circuit artifacts, shipped with the server
-!circuits/build/api_request_js/
-!circuits/build/api_request.zkey
-!circuits/build/api_request_verification_key.json
 *.sym
 
 # Foundry artifacts
