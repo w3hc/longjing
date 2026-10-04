@@ -120,6 +120,8 @@ The system uses four specialized ZK circuits (Groth16) for different operations:
    - Verifies Merkle tree membership + EdDSA refund signatures + RLN
    - Used for anonymous API requests with balance verification
    - 20-level tree, max 10 refund tickets
+   - ~112K constraints; the server's refund-signing key is a public input, filled in by the server
+   - The server verifies every request with it in production (`ZK_CIRCUIT=api_request`)
 
 2. **Withdrawal Circuit** ([withdrawal.circom](../circuits/withdrawal.circom))
    - 11,749 constraints, 11,773 wires
@@ -143,7 +145,7 @@ The system uses four specialized ZK circuits (Groth16) for different operations:
    - Prevents arbitrary policy stake burning (C-4 security fix)
    - Verifier: [PolicyViolationVerifier.sol](../contracts/src/PolicyViolationVerifier.sol)
 
-**Test Circuit**: [`circuits/api_credit_proof_test.circom`](../circuits/api_credit_proof_test.circom) (development only)
+**Test Circuit**: [`circuits/api_credit_proof_test.circom`](../circuits/api_credit_proof_test.circom) (development only; production refuses to start with it)
 
 The ZK circuits prove critical properties in zero-knowledge:
 

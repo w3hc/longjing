@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ZK_CIRCUIT` selects the circuit the server verifies requests with: `api_request` (the default in production) or `api_credit_proof_test` (the default elsewhere) ([#88](https://github.com/w3hc/longjing/issues/88)).
+- Committed `api_request` artifacts in `circuits/build/` (witness generator, proving key, verification key), set up from the public Perpetual Powers of Tau plus a single local contribution; the Docker image now ships the verification key ([#88](https://github.com/w3hc/longjing/issues/88)).
 - In-enclave TLS termination in production: the key is derived via the dstack KMS or loaded from `TLS_KEY_PATH` / `TLS_CERT_PATH` in enclave storage, and startup fails closed without it unless `ALLOW_EXTERNAL_TLS_TERMINATION=true` ([#81](https://github.com/w3hc/zk-api/issues/81)).
 - `verify-attestation` checks the served TLS certificate against attestation `report_data`.
 
 ### Security
 
+- The server now verifies requests with the `api_request` circuit in production instead of the test circuit, which checked no Merkle membership, solvency or refund signature. It refuses to start in production if the verification key is missing or the test circuit is configured, instead of logging "Using mock proofs" and running on. `serverPublicKeyX/Y` became public inputs of `api_request.circom`, and the verifier fills them with the server's own refund-signing key, so a prover can no longer sign their own refund tickets ([#88](https://github.com/w3hc/longjing/issues/88)).
 - `api_request.circom`, `api_credit_proof.circom` and `api_credit_proof_simple.circom` now range-check every solvency operand with `Num2Bits`: `ticketIndex` to 32 bits, and `maxCost`, `initialDeposit` and refund values to 128 bits. A prover can no longer pick operands whose product wraps around the field and pass the solvency check with too little balance. The proving and verification keys in `circuits/build/` need a new trusted setup ([#87](https://github.com/w3hc/longjing/issues/87)).
 - `api_request.circom` now enforces `numRefunds ≤ MAX_REFUNDS`, gates each refund slot with a `LessThan` constraint instead of a ternary on a signal, and forces turned-off slots to a zero value, so a prover can no longer inflate the refund sum. The circuit compiles again under circom 2.2 ([#86](https://github.com/w3hc/longjing/issues/86)).
 - The server now rejects requests whose RLN signal `x` is not `SHA-256(payload) mod p`, so a proof and signal can no longer be replayed with another payload, and clients can no longer pick `x` freely. Double-spend detection compares `x` numerically ([#85](https://github.com/w3hc/longjing/issues/85)).

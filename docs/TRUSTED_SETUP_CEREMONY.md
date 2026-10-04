@@ -202,7 +202,7 @@ When implementing the trusted setup ceremony for production:
 1. **Development** (Current):
    - ✅ Automated test setup with `npm run setup:circuit`
    - ✅ Test circuit with fast proving/verification
-   - ✅ Falls back to mock mode if setup missing
+   - ✅ Production refuses to start without the `api_request` verification key
 
 2. **Testnet** (Next):
    - Small ceremony (3-5 participants) to validate process
@@ -213,6 +213,7 @@ When implementing the trusted setup ceremony for production:
 3. **Mainnet** (Production):
    - Organize public ceremony with 50+ participants for maximum security
    - Use production circuits:
+     - [api_request.circom](../circuits/api_request.circom) - Request membership, solvency and refund signatures
      - [withdrawal.circom](../circuits/withdrawal.circom) - Merkle tree membership proof
      - [refund_redemption.circom](../circuits/refund_redemption.circom) - EdDSA signature verification
      - [double_spend_slashing.circom](../circuits/double_spend_slashing.circom) - RLN secret key extraction
@@ -242,72 +243,19 @@ npm run build
 npm run start
 ```
 
-### Note on Full Circuit Ceremony (775K Constraints)
+### Request Circuit Setup
 
-The full production circuit (`api_credit_proof`) has **775,250 constraints**, making the Groth16 setup ceremony extremely computationally intensive:
+The server verifies requests with [api_request.circom](../circuits/api_request.circom) (~112K constraints). Its committed keys use the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) for phase 1 and a single local contribution for phase 2, so they are **NOT secure for mainnet** until a multi-party phase 2 ceremony replaces them.
 
-**Performance by Hardware:**
-- **M1 MacBook**: 12+ hours without completion (not recommended)
-- **AWS c5.9xlarge** (36 vCPU): ~1-2 hours
-- **High-end workstation**: ~2-4 hours
-
-**Current Implementation:**
-- Using `api_credit_proof_test` circuit (smaller, ~10K constraints)
-- **Same cryptographic security guarantees**
-- Setup completes in ~30 seconds
-- Suitable for development and testing
-
-**To Generate Full Circuit Artifacts:**
-
-On a high-performance cloud instance:
+To regenerate them after changing the circuit:
 
 ```bash
-cd circuits/build
-
-# Groth16 setup (will take 1-2 hours on powerful hardware)
-npx snarkjs groth16 setup api_credit_proof.r1cs pot20_final.ptau api_credit_proof_0000.zkey
-
-# Contribute to create final zkey (~5 minutes)
-npx snarkjs zkey contribute api_credit_proof_0000.zkey api_credit_proof_final.zkey --name="Contribution" -e="random"
-
-# Export verification key (~1 minute)
-npx snarkjs zkey export verificationkey api_credit_proof_final.zkey verification_key.json
+cd circuits
+circom api_request.circom --r1cs --wasm --sym -o build/
+curl -O https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_17.ptau
+npx snarkjs groth16 setup build/api_request.r1cs ppot_0080_17.ptau build/api_request_0000.zkey
+npx snarkjs zkey contribute build/api_request_0000.zkey build/api_request.zkey --name="Contribution" -e="$(openssl rand -hex 32)"
+npx snarkjs zkey export verificationkey build/api_request.zkey build/api_request_verification_key.json
 ```
 
-Then update `src/longjing/snarkjs-proof.service.ts` to point to production artifacts.
-
-See [docs/ZK.md](./ZK.md#circuit-artifacts) for detailed explanation.
-
-### Migration to Production Circuit
-
-To migrate from test circuit to production:
-
-1. Update `scripts/setup-trusted-setup.ts`:
-   ```typescript
-   const CIRCUIT_NAME = 'api_credit_proof'; // was 'api_credit_proof_test'
-   ```
-
-2. Generate larger Powers of Tau:
-   ```bash
-   npx snarkjs powersoftau new bn128 16 pot16_0000.ptau
-   # ... (takes ~30min on modern hardware)
-   ```
-
-3. Run multi-party ceremony (see ceremony coordination section above)
-
-4. Update [SnarkjsProofService](../src/longjing/snarkjs-proof.service.ts) paths
-
-5. Update public signals extraction to match full circuit outputs
-
-## Alignment with Original Proposal
-
-The [original ZK API Credits proposal](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) suggested using **ZK-STARKs** which require no trusted setup. This implementation uses **Groth16** instead for:
-- ✅ Faster verification (~10-20ms vs ~100-500ms)
-- ✅ Smaller proofs (~200 bytes vs ~80-200KB)
-- ✅ Lower onchain gas costs (~280k vs ~1-5M)
-- ❌ Requires trusted setup ceremony (this document)
-- ❌ Not post-quantum secure
-
-**Migration Path**: The system can migrate to transparent SNARKs (PLONK, STARKs) in future versions without changing the core protocol.
-
-See [ZK.md](./ZK.md) for integration with the broader system architecture and [OVERVIEW.md](./OVERVIEW.md#implementation-alignment-with-original-proposal) for complete comparison with original proposal.
+The full credit circuit (`api_credit_proof`, 775,250 constraints, 100 refund tickets) is not deployed: its setup takes 1-2 hours on a 36 vCPU cloud instance and 12+ hours on an M1 MacBook.
