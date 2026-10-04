@@ -16,8 +16,57 @@
         "name": "_minPolicyStake",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "_serverPubKeyX",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_serverPubKeyY",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "ADMIN_DELAY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "TREE_DEPTH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "cancelChange",
+    "inputs": [
+      {
+        "name": "_target",
+        "type": "uint8",
+        "internalType": "enum LongjingCredits.Target"
+      }
+    ],
+    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -68,6 +117,38 @@
         "name": "active",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "executeChange",
+    "inputs": [
+      {
+        "name": "_target",
+        "type": "uint8",
+        "internalType": "enum LongjingCredits.Target"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "filledSubtrees",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -146,6 +227,30 @@
   },
   {
     "type": "function",
+    "name": "getMerkleProof",
+    "inputs": [
+      {
+        "name": "_leafIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "pathElements",
+        "type": "bytes32[20]",
+        "internalType": "bytes32[20]"
+      },
+      {
+        "name": "pathIndices",
+        "type": "uint8[20]",
+        "internalType": "uint8[20]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "identityCommitments",
     "inputs": [
       {
@@ -159,6 +264,25 @@
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isNullifierUsed",
+    "inputs": [
+      {
+        "name": "_nullifier",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -237,6 +361,131 @@
   },
   {
     "type": "function",
+    "name": "pendingChanges",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "enum LongjingCredits.Target"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "value",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "eta",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "policyVerifier",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract PolicyViolationVerifier"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proposeChange",
+    "inputs": [
+      {
+        "name": "_target",
+        "type": "uint8",
+        "internalType": "enum LongjingCredits.Target"
+      },
+      {
+        "name": "_value",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "redeemRefund",
+    "inputs": [
+      {
+        "name": "_idCommitment",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_nullifier",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_refundValue",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_recipient",
+        "type": "address",
+        "internalType": "address payable"
+      },
+      {
+        "name": "_proof",
+        "type": "uint256[8]",
+        "internalType": "uint256[8]"
+      },
+      {
+        "name": "_publicSignals",
+        "type": "uint256[8]",
+        "internalType": "uint256[8]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "redeemedRefunds",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "refundVerifier",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract RefundRedemptionVerifier"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
@@ -276,6 +525,24 @@
   },
   {
     "type": "function",
+    "name": "serverPublicKey",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "x",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "y",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "setMinStakes",
     "inputs": [
       {
@@ -294,19 +561,6 @@
   },
   {
     "type": "function",
-    "name": "setServerAddress",
-    "inputs": [
-      {
-        "name": "_newServerAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "slashDoubleSpend",
     "inputs": [
       {
@@ -315,48 +569,24 @@
         "internalType": "bytes32"
       },
       {
-        "name": "_nullifier1",
+        "name": "_nullifier",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "_nullifier2",
+        "name": "_idCommitment",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "_signal1",
-        "type": "tuple",
-        "internalType": "struct LongjingCredits.Signal",
-        "components": [
-          {
-            "name": "x",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "y",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
+        "name": "_proof",
+        "type": "uint256[8]",
+        "internalType": "uint256[8]"
       },
       {
-        "name": "_signal2",
-        "type": "tuple",
-        "internalType": "struct LongjingCredits.Signal",
-        "components": [
-          {
-            "name": "x",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "y",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
+        "name": "_publicSignals",
+        "type": "uint256[4]",
+        "internalType": "uint256[4]"
       }
     ],
     "outputs": [],
@@ -378,8 +608,13 @@
       },
       {
         "name": "_proof",
-        "type": "bytes",
-        "internalType": "bytes"
+        "type": "uint256[8]",
+        "internalType": "uint256[8]"
+      },
+      {
+        "name": "_publicSignals",
+        "type": "uint256[5]",
+        "internalType": "uint256[5]"
       }
     ],
     "outputs": [],
@@ -400,6 +635,19 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "slashingVerifier",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract DoubleSpendSlashingVerifier"
       }
     ],
     "stateMutability": "view"
@@ -439,13 +687,113 @@
         "internalType": "address payable"
       },
       {
-        "name": "_secretKey",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "_proof",
+        "type": "uint256[8]",
+        "internalType": "uint256[8]"
+      },
+      {
+        "name": "_publicSignals",
+        "type": "uint256[7]",
+        "internalType": "uint256[7]"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "withdrawalVerifier",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract WithdrawalVerifier"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "zeros",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "ChangeCancelled",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum LongjingCredits.Target"
+      },
+      {
+        "name": "value",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ChangeExecuted",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum LongjingCredits.Target"
+      },
+      {
+        "name": "value",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ChangeProposed",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum LongjingCredits.Target"
+      },
+      {
+        "name": "value",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "eta",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -581,6 +929,43 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      },
+      {
+        "name": "evidenceHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RefundRedeemed",
+    "inputs": [
+      {
+        "name": "idCommitment",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "nullifier",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -684,6 +1069,16 @@
   },
   {
     "type": "error",
+    "name": "InvalidSignature",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoPendingChange",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "OwnableInvalidOwner",
     "inputs": [
       {
@@ -711,7 +1106,22 @@
   },
   {
     "type": "error",
+    "name": "RefundAlreadyRedeemed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TimelockNotExpired",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "Unauthorized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddress",
     "inputs": []
   }
 ]
