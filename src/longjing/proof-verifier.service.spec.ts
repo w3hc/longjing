@@ -4,6 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ProofVerifierService } from './proof-verifier.service';
 import { BlockchainService } from './blockchain.service';
 import { ProofGenService } from './proof-gen.service';
+import { RefundSignerService } from './refund-signer.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 
 describe('ProofVerifierService', () => {
@@ -34,6 +35,8 @@ describe('ProofVerifierService', () => {
     idCommitmentExpected: '0x7777', // Must match idCommitment for valid proof
   };
 
+  const serverKey = { x: '0x0a', y: '0x0b' };
+
   beforeEach(async () => {
     const mockBlockchainService = {
       isAvailable: jest.fn().mockReturnValue(false),
@@ -48,6 +51,11 @@ describe('ProofVerifierService', () => {
     const mockSnarkjsProofService = {
       isAvailable: jest.fn().mockReturnValue(false),
       verifyProof: jest.fn(),
+      getCircuit: jest.fn().mockReturnValue('api_credit_proof_test'),
+    };
+
+    const mockRefundSignerService = {
+      getPublicKey: jest.fn().mockResolvedValue(serverKey),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -56,6 +64,7 @@ describe('ProofVerifierService', () => {
         { provide: BlockchainService, useValue: mockBlockchainService },
         { provide: ProofGenService, useValue: mockProofGenService },
         { provide: SnarkjsProofService, useValue: mockSnarkjsProofService },
+        { provide: RefundSignerService, useValue: mockRefundSignerService },
       ],
     }).compile();
 
@@ -204,6 +213,48 @@ describe('ProofVerifierService', () => {
           BigInt(mockPublicInputs.signalX).toString(),
           BigInt(mockPublicInputs.idCommitment).toString(), // idCommitmentExpected
         ]) as string[],
+      );
+    });
+  });
+
+  describe('public signals', () => {
+    beforeEach(() => {
+      snarkjsProofService.isAvailable.mockReturnValue(true);
+      snarkjsProofService.verifyProof.mockResolvedValue(true);
+    });
+
+    const signals = async () => {
+      await service.verify(mockProof, mockPublicInputs);
+      return snarkjsProofService.verifyProof.mock.calls[0][1];
+    };
+
+    it('orders test circuit signals', async () => {
+      await expect(signals()).resolves.toEqual(
+        [
+          mockPublicInputs.nullifier,
+          mockPublicInputs.signalY,
+          mockPublicInputs.idCommitment,
+          mockPublicInputs.signalX,
+          mockPublicInputs.idCommitmentExpected,
+        ].map((v) => BigInt(v).toString()),
+      );
+    });
+
+    it('orders request circuit signals with the server key', async () => {
+      snarkjsProofService.getCircuit.mockReturnValue('api_request');
+
+      await expect(signals()).resolves.toEqual(
+        [
+          mockPublicInputs.nullifier,
+          mockPublicInputs.signalY,
+          mockPublicInputs.idCommitment,
+          mockPublicInputs.merkleRoot,
+          mockPublicInputs.merkleRoot,
+          mockPublicInputs.maxCost,
+          mockPublicInputs.signalX,
+          serverKey.x,
+          serverKey.y,
+        ].map((v) => BigInt(v).toString()),
       );
     });
   });
