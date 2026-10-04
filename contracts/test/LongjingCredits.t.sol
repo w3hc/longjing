@@ -3,6 +3,7 @@ pragma solidity 0.8.35;
 
 import {Test} from 'forge-std/Test.sol';
 import {Ownable} from '@openzeppelin/contracts/access/Ownable.sol';
+import {Pausable} from '@openzeppelin/contracts/utils/Pausable.sol';
 import {LongjingCredits} from '../src/LongjingCredits.sol';
 import {PoseidonHasher} from '../src/PoseidonHasher.sol';
 import {MockWithdrawalVerifier} from './MockWithdrawalVerifier.sol';
@@ -958,5 +959,131 @@ contract LongjingCreditsTest is Test {
         );
 
         assertEq(recipient.balance, refundAmount);
+    }
+
+    // ============ Note Expiry Tests ============
+
+    function test_NoteExpiry_IsDepositPlusTtl() public {
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+
+        assertEq(longjing.noteExpiry(idCommitment1), block.timestamp + longjing.NOTE_TTL());
+    }
+
+    function test_ClaimExpired_Success() public {
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+        vm.warp(longjing.noteExpiry(idCommitment1));
+
+        vm.expectEmit(true, true, false, true);
+        emit LongjingCredits.NoteExpiredClaimed(idCommitment1, 0.01 ether, server);
+        vm.prank(server);
+        longjing.claimExpired(idCommitment1);
+
+        assertEq(server.balance, 0.01 ether);
+        LongjingCredits.Deposit memory dep = longjing.getDeposit(idCommitment1);
+        assertFalse(dep.active);
+        assertEq(dep.rlnStake, 0);
+        assertEq(dep.policyStake, 0);
+    }
+
+    function test_ClaimExpired_RevertsBeforeTtl() public {
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+        vm.warp(longjing.noteExpiry(idCommitment1) - 1);
+
+        vm.prank(server);
+        vm.expectRevert(LongjingCredits.NoteNotExpired.selector);
+        longjing.claimExpired(idCommitment1);
+    }
+
+    function test_ClaimExpired_OnlyOperator() public {
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+        vm.warp(longjing.noteExpiry(idCommitment1));
+
+        vm.expectRevert(LongjingCredits.Unauthorized.selector);
+        longjing.claimExpired(idCommitment1);
+    }
+
+    function test_ClaimExpired_RevertsAfterWithdrawal() public {
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+        vm.warp(longjing.noteExpiry(idCommitment1));
+
+        address payable recipient = payable(makeAddr('recipient'));
+        vm.prank(user1);
+        longjing.withdraw(idCommitment1, recipient, _generateMockProof(), _withdrawalSignals(idCommitment1, recipient));
+        assertEq(recipient.balance, 0.01 ether);
+
+        vm.prank(server);
+        vm.expectRevert(LongjingCredits.DepositNotFound.selector);
+        longjing.claimExpired(idCommitment1);
+    }
+
+    function test_ClaimExpired_RevertsWhilePaused() public {
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+        vm.warp(longjing.noteExpiry(idCommitment1));
+        longjing.pause();
+
+        vm.prank(server);
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        longjing.claimExpired(idCommitment1);
+    }
+
+    function test_NoteExpiry_PausedTimeBeforeDepositDoesNotCount() public {
+        longjing.pause();
+        vm.warp(block.timestamp + 100 days);
+        longjing.unpause();
+
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+
+        assertEq(longjing.noteExpiry(idCommitment1), block.timestamp + longjing.NOTE_TTL());
+    }
+
+    /// The ethereum/zkapi flaw: the owner pauses to block exits, waits out the TTL, then sweeps the note.
+    function test_PauseCannotBlockExitsThenTriggerExpiry() public {
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+        uint256 expiry = longjing.noteExpiry(idCommitment1);
+        uint256 ttl = longjing.NOTE_TTL();
+
+        longjing.pause();
+        vm.warp(expiry);
+
+        // The clock stops while paused, so the note is still a full TTL away from expiring
+        assertEq(longjing.noteExpiry(idCommitment1), expiry + ttl);
+        vm.prank(server);
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        longjing.claimExpired(idCommitment1);
+
+        longjing.unpause();
+        vm.prank(server);
+        vm.expectRevert(LongjingCredits.NoteNotExpired.selector);
+        longjing.claimExpired(idCommitment1);
+
+        // Exits stayed open throughout
+        longjing.pause();
+        address payable recipient = payable(makeAddr('recipient'));
+        vm.prank(user1);
+        longjing.withdraw(idCommitment1, recipient, _generateMockProof(), _withdrawalSignals(idCommitment1, recipient));
+        assertEq(recipient.balance, 0.01 ether);
+    }
+
+    function _withdrawalSignals(
+        bytes32 _idCommitment,
+        address _recipient
+    ) internal view returns (uint256[7] memory) {
+        return [
+            0,
+            uint256(longjing.merkleRoot()),
+            uint256(uint160(_recipient)),
+            0,
+            0,
+            uint256(_idCommitment),
+            uint256(longjing.merkleRoot())
+        ];
     }
 }
