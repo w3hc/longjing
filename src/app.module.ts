@@ -8,7 +8,7 @@ import { TeePlatformService } from './attestation/tee-platform.service';
 import { HealthController } from './health/health.controller';
 import { validateEnvironment } from './config/env.validation';
 import { AuthModule } from './auth/auth.module';
-import { ZkApiModule } from './zk-api/zk-api.module';
+import { LongjingModule } from './longjing/longjing.module';
 import { ThrottlerMetadataGuard } from './guards/throttler-metadata-guard';
 import { RequestFingerprintThrottler } from './guards/request-fingerprint-throttler.guard';
 import { TimingProtectionInterceptor } from './interceptors/timing-protection.interceptor';
@@ -24,7 +24,7 @@ import { RequestSanitizerMiddleware } from './middleware/request-sanitizer.middl
     }),
     // Hybrid rate limiting:
     // 1. Request fingerprint-based (privacy-preserving)
-    // 2. Per-nullifier (in ZkApiService via NullifierStoreService)
+    // 2. Per-nullifier (in LongjingService via NullifierStoreService)
     ThrottlerModule.forRoot([
       {
         ttl: 60000, // 60 seconds
@@ -34,7 +34,7 @@ import { RequestSanitizerMiddleware } from './middleware/request-sanitizer.middl
     ]),
     AttestationModule,
     AuthModule,
-    ZkApiModule,
+    LongjingModule,
   ],
   controllers: [HealthController],
   providers: [

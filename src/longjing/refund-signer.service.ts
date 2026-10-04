@@ -178,7 +178,7 @@ export class RefundSignerService {
     // Generate deterministic private key for development
     // This creates a valid 32-byte private key for Babyjubjub
     const hash = createHash('sha256');
-    hash.update('zk-api-refund-signer-dev-key');
+    hash.update('longjing-refund-signer-dev-key');
     return '0x' + hash.digest('hex');
   }
 
@@ -193,7 +193,7 @@ export class RefundSignerService {
     // This MUST match:
     // - refund_redemption.circom line 64-69
     // - api_credit_proof.circom refund verification
-    // - ZkApiCredits.sol _hashRefundData
+    // - LongjingCredits.sol _hashRefundData
     const idCommitmentBigInt = BigInt(data.idCommitment);
     const nullifierBigInt = BigInt(data.nullifier);
     const valueBigInt = BigInt(data.value);

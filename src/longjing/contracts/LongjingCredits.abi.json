@@ -112,7 +112,7 @@
       {
         "name": "",
         "type": "tuple",
-        "internalType": "struct ZkApiCredits.Deposit",
+        "internalType": "struct LongjingCredits.Deposit",
         "components": [
           {
             "name": "idCommitment",
@@ -327,7 +327,7 @@
       {
         "name": "_signal1",
         "type": "tuple",
-        "internalType": "struct ZkApiCredits.Signal",
+        "internalType": "struct LongjingCredits.Signal",
         "components": [
           {
             "name": "x",
@@ -344,7 +344,7 @@
       {
         "name": "_signal2",
         "type": "tuple",
-        "internalType": "struct ZkApiCredits.Signal",
+        "internalType": "struct LongjingCredits.Signal",
         "components": [
           {
             "name": "x",

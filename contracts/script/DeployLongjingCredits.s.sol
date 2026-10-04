@@ -22,13 +22,13 @@ contract DeployLongjingCredits is Script {
         uint256 minPolicyStake = 0.1 ether;
 
         // Server EdDSA public key (derived from dev private key in refund-signer.service.ts)
-        // Private key: sha256('zk-api-refund-signer-dev-key')
+        // Private key: sha256('longjing-refund-signer-dev-key')
         // Public key derived using circomlib EdDSA
         bytes32 serverPubKeyX = bytes32(
-            0x223c26d8cb8f90c04d8b20d0b4fd192513d02b7995fb8bb3c5029fa9a0b911c5
+            0x2de05716d2326de41468ba1ee14d34a5c74c348b112c1743798dd68ce7715115
         );
         bytes32 serverPubKeyY = bytes32(
-            0x2053712a2eba096768aa455f49bb5101636116378558658544e9c7fb5a5c9b0c
+            0x1150d8e55cc05caef9ddb06b484ad5f7fea37e315dc3d27b727f681982cccce1
         );
 
         vm.startBroadcast(deployerPrivateKey);

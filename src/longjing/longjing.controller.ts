@@ -7,9 +7,12 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { ZkApiService } from './zk-api.service';
-import { ZkApiRequestDto, RedeemRefundRequestDto } from './dto/api-request.dto';
-import { ZkApiResponseDto } from './dto/api-response.dto';
+import { LongjingService } from './longjing.service';
+import {
+  LongjingRequestDto,
+  RedeemRefundRequestDto,
+} from './dto/api-request.dto';
+import { LongjingResponseDto } from './dto/api-response.dto';
 import { BlockchainService } from './blockchain.service';
 import { NullifierStoreService } from './nullifier-store.service';
 import { CostEstimationService } from './cost-estimation.service';
@@ -27,10 +30,10 @@ import {
 import { RefundSignerService } from './refund-signer.service';
 
 @ApiTags('App')
-@Controller('zk-api')
-export class ZkApiController {
+@Controller('longjing')
+export class LongjingController {
   constructor(
-    private readonly zkApiService: ZkApiService,
+    private readonly longjingService: LongjingService,
     private readonly blockchainService: BlockchainService,
     private readonly nullifierStore: NullifierStoreService,
     private readonly costEstimationService: CostEstimationService,
@@ -50,7 +53,7 @@ export class ZkApiController {
   @ApiResponse({
     status: 200,
     description: 'Request processed successfully',
-    type: ZkApiResponseDto,
+    type: LongjingResponseDto,
   })
   @ApiResponse({
     status: 401,
@@ -61,9 +64,9 @@ export class ZkApiController {
     description: 'Double-spend detected or nullifier already used',
   })
   async handleRequest(
-    @Body() request: ZkApiRequestDto,
-  ): Promise<ZkApiResponseDto> {
-    return this.zkApiService.handleRequest(request);
+    @Body() request: LongjingRequestDto,
+  ): Promise<LongjingResponseDto> {
+    return this.longjingService.handleRequest(request);
   }
 
   @Get('server-pubkey')
@@ -84,7 +87,7 @@ export class ZkApiController {
     },
   })
   async getServerPublicKey(): Promise<{ x: string; y: string }> {
-    return this.zkApiService.getServerPublicKey();
+    return this.longjingService.getServerPublicKey();
   }
 
   @Post('estimate-cost')

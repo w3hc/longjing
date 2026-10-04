@@ -1,11 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
-import * as ZkApiCreditsABI from './contracts/ZkApiCredits.abi.json';
+import * as LongjingCreditsABI from './contracts/LongjingCredits.abi.json';
 import { MerkleTreeService } from './merkle-tree.service';
 
 /**
- * Service for interacting with the ZkApiCredits smart contract
+ * Service for interacting with the LongjingCredits smart contract
  * and maintaining an off-chain Merkle tree for proof generation
  */
 @Injectable()
@@ -61,7 +61,7 @@ export class BlockchainService implements OnModuleInit {
       this.provider = new ethers.JsonRpcProvider(rpcUrl);
       this.contract = new ethers.Contract(
         contractAddress,
-        ZkApiCreditsABI,
+        LongjingCreditsABI,
         this.provider,
       );
 
@@ -73,7 +73,7 @@ export class BlockchainService implements OnModuleInit {
       // Test connection
       const merkleRoot = (await this.contract.merkleRoot()) as string;
       this.logger.log(
-        `Connected to ZkApiCredits at ${contractAddress}. Merkle root: ${merkleRoot}`,
+        `Connected to LongjingCredits at ${contractAddress}. Merkle root: ${merkleRoot}`,
       );
 
       // Sync Merkle tree with onchain state

@@ -21,7 +21,7 @@ export class RlnSignalDto {
   y: string;
 }
 
-export class ZkApiRequestDto {
+export class LongjingRequestDto {
   @ApiProperty({ description: 'Request payload for external API service' })
   @IsString()
   @IsNotEmpty()
