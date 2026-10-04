@@ -3,7 +3,9 @@
  * Client-side utility for generating ZK proofs for API access
  *
  * Usage:
- *   ts-node scripts/generate-proof.ts <secretKey> <ticketIndex>
+ *   ts-node scripts/generate-proof.ts <secretKey> <ticketIndex> [payload]
+ *
+ * The RLN signal x is bound to the payload: x = SHA-256(payload) mod p.
  *
  * Generates REAL Groth16 cryptographic proofs using snarkjs.
  * Uses api_credit_proof_test.circom for faster testing.
@@ -14,6 +16,7 @@ const snarkjs = require('snarkjs');
 import { ethers } from 'ethers';
 import * as path from 'path';
 import * as fs from 'fs';
+import { payloadToSignalX } from '../../src/longjing/utils/payload-signal.util';
 
 interface ProofInput {
   secretKey: bigint;
@@ -119,7 +122,7 @@ async function main() {
   const args = process.argv.slice(2);
 
   if (args.length < 2) {
-    console.error('Usage: ts-node scripts/generate-proof.ts <secretKey> <ticketIndex>');
+    console.error('Usage: ts-node scripts/generate-proof.ts <secretKey> <ticketIndex> [payload]');
     console.error('');
     console.error('Example:');
     console.error('  ts-node scripts/generate-proof.ts 12345 0');
@@ -128,16 +131,13 @@ async function main() {
 
   const secretKey = BigInt(args[0]);
   const ticketIndex = BigInt(args[1]);
+  const payload = args[2] ?? 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
 
   // Initialize Poseidon to compute expected ID commitment
   const poseidon = await circomlibjs.buildPoseidon();
   const idCommitmentExpected = await generateIdCommitment(poseidon, secretKey);
 
-  // Use random signalX for this request
-  // Note: Large random values can cause slow witness generation in some circuits.
-  // For testing, we use a hash of timestamp to get reasonable-sized values.
-  const timestamp = Date.now();
-  const signalX = BigInt(ethers.keccak256(ethers.toBeHex(timestamp, 32))) % BigInt('1000000000000');
+  const signalX = payloadToSignalX(payload);
 
   const input: ProofInput = {
     secretKey,
