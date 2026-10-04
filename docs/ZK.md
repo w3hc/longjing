@@ -104,19 +104,19 @@ The ZK proof system now supports **cryptographically valid Groth16 SNARK verific
 - New [SnarkjsProofService](../src/longjing/snarkjs-proof.service.ts) for real proof generation/verification
 - Updated [ProofVerifierService](../src/longjing/proof-verifier.service.ts) to use cryptographic verification
 - Automated trusted setup script: `npm run setup:circuit`
-- Falls back to mock mode if trusted setup not complete (dev-friendly)
+- `ZK_CIRCUIT` selects the circuit; production only accepts `api_request` and refuses to start without its verification key
 
 **Files:**
+- Production circuit: [circuits/api_request.circom](../circuits/api_request.circom) (~112K constraints)
 - Test circuit: [circuits/api_credit_proof_test.circom](../circuits/api_credit_proof_test.circom) (~676 constraints)
-- Production circuit: [circuits/api_credit_proof.circom](../circuits/api_credit_proof.circom) (~12K constraints)
 
 ## ZK Circuit Design
 
-### Test Circuit (Current)
+### Test Circuit (Development)
 
 **File**: [circuits/api_credit_proof_test.circom](../circuits/api_credit_proof_test.circom)
 
-A simplified circuit for development and testing:
+A simplified circuit for development and testing. The server uses it outside production unless `ZK_CIRCUIT` says otherwise. It checks no Merkle membership, solvency or refund signature, so production refuses it.
 
 **Inputs:**
 - `secretKey` (private) - User's secret key
@@ -136,9 +136,9 @@ A simplified circuit for development and testing:
 
 ### Production Circuit
 
-**File**: [circuits/api_credit_proof.circom](../circuits/api_credit_proof.circom)
+**File**: [circuits/api_request.circom](../circuits/api_request.circom)
 
-The full circuit proves four key properties:
+The circuit the server verifies requests with in production. It proves four key properties:
 
 1. **Membership**: User's identity commitment is in the Merkle tree
 2. **Refund Summation**: All refund tickets are valid (EdDSA signature verification)
@@ -146,33 +146,24 @@ The full circuit proves four key properties:
 4. **RLN**: Generates nullifier and signal for double-spend prevention
 
 **Circuit Parameters**:
-- `levels = 20`: Merkle tree depth (1,048,576 capacity)
-- `maxRefunds = 100`: Maximum refund tickets per proof
+- `TREE_DEPTH = 20`: Merkle tree depth (1,048,576 capacity)
+- `MAX_REFUNDS = 10`: Maximum refund tickets per proof
 
-**Inputs**:
+**Public signals**, in the order the verifier passes them:
 
-```circom
-// Private inputs
-signal input secretKey;
-signal input pathElements[levels];
-signal input pathIndices[levels];
-signal input refundValues[maxRefunds];
-signal input refundSignatures[maxRefunds][3];  // [R8x, R8y, S]
-signal input ticketIndex;
-
-// Public inputs
-signal input merkleRoot;
-signal input maxCost;
-signal input initialDeposit;
-signal input signalX;
-signal input serverPubKeyX;
-signal input serverPubKeyY;
-
-// Public outputs
-signal output nullifier;
-signal output signalY;
-signal output idCommitment;
 ```
+nullifier, signalY, idCommitment, merkleRoot,               // outputs
+merkleRootExpected, maxCost, signalX,                       // inputs
+serverPublicKeyX, serverPublicKeyY                          // inputs
+```
+
+The server fills `serverPublicKeyX/Y` with its own refund-signing key, never with a value from the request, so a proof whose refund tickets were signed by any other key fails verification.
+
+### Full Credit Circuit (Not Deployed)
+
+**File**: [circuits/api_credit_proof.circom](../circuits/api_credit_proof.circom)
+
+Same properties with up to 100 refund tickets and `initialDeposit` as a public input. At 775,250 constraints its trusted setup needs cloud hardware, and no keys exist for it yet.
 
 ### Simplified Circuit
 
@@ -575,32 +566,26 @@ See [OVERVIEW.md](./OVERVIEW.md#implementation-alignment-with-original-proposal)
 
 ## Circuit Artifacts
 
-**Current Status:** The system currently uses `api_credit_proof_test` circuit artifacts for proof verification.
+The server verifies requests with `api_request`. Its artifacts are committed in `circuits/build/`:
 
-The full production circuit (`api_credit_proof`) has **775,250 constraints**, which makes the Groth16 trusted setup ceremony extremely computationally intensive:
-- On M1 MacBook: 12+ hours without completion
-- Recommended: Generate on cloud infrastructure (AWS c5.9xlarge or similar) where it completes in 1-2 hours
+- `api_request_js/api_request.wasm` - Witness generator, for clients
+- `api_request.zkey` - Proving key, for clients
+- `api_request_verification_key.json` - Verification key, the only artifact the server loads and the only one the Docker image ships
 
-**Test Circuit:**
-- Located at: `circuits/build/api_credit_proof_test.zkey`
-- Smaller constraint count (~10K)
-- **Same cryptographic security guarantees**
-- Suitable for development and testing
-- Mock verification removal verified with test circuit
+The keys come from the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) (`ppot_0080_17.ptau`) plus a single local phase 2 contribution. That is enough for testnets; mainnet needs a multi-party phase 2 ceremony (see [TRUSTED_SETUP_CEREMONY.md](./TRUSTED_SETUP_CEREMONY.md)).
 
-**To Generate Full Circuit Artifacts:**
+**To regenerate them** after changing the circuit:
 
 ```bash
-# On a high-performance cloud instance
-cd circuits/build
-npx snarkjs groth16 setup api_credit_proof.r1cs pot20_final.ptau api_credit_proof_0000.zkey
-npx snarkjs zkey contribute api_credit_proof_0000.zkey api_credit_proof_final.zkey --name="Contribution" -e="random"
-npx snarkjs zkey export verificationkey api_credit_proof_final.zkey verification_key.json
+cd circuits
+circom api_request.circom --r1cs --wasm --sym -o build/
+curl -O https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_17.ptau
+npx snarkjs groth16 setup build/api_request.r1cs ppot_0080_17.ptau build/api_request_0000.zkey
+npx snarkjs zkey contribute build/api_request_0000.zkey build/api_request.zkey --name="Contribution" -e="$(openssl rand -hex 32)"
+npx snarkjs zkey export verificationkey build/api_request.zkey build/api_request_verification_key.json
 ```
 
-Then update `src/longjing/snarkjs-proof.service.ts` to point to the production artifacts.
-
-**Security Note:** Both test and production circuits implement identical cryptographic verification. The difference is in capacity (number of refund tickets, tree depth, etc.), not security.
+**Test Circuit:** `circuits/build/api_credit_proof_test.zkey` and `circuits/build/verification_key.json`, used outside production by default.
 
 ## References
 

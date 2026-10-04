@@ -47,30 +47,24 @@ describe('SnarkjsProofService', () => {
   });
 
   describe('initialize', () => {
-    it('should return false when WASM file does not exist', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(false);
+    it('should initialize without proving artifacts', async () => {
+      (fs.existsSync as jest.Mock).mockImplementation((path: string) =>
+        path.endsWith('.json'),
+      );
+      (fs.readFileSync as jest.Mock).mockReturnValue(
+        '{"vk_delta_2": [["12345", "67890"], ["11111", "22222"], ["1", "0"]]}',
+      );
 
       const result = await service.initialize();
 
-      expect(result).toBe(false);
-      expect(service.isAvailable()).toBe(false);
-    });
-
-    it('should return false when zkey file does not exist', async () => {
-      (fs.existsSync as jest.Mock).mockImplementation((path: string) => {
-        return path.includes('.wasm');
-      });
-
-      const result = await service.initialize();
-
-      expect(result).toBe(false);
-      expect(service.isAvailable()).toBe(false);
+      expect(result).toBe(true);
+      expect(service.isAvailable()).toBe(true);
     });
 
     it('should return false when verification key does not exist', async () => {
-      (fs.existsSync as jest.Mock).mockImplementation((path: string) => {
-        return path.includes('.wasm') || path.includes('.zkey');
-      });
+      (fs.existsSync as jest.Mock).mockImplementation(
+        (path: string) => !path.endsWith('.json'),
+      );
 
       const result = await service.initialize();
 
@@ -163,6 +157,16 @@ describe('SnarkjsProofService', () => {
 
     it('should throw error if circuit artifacts are missing', async () => {
       (fs.existsSync as jest.Mock).mockReturnValue(false);
+
+      await expect(service.generateProof(mockInput)).rejects.toThrow(
+        'Proof system not initialized. Circuit artifacts missing.',
+      );
+    });
+
+    it('should throw error if the zkey is missing', async () => {
+      (fs.existsSync as jest.Mock).mockImplementation(
+        (path: string) => !path.endsWith('.zkey'),
+      );
 
       await expect(service.generateProof(mockInput)).rejects.toThrow(
         'Proof system not initialized. Circuit artifacts missing.',
@@ -272,6 +276,101 @@ describe('SnarkjsProofService', () => {
       expect(info).toHaveProperty('zkeyPath');
       expect(info).toHaveProperty('isSetup');
       expect(typeof info.isSetup).toBe('boolean');
+    });
+  });
+
+  describe('circuit selection', () => {
+    const env = { ...process.env };
+
+    afterEach(() => {
+      process.env = { ...env };
+    });
+
+    const withEnv = (nodeEnv: string, circuit?: string) => {
+      process.env.NODE_ENV = nodeEnv;
+      if (circuit) process.env.ZK_CIRCUIT = circuit;
+      else delete process.env.ZK_CIRCUIT;
+      return new SnarkjsProofService();
+    };
+
+    it('defaults to the test circuit outside production', () => {
+      expect(withEnv('development').getCircuit()).toBe('api_credit_proof_test');
+    });
+
+    it('defaults to the request circuit in production', () => {
+      const info = withEnv('production').getCircuitInfo();
+
+      expect(info.circuit).toBe('api_request');
+      expect(info.vKeyPath).toMatch(/api_request_verification_key\.json$/);
+    });
+
+    it('honours ZK_CIRCUIT', () => {
+      expect(withEnv('development', 'api_request').getCircuit()).toBe(
+        'api_request',
+      );
+    });
+
+    it('rejects an unknown ZK_CIRCUIT', () => {
+      expect(() => withEnv('development', 'nope')).toThrow(
+        'Unknown ZK_CIRCUIT: nope',
+      );
+    });
+  });
+
+  describe('onModuleInit', () => {
+    const env = { ...process.env };
+
+    beforeEach(() => {
+      (fs.readFileSync as jest.Mock).mockReturnValue(
+        '{"vk_delta_2": [["12345", "67890"], ["11111", "22222"], ["1", "0"]]}',
+      );
+    });
+
+    afterEach(() => {
+      process.env = { ...env };
+    });
+
+    const production = (circuit?: string) => {
+      process.env.NODE_ENV = 'production';
+      if (circuit) process.env.ZK_CIRCUIT = circuit;
+      else delete process.env.ZK_CIRCUIT;
+      const prod = new SnarkjsProofService();
+      jest.spyOn(prod['logger'], 'warn').mockImplementation();
+      return prod;
+    };
+
+    it('starts in production with the request verification key', async () => {
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+      const prod = production();
+
+      await prod.onModuleInit();
+
+      expect(prod.isAvailable()).toBe(true);
+    });
+
+    it('refuses to start in production without the verification key', async () => {
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+
+      await expect(production().onModuleInit()).rejects.toThrow(
+        /verification key missing/,
+      );
+    });
+
+    it('refuses to start in production with the test circuit', async () => {
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+
+      await expect(
+        production('api_credit_proof_test').onModuleInit(),
+      ).rejects.toThrow(/not allowed in production/);
+    });
+
+    it('keeps running outside production without the verification key', async () => {
+      process.env.NODE_ENV = 'development';
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      jest.spyOn(service['logger'], 'warn').mockImplementation();
+
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+      expect(service.isAvailable()).toBe(false);
     });
   });
 

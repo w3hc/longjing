@@ -4,6 +4,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BlockchainService } from './blockchain.service';
 import { ProofGenService } from './proof-gen.service';
+import { RefundSignerService } from './refund-signer.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 
 /**
@@ -22,6 +23,7 @@ export class ProofVerifierService {
     private readonly blockchainService: BlockchainService,
     private readonly proofGenService: ProofGenService,
     private readonly snarkjsProofService: SnarkjsProofService,
+    private readonly refundSignerService: RefundSignerService,
   ) {}
 
   /**
@@ -184,14 +186,7 @@ export class ProofVerifierService {
 
       this.logger.debug('Using real snarkjs verification');
 
-      // Construct public signals array from public inputs
       // Order must match circuit: PUBLIC OUTPUTS FIRST, then PUBLIC INPUTS
-      //
-      // TEST CIRCUIT (api_credit_proof_test.circom) - currently active:
-      // public inputs: signalX, idCommitmentExpected
-      // public outputs: nullifier, signalY, idCommitment
-      // Circom outputs: [nullifier, signalY, idCommitment, signalX, idCommitmentExpected]
-      // Total: 5 signals
       // Convert hex strings to decimal strings for snarkjs
       // Handle both hex strings (with/without 0x) and decimal strings
       const toBigInt = (value: string): bigint => {
@@ -225,13 +220,35 @@ export class ProofVerifierService {
       this.logger.debug('Raw public inputs received:', publicInputs);
 
       try {
-        const publicSignals = [
-          toBigInt(publicInputs.nullifier).toString(),
-          toBigInt(publicInputs.signalY).toString(),
-          toBigInt(publicInputs.idCommitment).toString(),
-          toBigInt(publicInputs.signalX).toString(),
-          toBigInt(publicInputs.idCommitmentExpected).toString(), // FIXED: was duplicating idCommitment
-        ];
+        let signals: string[];
+        if (this.snarkjsProofService.getCircuit() === 'api_request') {
+          // Refunds must be signed by this server, so the key never comes from the request
+          const serverKey = await this.refundSignerService.getPublicKey();
+          // [nullifier, signalY, idCommitment, merkleRoot, merkleRootExpected, maxCost, signalX, serverPublicKeyX, serverPublicKeyY]
+          signals = [
+            publicInputs.nullifier,
+            publicInputs.signalY,
+            publicInputs.idCommitment,
+            publicInputs.merkleRoot,
+            publicInputs.merkleRoot,
+            publicInputs.maxCost,
+            publicInputs.signalX,
+            serverKey.x,
+            serverKey.y,
+          ];
+        } else {
+          // [nullifier, signalY, idCommitment, signalX, idCommitmentExpected]
+          signals = [
+            publicInputs.nullifier,
+            publicInputs.signalY,
+            publicInputs.idCommitment,
+            publicInputs.signalX,
+            publicInputs.idCommitmentExpected,
+          ];
+        }
+        const publicSignals = signals.map((value) =>
+          toBigInt(value).toString(),
+        );
 
         this.logger.debug('Constructed public signals:', publicSignals);
 

@@ -4,9 +4,26 @@ This directory contains the Circom implementations of Zero-Knowledge circuits fo
 
 ## Production Circuits
 
-The system uses three specialized circuits for different operations:
+The system uses four specialized circuits for different operations:
 
-### 1. **Withdrawal Circuit** ([withdrawal.circom](withdrawal.circom))
+### 1. **API Request Circuit** ([api_request.circom](api_request.circom))
+
+Proves the right to make one API request. The server verifies every request with it in production.
+
+**Proves**:
+- Identity commitment exists in Merkle tree (membership proof)
+- Every refund ticket carries a valid EdDSA signature from the server
+- Solvency: `(ticketIndex + 1) · maxCost ≤ initialDeposit + refunds`
+- RLN signal is correctly computed for double-spend prevention
+
+**Parameters**:
+- Merkle tree depth: 20, max refund tickets: 10
+- Constraints: ~112K
+- Public inputs: `merkleRootExpected`, `maxCost`, `signalX`, `serverPublicKeyX`, `serverPublicKeyY` (the verifier fills the key in itself)
+- Outputs: `nullifier`, `signalY`, `idCommitment`, `merkleRoot`
+- Artifacts: `build/api_request_js/api_request.wasm`, `build/api_request.zkey`, `build/api_request_verification_key.json` (see [docs/ZK.md](../docs/ZK.md#circuit-artifacts) to regenerate)
+
+### 2. **Withdrawal Circuit** ([withdrawal.circom](withdrawal.circom))
 
 Proves the right to withdraw funds without revealing the secret key.
 
@@ -21,7 +38,7 @@ Proves the right to withdraw funds without revealing the secret key.
 - Public inputs: `signalX`, `merkleRootExpected`, `recipient` (front-running protection)
 - Outputs: `nullifier`, `signalY`, `idCommitment`, `merkleRoot`
 
-### 2. **Refund Redemption Circuit** ([refund_redemption.circom](refund_redemption.circom))
+### 3. **Refund Redemption Circuit** ([refund_redemption.circom](refund_redemption.circom))
 
 Proves the validity of server-signed refund tickets without revealing ticket details.
 
@@ -36,7 +53,7 @@ Proves the validity of server-signed refund tickets without revealing ticket det
 - Public inputs: `signalX`, `refundValueClaimed`, `serverPublicKeyX`, `serverPublicKeyY`, `recipient` (front-running protection)
 - Outputs: `nullifier`, `signalY`, `idCommitment`
 
-### 3. **Double-Spend Slashing Circuit** ([double_spend_slashing.circom](double_spend_slashing.circom))
+### 4. **Double-Spend Slashing Circuit** ([double_spend_slashing.circom](double_spend_slashing.circom))
 
 Proves that a user double-spent a ticket, allowing anyone to extract and verify the secret key for slashing.
 
@@ -52,7 +69,7 @@ Proves that a user double-spent a ticket, allowing anyone to extract and verify 
 
 ### Test Circuit ([api_credit_proof_test.circom](api_credit_proof_test.circom))
 
-Simplified test circuit used during development (not for production).
+Simplified test circuit used during development. The server refuses to start with it in production.
 
 ## Compilation
 

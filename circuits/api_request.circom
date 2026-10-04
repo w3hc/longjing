@@ -83,14 +83,12 @@ template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
     signal input refundSignaturesS[MAX_REFUNDS];               // EdDSA S components
     signal input refundNullifiers[MAX_REFUNDS];                // Nullifiers from refund tickets
 
-    // Server's EdDSA public key
-    signal input serverPublicKeyX;
-    signal input serverPublicKeyY;
-
     // ========== Public Inputs ==========
     signal input merkleRootExpected;                           // Expected Merkle root
     signal input maxCost;                                      // C_max: Maximum cost for this request
     signal input signalX;                                      // RLN signal x
+    signal input serverPublicKeyX;                             // Server's EdDSA public key, checked by the verifier
+    signal input serverPublicKeyY;
 
     // ========== Public Outputs ==========
     signal output nullifier;                                   // RLN nullifier
@@ -217,4 +215,4 @@ template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
 
 // Export with 20-level Merkle tree and max 10 refund tickets
 // 20 levels = ~1M users, 10 refunds = reasonable batch size before redemption
-component main {public [merkleRootExpected, maxCost, signalX]} = ApiRequestProof(20, 10);
+component main {public [merkleRootExpected, maxCost, signalX, serverPublicKeyX, serverPublicKeyY]} = ApiRequestProof(20, 10);

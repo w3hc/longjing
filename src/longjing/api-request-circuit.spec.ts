@@ -17,9 +17,11 @@ const hasCircom = spawnSync('circom', ['--version']).status === 0;
 (hasCircom ? describe : describe.skip)('api_request.circom', () => {
   let outDir: string;
   let wasmPath: string;
+  let serverKey: [string, string];
   let inputFor: (
     numRefunds: number,
     values: bigint[],
+    prvKey?: Buffer,
   ) => Record<string, unknown>;
 
   beforeAll(async () => {
@@ -43,11 +45,15 @@ const hasCircom = spawnSync('circom', ['--version']).status === 0;
     let root = idCommitment;
     for (let i = 0; i < TREE_DEPTH; i++) root = poseidon([root, 0n]);
 
-    const prvKey = Buffer.alloc(32, 7);
-    const pubKey = eddsa.prv2pub(prvKey);
+    const serverPrvKey = Buffer.alloc(32, 7);
+    const pubOf = (prvKey: Buffer): [string, string] => {
+      const pub = eddsa.prv2pub(prvKey);
+      return [str(pub[0]), str(pub[1])];
+    };
+    serverKey = pubOf(serverPrvKey);
 
     const timestamp = 1700000000n;
-    const signedSlots = (values: bigint[]) =>
+    const signedSlots = (values: bigint[], prvKey: Buffer) =>
       values.map((value, i) => {
         const nullifier = BigInt(1000 + i);
         const msg = poseidon([idCommitment, nullifier, value, timestamp]);
@@ -61,8 +67,13 @@ const hasCircom = spawnSync('circom', ['--version']).status === 0;
         };
       });
 
-    inputFor = (numRefunds: number, values: bigint[]) => {
-      const slots = signedSlots(values);
+    inputFor = (
+      numRefunds: number,
+      values: bigint[],
+      prvKey = serverPrvKey,
+    ) => {
+      const slots = signedSlots(values, prvKey);
+      const [pubX, pubY] = pubOf(prvKey);
       return {
         secretKey: secretKey.toString(),
         ticketIndex: '10',
@@ -76,8 +87,8 @@ const hasCircom = spawnSync('circom', ['--version']).status === 0;
         refundSignaturesR8y: slots.map((s) => s.R8y),
         refundSignaturesS: slots.map((s) => s.S),
         refundNullifiers: slots.map((s) => s.nullifier),
-        serverPublicKeyX: str(pubKey[0]),
-        serverPublicKeyY: str(pubKey[1]),
+        serverPublicKeyX: pubX,
+        serverPublicKeyY: pubY,
         merkleRootExpected: str(root),
         maxCost: '10',
         signalX: '42',
@@ -93,6 +104,15 @@ const hasCircom = spawnSync('circom', ['--version']).status === 0;
     const wtns: { type: string; data?: Uint8Array } = { type: 'mem' };
     await snarkjs.wtns.calculate(input, wasmPath, wtns);
     return wtns.data;
+  };
+
+  // Witness layout: [1, nullifier, signalY, idCommitment, merkleRoot, merkleRootExpected, maxCost, signalX, serverPublicKeyX, serverPublicKeyY, ...]
+  const publicServerKey = async (input: Record<string, unknown>) => {
+    const signals: bigint[] = await snarkjs.wtns.exportJson({
+      type: 'mem',
+      data: await witness(input),
+    });
+    return [signals[8].toString(), signals[9].toString()];
   };
 
   // Every slot carries a valid signature, so each case fails only on the constraint it targets
@@ -180,5 +200,19 @@ const hasCircom = spawnSync('circom', ['--version']).status === 0;
     await expect(witness(inputFor(1, values(2n ** 128n)))).rejects.toThrow(
       /Assert Failed/,
     );
+  });
+
+  it('exposes the server key as a public signal', async () => {
+    await expect(publicServerKey(inputFor(1, values(20n)))).resolves.toEqual(
+      serverKey,
+    );
+  });
+
+  // The circuit accepts any signer, so the verifier must reject a foreign key
+  it('exposes a foreign signing key instead of the server key', async () => {
+    const foreignKey = await publicServerKey(
+      inputFor(1, values(20n), Buffer.alloc(32, 9)),
+    );
+    expect(foreignKey).not.toEqual(serverKey);
   });
 });
