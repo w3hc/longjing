@@ -8,6 +8,9 @@ import * as snarkjs from 'snarkjs';
 
 const TREE_DEPTH = 20;
 const MAX_REFUNDS = 10;
+const FIELD_MODULUS =
+  21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+const HALF_MODULUS_PLUS_ONE = (FIELD_MODULUS + 1n) / 2n;
 
 const hasCircom = spawnSync('circom', ['--version']).status === 0;
 
@@ -118,6 +121,63 @@ const hasCircom = spawnSync('circom', ['--version']).status === 0;
 
   it('rejects a nonzero value in a turned-off slot', async () => {
     await expect(witness(inputFor(1, values(20n, 50n)))).rejects.toThrow(
+      /Assert Failed/,
+    );
+  });
+
+  // (ticketIndex + 1) * maxCost ≡ 1 (mod p), which passed solvency before the range checks
+  it('rejects a ticketIndex that wraps the required balance', async () => {
+    await expect(
+      witness({
+        ...inputFor(0, values()),
+        ticketIndex: (HALF_MODULUS_PLUS_ONE - 1n).toString(),
+        maxCost: '2',
+      }),
+    ).rejects.toThrow(/Assert Failed/);
+  });
+
+  it('rejects a maxCost that wraps the required balance', async () => {
+    await expect(
+      witness({
+        ...inputFor(0, values()),
+        ticketIndex: '1',
+        maxCost: HALF_MODULUS_PLUS_ONE.toString(),
+      }),
+    ).rejects.toThrow(/Assert Failed/);
+  });
+
+  it('accepts operands at their maximum width', async () => {
+    await expect(
+      witness({
+        ...inputFor(0, values()),
+        ticketIndex: (2n ** 32n - 1n).toString(),
+        maxCost: '0',
+        initialDeposit: (2n ** 128n - 1n).toString(),
+      }),
+    ).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it('rejects a ticketIndex wider than 32 bits', async () => {
+    await expect(
+      witness({
+        ...inputFor(0, values()),
+        ticketIndex: (2n ** 32n).toString(),
+        maxCost: '0',
+      }),
+    ).rejects.toThrow(/Assert Failed/);
+  });
+
+  it('rejects an initialDeposit wider than 128 bits', async () => {
+    await expect(
+      witness({
+        ...inputFor(0, values()),
+        initialDeposit: (2n ** 128n).toString(),
+      }),
+    ).rejects.toThrow(/Assert Failed/);
+  });
+
+  it('rejects a refund value wider than 128 bits', async () => {
+    await expect(witness(inputFor(1, values(2n ** 128n)))).rejects.toThrow(
       /Assert Failed/,
     );
   });
