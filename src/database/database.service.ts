@@ -22,7 +22,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     const dataDir = process.env.DATA_DIR || join(process.cwd(), 'data');
     // Support in-memory database for testing
     this.dbPath =
-      dataDir === ':memory:' ? ':memory:' : join(dataDir, 'zk-api.db');
+      dataDir === ':memory:' ? ':memory:' : join(dataDir, 'longjing.db');
   }
 
   onModuleInit() {

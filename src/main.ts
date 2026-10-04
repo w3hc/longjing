@@ -8,7 +8,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { SanitizedLogger } from './logging/sanitized-logger';
 import { TeeExceptionFilter } from './filters/tee-exception.filter';
-import { ProofVerifierService } from './zk-api/proof-verifier.service';
+import { ProofVerifierService } from './longjing/proof-verifier.service';
 import { loadTlsMaterial } from './tls/tee-tls';
 
 async function bootstrap() {
@@ -91,8 +91,8 @@ async function bootstrap() {
 
   // Swagger API documentation setup
   const config = new DocumentBuilder()
-    .setTitle('ZK API')
-    .setDescription('API documentation for ZK API')
+    .setTitle('Longjing')
+    .setDescription('API documentation for Longjing')
     .setVersion('0.1.0')
     .build();
   const document = SwaggerModule.createDocument(app, config);

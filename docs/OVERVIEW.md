@@ -1,59 +1,65 @@
-# ZK API System Overview
+# Longjing System Overview
 
 ## Introduction
 
-ZK API is a privacy-preserving system for accessing external API services anonymously using Zero-Knowledge proofs and Rate-Limit Nullifiers (RLN). Users deposit ETH once and make unlimited untraceable requests without revealing their identity or linking requests together.
+Longjing is a privacy-preserving gateway for accessing external API services anonymously, using Zero-Knowledge proofs and Rate-Limit Nullifiers (RLN). Users deposit ETH once and make many untraceable requests without revealing their identity or linking requests together.
 
-**Implementation**: Based on [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) by Davide Crapis & Vitalik Buterin.
+It is two things stacked together:
 
-## Implementation Alignment with Original Proposal
+1. **An implementation of the original RLN protocol** from [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) by Davide Crapis & Vitalik Buterin: RLN signals, refund ticket accumulation, the solvency formula `(i + 1) · C_max ≤ D + R`, and dual staking (claimable RLN stake, burnable policy stake).
+2. **A TEE gateway around it**: the server runs in an attested enclave, holds the upstream provider credentials, forwards requests through a generic provider layer, and hardens the metadata around each request.
 
-This implementation is faithful to the original ethresear.ch proposal with strategic improvements:
+The protocol is the shared foundation. What Longjing adds is the part the protocol leaves open: where the server runs, how a client can trust it, how any upstream API plugs in, and how the traffic around a valid proof is kept from leaking identity.
 
-### Perfect Alignment
-- **Core Protocol**: RLN + refund ticket accumulation exactly as specified
-- **Dual Staking**: 50/50 split between RLN stake (claimable) and policy stake (burnable)
-- **Solvency Formula**: `(i + 1) · C_max ≤ D + R`
-- **Request Flow**: Matches original: Proof → Nullifier check → Execute → Refund ticket
+### What Longjing adds
 
-### Strategic Improvements
-- **ZK-First Architecture**: All operations use ZK proofs (withdrawal, refund, slashing) instead of raw cryptographic verification onchain. This simplifies contracts (~300 lines vs 700+), provides constant gas costs (~280k), and preserves privacy (secret key never revealed).
-- **TEE Integration**: Hardware-level unlinkability via AMD SEV-SNP, Intel TDX, AWS Nitro, or Phala Network. This provides *cryptographic unlinkability* that survives regulatory pressure.
-- **Multi-Provider Architecture**: Dynamic provider registration, per-provider pricing, cost estimation service.
+- **TEE gateway**: Intel TDX with in-enclave TLS termination; attestation `report_data` binds both the ML-KEM public key and the TLS certificate, so a client can verify the endpoint before sending secrets ([ATTESTATION.md](./ATTESTATION.md), [TEE_SETUP.md](./TEE_SETUP.md)).
+- **Generic provider layer**: dynamic provider registration, per-provider pricing and pre-request cost estimation; Claude is the reference provider ([PROVIDERS.md](./PROVIDERS.md)).
+- **Metadata hardening**: `MetadataSanitizerInterceptor`, `TimingProtectionInterceptor`, response padding, cost quantization and ML-KEM encryption.
+- **ZK-first contracts**: withdrawal, refund redemption and slashing are all verified with Groth16 proofs, so the secret key is never revealed onchain and gas costs stay constant.
+- **Production infrastructure**: ETH/USD oracle, rate limiting, persistent nullifier storage.
 
-### Deliberate Trade-offs
-- **Proof System**: Uses **Groth16** (ZK-SNARK) instead of **ZK-STARK** as originally proposed
+### Deliberate trade-offs
+
+- **Proof system**: **Groth16** (ZK-SNARK) instead of the **ZK-STARK** suggested in the proposal
   - Faster verification (~10-20ms vs ~100-500ms)
   - Smaller proofs (~200 bytes vs ~80-200KB)
   - Lower onchain gas costs (~280k vs ~1-5M)
   - Requires trusted setup (vs transparent)
   - Not post-quantum secure (vs quantum-resistant)
-- **Decision**: Prioritized efficiency for near-term deployment; can migrate to STARKs in v2
+- **Decision**: Prioritized efficiency for near-term deployment; a STARK migration remains possible later
 
-### Complete Implementation (Matches Original Proposal)
-- **Onchain Merkle Tree**:
-  - Proper 20-level incremental Merkle tree using Poseidon hash
-  - Matches circuit's `MerkleTreeChecker` structure exactly
-  - Supports ~1M depositors with efficient proof generation
-  - Public `getMerkleProof()` function for client-side proof construction
-- **Solvency Formula in Circuit**:
-  - Production circuit: [api_request.circom](../circuits/api_request.circom)
-  - Verifies full formula: `(i + 1) · C_max ≤ D + R`
-  - Includes EdDSA signature verification for all refund tickets
-  - Proves balance sufficiency without revealing actual balance
+## Longjing and ethereum/zkapi
 
-### Additions Not in Original
-- **Metadata Protection**: `MetadataSanitizerInterceptor`, `TimingProtectionInterceptor`, ML-KEM-768 encryption
-- **Production Infrastructure**: ETH/USD oracle, rate limiting, persistent storage
-- **Provider Abstraction**: See [PROVIDERS.md](docs/PROVIDERS.md)
+[ethereum/zkapi](https://github.com/ethereum/zkapi) is a separate implementation of the same proposal, built by Open Anonymity in collaboration with the Ethereum Foundation. Its current version (v2) deliberately departs from RLN; Longjing keeps it.
 
-**Trust Assumptions**: For production deployment, the system requires: (1) onchain Merkle tree implemented, (2) server key rotation mechanism, (3) timelock on admin functions, (4) trusted setup ceremonies (development setup complete, production needs 50+ participants), and (5) independent review. See security considerations below.
+### Protocol
 
-**Key Innovation**: Combines ZK-SNARKs (Groth16) for proving solvency with Rate-Limit Nullifiers for preventing double-spending, maintaining complete privacy through cryptographic unlinkability rather than policy.
+| | Longjing | ethereum/zkapi (v2) |
+|---|---|---|
+| **Nullifier construction** | RLN line: `y = k + a·x` with `a = Poseidon(k, i)`; two signals on the same ticket index reveal `k` | One-time state anchor: each request consumes the current private state and emits one nullifier |
+| **Double-spend response** | Anyone who recovers `k` slashes the RLN stake onchain | The server keeps every seen nullifier; a replayed old state is challenged during the escape-hatch window |
+| **Balance tracking** | Refund tickets (EdDSA) accumulate client-side; the request circuit proves the solvency formula over them | Private balance commitment inside a server-signed state (Schnorr); no ticket indices or refund history |
+| **Stakes and policy** | Separate RLN stake (claimable) and policy stake (burnable via a policy-violation proof) | No policy stake; a policy penalty is an optional bounded deduction from the private balance |
+| **Settlement** | Refunds redeemed onchain; withdrawal is a direct ZK proof with no server involvement | Net settlement in gwei when the note closes: instant mutual close with a server signature, or an escape hatch with a 24h challenge window; expired notes can be claimed by the server |
+| **Merkle tree** | 20 levels | 32 levels, note-bound commitments |
+
+### Architecture
+
+| | Longjing | ethereum/zkapi (v2) |
+|---|---|---|
+| **Request path** | Client → TEE gateway → upstream provider; the gateway holds provider credentials and executes the call | Browser → inference provider directly; the server issues leases and handles settlement |
+| **Trust in the server** | Enclave attestation bound to the TLS and ML-KEM keys | Protocol-level guarantees; the operator runs ordinary services |
+| **Providers** | Generic provider abstraction (pricing, cost estimation, registration) | Inference providers, OpenAI-compatible local client |
+| **Stack** | Circom + snarkjs, NestJS backend, Foundry contracts | Rust operator services (`serverd`, `indexerd`, `challenged`), Rust/WASM browser SDK, Foundry contracts |
+
+Both projects are experimental and both evolve; this comparison reflects ethereum/zkapi as of October 2026.
+
+**Trust Assumptions**: For production deployment, the system requires: (1) server key rotation mechanism, (2) timelock on admin functions, (3) trusted setup ceremonies (development setup complete, production needs 50+ participants), and (4) independent review. See security considerations below.
 
 ## TEE Deployment: Why This Matters
 
-ZK API is **designed to run in a Trusted Execution Environment (TEE)** such as:
+Longjing is **designed to run in a Trusted Execution Environment (TEE)** such as:
 - AMD SEV-SNP (Secure Encrypted Virtualization)
 - Intel TDX (Trust Domain Extensions)
 - AWS Nitro Enclaves
@@ -84,7 +90,7 @@ The system consists of three main layers:
 
 ### 1. Smart Contract Layer (Ethereum)
 
-**Contract**: [`ZkApiCredits.sol`](../contracts/src/ZkApiCredits.sol)
+**Contract**: [`LongjingCredits.sol`](../contracts/src/LongjingCredits.sol)
 
 The smart contract manages the economic guarantees and serves as the source of truth for:
 
@@ -181,13 +187,13 @@ The backend orchestrates proof verification, API execution, and refund signing:
 
 | Service | File | Purpose |
 |---------|------|---------|
-| **ZkApiService** | [zk-api.service.ts](../src/zk-api/zk-api.service.ts) | Main request orchestrator |
-| **ProofVerifierService** | [proof-verifier.service.ts](../src/zk-api/proof-verifier.service.ts) | Groth16 proof verification (~10-20ms) |
-| **NullifierStoreService** | [nullifier-store.service.ts](../src/zk-api/nullifier-store.service.ts) | SQLite persistent nullifier storage |
-| **RefundSignerService** | [refund-signer.service.ts](../src/zk-api/refund-signer.service.ts) | EdDSA refund ticket signing (in-circuit verified) |
-| **MerkleTreeService** | [merkle-tree.service.ts](../src/zk-api/merkle-tree.service.ts) | Onchain Merkle tree synchronization |
-| **BlockchainService** | [blockchain.service.ts](../src/zk-api/blockchain.service.ts) | Ethereum contract interactions |
-| **EthRateOracleService** | [eth-rate-oracle.service.ts](../src/zk-api/eth-rate-oracle.service.ts) | ETH/USD pricing (Kraken + Chainlink fallback) |
+| **LongjingService** | [longjing.service.ts](../src/longjing/longjing.service.ts) | Main request orchestrator |
+| **ProofVerifierService** | [proof-verifier.service.ts](../src/longjing/proof-verifier.service.ts) | Groth16 proof verification (~10-20ms) |
+| **NullifierStoreService** | [nullifier-store.service.ts](../src/longjing/nullifier-store.service.ts) | SQLite persistent nullifier storage |
+| **RefundSignerService** | [refund-signer.service.ts](../src/longjing/refund-signer.service.ts) | EdDSA refund ticket signing (in-circuit verified) |
+| **MerkleTreeService** | [merkle-tree.service.ts](../src/longjing/merkle-tree.service.ts) | Onchain Merkle tree synchronization |
+| **BlockchainService** | [blockchain.service.ts](../src/longjing/blockchain.service.ts) | Ethereum contract interactions |
+| **EthRateOracleService** | [eth-rate-oracle.service.ts](../src/longjing/eth-rate-oracle.service.ts) | ETH/USD pricing (Kraken + Chainlink fallback) |
 
 **Provider Abstraction** (Multi-API Support)
 
@@ -232,7 +238,7 @@ See [PROVIDERS.md](./PROVIDERS.md) for adding new providers.
      │    - Previous refunds      │                            │
      │    - RLN signal            │                            │
      │                            │                            │
-     │ 2. POST /zk-api/request    │                            │
+     │ 2. POST /longjing/request  │                            │
      │    {proof, nullifier,      │                            │
      │     signal, maxCost}       │                            │
      ├───────────────────────────>│                            │
@@ -302,7 +308,7 @@ See [PROVIDERS.md](./PROVIDERS.md) for adding new providers.
    - Users can always withdraw, even if the server is down, censoring, or malicious
    - Withdrawal requires only a ZK proof of ownership (prove you know the secret key)
    - No server signatures, no server approval, no server interaction needed
-   - The contract's `withdraw()` function ([ZkApiCredits.sol:228-271](../contracts/src/ZkApiCredits.sol#L228-L271)) verifies the proof onchain
+   - The contract's `withdraw()` function ([LongjingCredits.sol:228-271](../contracts/src/LongjingCredits.sol#L228-L271)) verifies the proof onchain
    - Merkle proofs are available via public `getMerkleProof()` function (no server dependency)
    - Your funds are always in your control - the server cannot prevent withdrawals
 
@@ -458,7 +464,7 @@ While the system provides strong cryptographic privacy guarantees, users should 
 **Zero-Knowledge Layer**
 - ZK circuit design (Circom) - Groth16 with RLN
 - Proof verification (SnarkJS) - ~10-20ms server-side
-- Smart contract (Solidity) - ZkApiCredits.sol with dual staking
+- Smart contract (Solidity) - LongjingCredits.sol with dual staking
 - Merkle tree service - 20-level tree, supports ~1M depositors
 - Nullifier store - SQLite persistent storage with privacy guarantees
 
@@ -481,7 +487,7 @@ While the system provides strong cryptographic privacy guarantees, users should 
 
 ### Security Considerations
 
-This is a research implementation of the ZK-API system described in the [Ethresear.ch proposal](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104).
+This is a research implementation of the protocol described in the [Ethresear.ch proposal](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104).
 
 **ZK Proof Verification**:
 - Real Groth16 verifiers (generated by snarkJS)
@@ -492,7 +498,7 @@ This is a research implementation of the ZK-API system described in the [Ethrese
 
 **Known Limitation: EdDSA Signature Verification**
 
-The contract's EdDSA signature verification for refund tickets performs basic validation only (see [ZkApiCredits.sol:600-661](../contracts/src/ZkApiCredits.sol#L600-L661)):
+The contract's EdDSA signature verification for refund tickets performs basic validation only (see [LongjingCredits.sol:600-661](../contracts/src/LongjingCredits.sol#L600-L661)):
 - Verifies signature components are in valid range
 - Verifies points are on Baby Jubjub curve
 - Does not perform full cryptographic verification (requires >30M gas, exceeds block limit)
@@ -529,7 +535,7 @@ This relies on economic incentives:
    - Production requires multi-party ceremony (50+ participants)
 
 3. **Contract integration**
-   - Production Groth16 verifiers integrated into ZkApiCredits.sol
+   - Production Groth16 verifiers integrated into LongjingCredits.sol
    - Wrapper functions added for proof format conversion
    - Public signal mappings updated for all three circuits
    - Real ZK proof verification active on all operations
@@ -539,7 +545,7 @@ This relies on economic incentives:
    - Matches circuit's `MerkleTreeChecker` structure exactly
    - Public `getMerkleProof()` function for client-side proof generation
    - Full node storage in `treeNodes` mapping for correct proof generation
-   - See [ZkApiCredits.sol:620-719](../contracts/src/ZkApiCredits.sol#L620-L719)
+   - See [LongjingCredits.sol:620-719](../contracts/src/LongjingCredits.sol#L620-L719)
 
 5. **Independent review**
    - Circuit review

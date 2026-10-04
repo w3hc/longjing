@@ -5,7 +5,7 @@
  * In-enclave TLS termination
  *
  * Production must terminate TLS *inside* the TEE, so that request bodies
- * (which may carry user secrets on the /zk-api/proofs/* endpoints) are never
+ * (which may carry user secrets on the /longjing/proofs/* endpoints) are never
  * visible in plaintext at an external TLS-termination proxy.
  *
  * Key material resolution order in production:
@@ -77,7 +77,7 @@ async function loadFromDstack(): Promise<TlsMaterial | null> {
     }
 
     try {
-      const subject = process.env.TLS_CERT_SUBJECT || 'zk-api';
+      const subject = process.env.TLS_CERT_SUBJECT || 'longjing';
       const altNames = process.env.TLS_CERT_ALT_NAMES
         ? process.env.TLS_CERT_ALT_NAMES.split(',').map((n) => n.trim())
         : undefined;
@@ -158,7 +158,7 @@ export async function loadTlsMaterial(isProd: boolean): Promise<TlsMaterial> {
     logger.warn(
       '⚠️  ALLOW_EXTERNAL_TLS_TERMINATION=true — serving plain HTTP behind an ' +
         'external TLS terminator. Request bodies (including secretKey on ' +
-        '/zk-api/proofs/*) are visible in plaintext at the termination proxy, ' +
+        '/longjing/proofs/*) are visible in plaintext at the termination proxy, ' +
         'OUTSIDE the TEE trust boundary. Do not use with real user secrets.',
     );
     return { httpsOptions: undefined, source: 'external-proxy' };

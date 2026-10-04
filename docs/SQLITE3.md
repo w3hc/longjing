@@ -106,7 +106,7 @@ The database provides strong privacy because:
 
 ### Service: `NullifierStoreService`
 
-Located at: `src/zk-api/nullifier-store.service.ts`
+Located at: `src/longjing/nullifier-store.service.ts`
 
 #### Lifecycle Hooks
 
@@ -219,7 +219,7 @@ export DATA_DIR=:memory:
 Tests automatically use in-memory databases:
 
 ```typescript
-// Unit tests (src/zk-api/zk-api.service.spec.ts)
+// Unit tests (src/longjing/longjing.service.spec.ts)
 beforeEach(async () => {
   process.env.DATA_DIR = ':memory:';
   // ...

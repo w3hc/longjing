@@ -16,7 +16,7 @@ import { PricingModel } from '../../pricing/dto/pricing-model.dto';
 
 /**
  * Claude API Provider
- * Implements Anthropic's Claude API as a provider in the universal ZK-API proxy
+ * Implements Anthropic's Claude API as a provider in the universal Longjing proxy
  */
 @Injectable()
 export class ClaudeProvider extends BaseProvider implements ApiProvider {

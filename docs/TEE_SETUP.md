@@ -1,6 +1,6 @@
 # TEE Platform Deployment Guide
 
-This guide provides step-by-step instructions for deploying ZK API to various Trusted Execution Environment (TEE) platforms.
+This guide provides step-by-step instructions for deploying Longjing to various Trusted Execution Environment (TEE) platforms.
 
 ## Table of Contents
 
@@ -178,7 +178,7 @@ AMD Secure Encrypted Virtualization - Secure Nested Paging provides VM-level iso
 6. **Deploy the application**:
    ```bash
    # Copy application files to the VM
-   cd /app/zk-api
+   cd /app/longjing
 
    # Generate TLS certificates inside the enclave
    mkdir -p /run/secrets
@@ -211,7 +211,7 @@ Intel Trust Domain Extensions provides VM-level isolation with hardware-enforced
 
 #### Deployment Readiness
 
-✅ **Production Ready** - ZK API has full Intel TDX support with:
+✅ **Production Ready** - Longjing has full Intel TDX support with:
 - Automatic TDX platform detection
 - Attestation report generation using `tdx-attest` tool
 - Fallback to direct `/dev/tdx-guest` device access
@@ -247,7 +247,7 @@ Intel Trust Domain Extensions provides VM-level isolation with hardware-enforced
    make install
    ```
 
-   **Important**: The `tdx-attest` tool is the recommended method for generating TDX quotes. While ZK API has a fallback that reads directly from `/dev/tdx-guest`, the fallback is simplified and may not work correctly in all TDX environments.
+   **Important**: The `tdx-attest` tool is the recommended method for generating TDX quotes. While Longjing has a fallback that reads directly from `/dev/tdx-guest`, the fallback is simplified and may not work correctly in all TDX environments.
 
 3. **Verify TDX device access**:
    ```bash
@@ -295,7 +295,7 @@ Intel Trust Domain Extensions provides VM-level isolation with hardware-enforced
 
 6. **Deploy the application**:
    ```bash
-   cd /app/zk-api
+   cd /app/longjing
 
    # Generate TLS certificates inside the TD
    mkdir -p /run/secrets
@@ -334,7 +334,7 @@ cat attestation.json | jq -r '.measurement'
 
 #### Implementation Details
 
-**How ZK API generates TDX attestation:**
+**How Longjing generates TDX attestation:**
 
 1. **Primary method**: Executes `tdx-attest quote /tmp/tdx-quote.dat` command
    - This is the recommended approach for production
@@ -440,22 +440,22 @@ AWS Nitro Enclaves provide isolated compute environments on EC2 instances.
    EOF
 
    # Build Docker image
-   docker build -f Dockerfile.enclave -t zk-api-enclave:latest .
+   docker build -f Dockerfile.enclave -t longjing-enclave:latest .
 
    # Build Nitro Enclave Image File (EIF)
    nitro-cli build-enclave \
-     --docker-uri zk-api-enclave:latest \
-     --output-file zk-api.eif
+     --docker-uri longjing-enclave:latest \
+     --output-file longjing.eif
 
    # Save PCR values for attestation verification
-   nitro-cli describe-eif --eif-path zk-api.eif > pcr-values.json
+   nitro-cli describe-eif --eif-path longjing.eif > pcr-values.json
    ```
 
 4. **Run the enclave**:
    ```bash
    # Start the enclave
    nitro-cli run-enclave \
-     --eif-path zk-api.eif \
+     --eif-path longjing.eif \
      --cpu-count 2 \
      --memory 2048 \
      --enclave-cid 16 \
@@ -515,19 +515,19 @@ EOF
 
 [Phala Network](https://phala.network/) provides TEE-as-a-Service infrastructure through [Phala Cloud](https://cloud.phala.network/) and [Dstack](https://docs.phala.com/dstack/overview), supporting Intel TDX, Intel SGX, AMD SEV, and GPU TEE.
 
-**Why Phala + ZK API?** Phala simplifies TEE deployment (containerized apps, one-click deployment), while ZK API adds cryptographic unlinkability that even Phala's infrastructure cannot violate. Together they provide:
+**Why Phala + Longjing?** Phala simplifies TEE deployment (containerized apps, one-click deployment), while Longjing adds cryptographic unlinkability that even Phala's infrastructure cannot violate. Together they provide:
 - **Phala**: Hardware isolation, remote attestation, decentralized infrastructure
-- **ZK API**: Payment unlinkability that survives regulatory demands
+- **Longjing**: Payment unlinkability that survives regulatory demands
 
 #### Overview
 
 Phala Network is a trustless cloud infrastructure platform that enables deployment of Docker-based applications into TEE environments in minutes. Phala uses [Dstack](https://github.com/Dstack-TEE/dstack), an open-source TEE SDK and guest OS (Confidential Computing Consortium project under Linux Foundation), to simplify deployment of arbitrary Docker containers into TEE.
 
 **Compatibility Status:**
-- ✅ **Intel TDX** - Compatible (Phala supports via Dstack, ZK API supports)
-- ❌ **Intel SGX** - Not supported by ZK API (SGX uses different APIs than TDX)
-- ⚠️ **AMD SEV** - Phala's AMD support may differ from ZK API's SEV-SNP implementation
-- ❌ **GPU TEE (NVIDIA H100/H200)** - Not supported by ZK API
+- ✅ **Intel TDX** - Compatible (Phala supports via Dstack, Longjing supports)
+- ❌ **Intel SGX** - Not supported by Longjing (SGX uses different APIs than TDX)
+- ⚠️ **AMD SEV** - Phala's AMD support may differ from Longjing's SEV-SNP implementation
+- ❌ **GPU TEE (NVIDIA H100/H200)** - Not supported by Longjing
 
 **Key Resources:**
 - [Phala Cloud Platform](https://cloud.phala.network/)
@@ -539,7 +539,7 @@ Phala Network is a trustless cloud infrastructure platform that enables deployme
 
 #### Deployment on Phala (Intel TDX)
 
-If you want to deploy ZK API on Phala's Intel TDX infrastructure using Dstack:
+If you want to deploy Longjing on Phala's Intel TDX infrastructure using Dstack:
 
 **Prerequisites:**
 
@@ -591,7 +591,7 @@ If you want to deploy ZK API on Phala's Intel TDX infrastructure using Dstack:
    cat /sys/firmware/tdx_seam/version
    ```
 
-4. **Containerize ZK API** for Dstack deployment:
+4. **Containerize Longjing** for Dstack deployment:
    ```dockerfile
    # Dockerfile
    FROM node:20-slim
@@ -617,7 +617,7 @@ If you want to deploy ZK API on Phala's Intel TDX infrastructure using Dstack:
        -keyout /run/secrets/tls.key \
        -out /run/secrets/tls.cert \
        -days 365 -nodes \
-       -subj "/CN=zk-api.phala.network"
+       -subj "/CN=longjing.phala.network"
 
    ENV NODE_ENV=production
 
@@ -629,8 +629,8 @@ If you want to deploy ZK API on Phala's Intel TDX infrastructure using Dstack:
 5. **Deploy to Phala Cloud** using [Phala Cloud CLI](https://docs.phala.com/phala-cloud/phala-cloud-cli/start-from-cloud-cli):
    ```bash
    # Build and push Docker image
-   docker build -t zk-api:latest .
-   docker push your-registry/zk-api:latest
+   docker build -t longjing:latest .
+   docker push your-registry/longjing:latest
 
    # Deploy using Phala Cloud CLI (if using managed service)
    # or follow Dstack deployment instructions for self-hosted
@@ -640,10 +640,10 @@ If you want to deploy ZK API on Phala's Intel TDX infrastructure using Dstack:
 
 **Attestation Integration:**
 
-Phala provides comprehensive attestation capabilities. When running ZK API on Phala:
+Phala provides comprehensive attestation capabilities. When running Longjing on Phala:
 
-1. **ZK API's Native Attestation:**
-   - ZK API's `/attestation` endpoint generates standard Intel TDX quotes
+1. **Longjing's Native Attestation:**
+   - Longjing's `/attestation` endpoint generates standard Intel TDX quotes
    - Uses `tdx-attest` tool or `/dev/tdx-guest` device access
    - Returns platform-specific attestation reports
 
@@ -657,7 +657,7 @@ Phala provides comprehensive attestation capabilities. When running ZK API on Ph
    - **Smart Contract:** Use Automata's onchain DCAP verifier (Solidity)
    - **Intel DCAP:** Standard Intel verification service
    - **Phala Trust Center:** Automated verification platform
-   - **Custom Integration:** ZK API can integrate with Phala's verification APIs
+   - **Custom Integration:** Longjing can integrate with Phala's verification APIs
 
 **Architecture Considerations:**
 
@@ -669,24 +669,24 @@ When deploying on Phala/Dstack:
    - Each application gets one CVM with hardware-level isolation
 
 2. **Networking:**
-   - Verify network isolation meets ZK API's security requirements
+   - Verify network isolation meets Longjing's security requirements
    - Configure domains and ports in Dstack build configuration
    - Consider [TEE-Controlled Domain Certificates](https://docs.phala.com/dstack/design-documents/tee-controlled-domain-certificates)
 
 3. **Trust Model:**
    - [Decentralized Root-of-Trust](https://docs.phala.com/dstack/design-documents/decentralized-root-of-trust) - Phala's trust architecture
    - [Dstack Whitepaper](https://docs.phala.com/dstack/design-documents/whitepaper) - Technical design details
-   - Compatible with ZK API's trust assumptions for TDX
+   - Compatible with Longjing's trust assumptions for TDX
 
 **Limitations:**
 
-1. **Intel SGX not supported**: If you need SGX specifically, ZK API would require additional development to support SGX's different attestation APIs (`/dev/sgx_enclave`, `/dev/sgx_provision`)
+1. **Intel SGX not supported**: If you need SGX specifically, Longjing would require additional development to support SGX's different attestation APIs (`/dev/sgx_enclave`, `/dev/sgx_provision`)
 
-2. **Platform-specific features**: Phala provides additional services (key management, decentralized verification, onchain attestation) that may require custom integration beyond ZK API's default KMS integration
+2. **Platform-specific features**: Phala provides additional services (key management, decentralized verification, onchain attestation) that may require custom integration beyond Longjing's default KMS integration
 
-3. **GPU TEE**: ZK API does not support [Phala's GPU TEE infrastructure](https://docs.phala.com/phala-cloud/confidential-ai/confidential-gpu/deploy-and-verify) (NVIDIA H100/H200)
+3. **GPU TEE**: Longjing does not support [Phala's GPU TEE infrastructure](https://docs.phala.com/phala-cloud/confidential-ai/confidential-gpu/deploy-and-verify) (NVIDIA H100/H200)
 
-4. **Docker requirement**: ZK API must be containerized for Dstack deployment
+4. **Docker requirement**: Longjing must be containerized for Dstack deployment
 
 **Comparison with Other Platforms:**
 
@@ -696,7 +696,7 @@ For platform comparisons, see:
 
 **Future Support:**
 
-To add Intel SGX support for broader Phala compatibility, ZK API would need:
+To add Intel SGX support for broader Phala compatibility, Longjing would need:
 - SGX attestation service implementation using Intel SGX SDK
 - Support for EPID or DCAP attestation modes
 - Device access to `/dev/sgx_enclave` and `/dev/sgx_provision`
@@ -742,7 +742,7 @@ Configure your Key Management Service to release secrets only after attestation 
 2. **Expected measurement calculation**:
    ```bash
    # For Docker images
-   docker inspect zk-api:latest | jq -r '.[0].RootFS.Layers[]' | sha256sum
+   docker inspect longjing:latest | jq -r '.[0].RootFS.Layers[]' | sha256sum
 
    # For AWS Nitro
    cat pcr-values.json | jq -r '.Measurements.PCR0'
@@ -789,7 +789,7 @@ The attestation quote cryptographically binds the **TEE-generated ML-KEM public 
 3. **TLS Endpoint Binding**: The TLS certificate the server presents is bound to the quote, proving the TLS session terminates **inside the attested enclave** (not at an external proxy)
 
 **How it works:**
-- On first startup in a TEE environment, ZK API generates a new ML-KEM-1024 key pair inside the secure enclave
+- On first startup in a TEE environment, Longjing generates a new ML-KEM-1024 key pair inside the secure enclave
 - The private key is sealed using platform-specific mechanisms and never leaves the TEE
 - The TLS private key is derived in-enclave via the dstack KMS (or loaded from enclave-only storage)
 - Both are bound to the attestation quote via `report_data = SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)`
@@ -857,12 +857,12 @@ With `report_data` binding, this attack is cryptographically impossible.
 
 ### 3. Verify TLS Termination Inside TEE
 
-In production, ZK API terminates TLS **inside the enclave**. The TLS private key is obtained in one of two ways, and the server **fails closed** if neither is available:
+In production, Longjing terminates TLS **inside the enclave**. The TLS private key is obtained in one of two ways, and the server **fails closed** if neither is available:
 
 1. **dstack KMS (Phala/Dstack — default)**: the key is derived inside the CVM via `getTlsKey()` (`/var/run/dstack.sock` or legacy `/var/run/tappd.sock`). It exists only in enclave memory and never touches the host.
 2. **Operator-provisioned** (`TLS_KEY_PATH` / `TLS_CERT_PATH`): for non-dstack TEE platforms; the files must live in enclave-only storage.
 
-Setting `ALLOW_EXTERNAL_TLS_TERMINATION=true` restores plain HTTP behind an external TLS proxy. **Do not use this with real user secrets** — request bodies (including `secretKey` on `/zk-api/proofs/*`) become visible in plaintext at the termination proxy, outside the TEE trust boundary.
+Setting `ALLOW_EXTERNAL_TLS_TERMINATION=true` restores plain HTTP behind an external TLS proxy. **Do not use this with real user secrets** — request bodies (including `secretKey` on `/longjing/proofs/*`) become visible in plaintext at the termination proxy, outside the TEE trust boundary.
 
 **Phala/dstack gateway configuration:** the gateway must run in **TLS-passthrough mode** so it forwards raw TLS to the enclave instead of terminating it. Use the `s`-suffixed port in the gateway domain:
 
@@ -1071,7 +1071,7 @@ free -h
 
 - Check application logs (sanitized, safe to share)
 - Review platform-specific documentation
-- File issues at the ZK API repository
+- File issues at the Longjing repository
 - Consult TEE platform vendor support
 
 ### Useful Commands Reference
@@ -1096,14 +1096,14 @@ phala cvms attestation          # View TEE attestation reports
 phala cvms list                 # List your CVMs
 # See: https://docs.phala.com/phala-cloud/phala-cloud-cli/start-from-cloud-cli
 
-# ZK API Application
+# Longjing Application
 curl -k https://localhost:443/secret/attestation
 curl -k https://localhost:443/health
 NODE_ENV=production node dist/main.js
 
 # Docker (for Phala deployment)
-docker build -t zk-api:latest .
-docker push your-registry/zk-api:latest
+docker build -t longjing:latest .
+docker push your-registry/longjing:latest
 ```
 
 ## Next Steps

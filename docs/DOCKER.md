@@ -1,6 +1,6 @@
 # Docker Setup
 
-This guide covers running ZK API using Docker in both development and production modes.
+This guide covers running Longjing using Docker in both development and production modes.
 
 ## Prerequisites
 
@@ -141,13 +141,13 @@ docker compose logs -f
 ### Build Development Image
 
 ```bash
-docker build -f Dockerfile.dev -t zk-api:dev .
+docker build -f Dockerfile.dev -t longjing:dev .
 ```
 
 ### Build Production Image
 
 ```bash
-docker build -t zk-api:latest .
+docker build -t longjing:latest .
 ```
 
 ### Build for Different Platforms
@@ -155,12 +155,12 @@ docker build -t zk-api:latest .
 For Phala Cloud or other AMD64 environments (from Apple Silicon):
 
 ```bash
-docker buildx build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/zk-api:latest --push .
+docker buildx build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/longjing:latest --push .
 ```
 
 Example:
 ```bash
-docker buildx build --platform linux/amd64 -t julienberanger/zk-api:latest --push .
+docker buildx build --platform linux/amd64 -t julienberanger/longjing:latest --push .
 ```
 
 ## Configuration
@@ -193,7 +193,7 @@ Development configuration with volume mounting:
 version: '3.8'
 
 services:
-  zk-api:
+  longjing:
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -216,8 +216,8 @@ Production configuration using pre-built image:
 version: '3.8'
 
 services:
-  zk-api:
-    image: julienberanger/zk-api:latest
+  longjing:
+    image: julienberanger/longjing:latest
     pull_policy: always
     ports:
       - "3000:3000"
@@ -296,7 +296,7 @@ docker compose up
 This means the Docker image was built for the wrong architecture. Rebuild with:
 
 ```bash
-docker buildx build --platform linux/amd64 -t zk-api:latest .
+docker buildx build --platform linux/amd64 -t longjing:latest .
 ```
 
 ### TEE attestation returns "platform": "none"

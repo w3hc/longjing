@@ -1,7 +1,7 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ZkApiController } from './zk-api.controller';
-import { ZkApiService } from './zk-api.service';
+import { LongjingController } from './longjing.controller';
+import { LongjingService } from './longjing.service';
 import { NullifierStoreService } from './nullifier-store.service';
 import { ProofVerifierService } from './proof-verifier.service';
 import { EthRateOracleService } from './eth-rate-oracle.service';
@@ -22,9 +22,9 @@ import { CostEstimationService } from './cost-estimation.service';
 import { ClaudeProvider } from '../providers/claude';
 
 @Module({
-  controllers: [ZkApiController],
+  controllers: [LongjingController],
   providers: [
-    ZkApiService,
+    LongjingService,
     NullifierStoreService,
     ProofVerifierService,
     ProofGenService,
@@ -45,13 +45,13 @@ import { ClaudeProvider } from '../providers/claude';
     ClaudeProvider,
   ],
   exports: [
-    ZkApiService,
+    LongjingService,
     ProofGenService,
     BlockchainService,
     MerkleTreeService,
   ],
 })
-export class ZkApiModule implements OnModuleInit {
+export class LongjingModule implements OnModuleInit {
   constructor(
     private readonly providerRegistry: ProviderRegistryService,
     private readonly claudeProvider: ClaudeProvider,

@@ -67,7 +67,7 @@ template RefundRedemptionProof() {
     // This MUST match:
     // - refund-signer.service.ts hashRefundData()
     // - api_credit_proof.circom refund verification
-    // - ZkApiCredits.sol _hashRefundData()
+    // - LongjingCredits.sol _hashRefundData()
     component messageHash = Poseidon(4);
     messageHash.inputs[0] <== idCommitment;
     messageHash.inputs[1] <== nullifier;

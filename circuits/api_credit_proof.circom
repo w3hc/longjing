@@ -105,7 +105,7 @@ template ApiCreditProof(levels, maxRefunds) {
     // This MUST match:
     // - refund-signer.service.ts hashRefundData()
     // - refund_redemption.circom signature verification
-    // - ZkApiCredits.sol _hashRefundData()
+    // - LongjingCredits.sol _hashRefundData()
     component refundVerifiers[maxRefunds];
     component refundHashers[maxRefunds];
     component enabledChecks[maxRefunds];

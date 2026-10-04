@@ -7,8 +7,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { createHash } from 'crypto';
-import { ZkApiRequestDto } from './dto/api-request.dto';
-import { ZkApiResponseDto, UsageDto } from './dto/api-response.dto';
+import { LongjingRequestDto } from './dto/api-request.dto';
+import { LongjingResponseDto, UsageDto } from './dto/api-response.dto';
 import { NullifierStoreService } from './nullifier-store.service';
 import { ProofVerifierService } from './proof-verifier.service';
 import { EthRateOracleService } from './eth-rate-oracle.service';
@@ -34,8 +34,8 @@ type ClaudeModel = keyof typeof CLAUDE_PRICING;
  * Claude API is provided as a reference implementation
  */
 @Injectable()
-export class ZkApiService {
-  private readonly logger = new Logger(ZkApiService.name);
+export class LongjingService {
+  private readonly logger = new Logger(LongjingService.name);
   private readonly anthropic: Anthropic;
   private poseidon: any;
   private initPromise: Promise<void> | null = null;
@@ -92,10 +92,10 @@ export class ZkApiService {
   }
 
   /**
-   * Handle a ZK API request
+   * Handle a Longjing request
    * Implements the full protocol: nullifier check, proof verification, API call, refund
    */
-  async handleRequest(req: ZkApiRequestDto): Promise<ZkApiResponseDto> {
+  async handleRequest(req: LongjingRequestDto): Promise<LongjingResponseDto> {
     const model = (req.model || 'claude-sonnet-4.6') as ClaudeModel;
 
     // 1. Check per-nullifier rate limit (before expensive operations)

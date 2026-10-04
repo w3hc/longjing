@@ -274,7 +274,7 @@ npx snarkjs zkey contribute api_credit_proof_0000.zkey api_credit_proof_final.zk
 npx snarkjs zkey export verificationkey api_credit_proof_final.zkey verification_key.json
 ```
 
-Then update `src/zk-api/snarkjs-proof.service.ts` to point to production artifacts.
+Then update `src/longjing/snarkjs-proof.service.ts` to point to production artifacts.
 
 See [docs/ZK.md](./ZK.md#circuit-artifacts) for detailed explanation.
 
@@ -295,7 +295,7 @@ To migrate from test circuit to production:
 
 3. Run multi-party ceremony (see ceremony coordination section above)
 
-4. Update [SnarkjsProofService](../src/zk-api/snarkjs-proof.service.ts) paths
+4. Update [SnarkjsProofService](../src/longjing/snarkjs-proof.service.ts) paths
 
 5. Update public signals extraction to match full circuit outputs
 

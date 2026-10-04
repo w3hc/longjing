@@ -1,6 +1,6 @@
 # Quick Start: Adding a New Provider
 
-This guide walks you through adding a new API provider to the ZK-API system. We'll use the Claude provider implementation as a reference example.
+This guide walks you through adding a new API provider to the Longjing system. We'll use the Claude provider implementation as a reference example.
 
 ## Table of Contents
 
@@ -471,9 +471,9 @@ export * from './dto/your-provider-response.dto';
 
 ### Step 6: Register Provider in Module
 
-Update the ZkApiModule to initialize and register your provider.
+Update the LongjingModule to initialize and register your provider.
 
-**File:** `src/zk-api/zk-api.module.ts`
+**File:** `src/longjing/longjing.module.ts`
 
 ```typescript
 import { Module, OnModuleInit } from '@nestjs/common';
@@ -482,19 +482,19 @@ import { YourProvider } from '../providers/your-provider'; // Add this import
 // ... other imports
 
 @Module({
-  controllers: [ZkApiController],
+  controllers: [LongjingController],
   providers: [
     // ... existing providers
     YourProvider, // Add your provider
   ],
   exports: [
-    ZkApiService,
+    LongjingService,
     ProofGenService,
     BlockchainService,
     MerkleTreeService,
   ],
 })
-export class ZkApiModule implements OnModuleInit {
+export class LongjingModule implements OnModuleInit {
   constructor(
     private readonly providerRegistry: ProviderRegistryService,
     private readonly yourProvider: YourProvider, // Add this
@@ -933,7 +933,7 @@ This is the reference implementation that demonstrates all best practices.
 ## Support
 
 For questions or issues:
-- GitHub Issues: https://github.com/your-org/zk-api/issues
+- GitHub Issues: https://github.com/your-org/longjing/issues
 - Check existing providers in `src/providers/` for examples
 - Review [PROVIDERS.md](./PROVIDERS.md) for architecture details
 

@@ -2,7 +2,7 @@
 pragma solidity 0.8.35;
 
 import {Test} from 'forge-std/Test.sol';
-import {ZkApiCredits} from '../src/ZkApiCredits.sol';
+import {LongjingCredits} from '../src/LongjingCredits.sol';
 import {PoseidonHasher} from '../src/PoseidonHasher.sol';
 import {WithdrawalVerifier} from '../src/WithdrawalVerifier.sol';
 import {RefundRedemptionVerifier} from '../src/RefundRedemptionVerifier.sol';
@@ -13,8 +13,8 @@ import {MockSlashingVerifier} from './MockSlashingVerifier.sol';
 import {MockRefundVerifier} from './MockRefundVerifier.sol';
 import {MockPolicyVerifier} from './MockPolicyVerifier.sol';
 
-contract ZkApiCreditsTest is Test {
-    ZkApiCredits public zkApi;
+contract LongjingCreditsTest is Test {
+    LongjingCredits public longjing;
     MockWithdrawalVerifier public mockWithdrawalVerifier;
     MockRefundVerifier public mockRefundVerifier;
     MockSlashingVerifier public mockSlashingVerifier;
@@ -74,7 +74,7 @@ contract ZkApiCreditsTest is Test {
         // Deploy contract with dummy server public key
         bytes32 serverPubKeyX = bytes32(uint256(1));
         bytes32 serverPubKeyY = bytes32(uint256(2));
-        zkApi = new ZkApiCredits(
+        longjing = new LongjingCredits(
             server,
             MIN_RLN_STAKE,
             MIN_POLICY_STAKE,
@@ -89,10 +89,10 @@ contract ZkApiCreditsTest is Test {
         mockPolicyVerifier = new MockPolicyVerifier();
 
         // Replace production verifiers with mocks for testing
-        zkApi.setWithdrawalVerifier(WithdrawalVerifier(address(mockWithdrawalVerifier)));
-        zkApi.setRefundVerifier(RefundRedemptionVerifier(address(mockRefundVerifier)));
-        zkApi.setSlashingVerifier(DoubleSpendSlashingVerifier(address(mockSlashingVerifier)));
-        zkApi.setPolicyVerifier(PolicyViolationVerifier(address(mockPolicyVerifier)));
+        longjing.setWithdrawalVerifier(WithdrawalVerifier(address(mockWithdrawalVerifier)));
+        longjing.setRefundVerifier(RefundRedemptionVerifier(address(mockRefundVerifier)));
+        longjing.setSlashingVerifier(DoubleSpendSlashingVerifier(address(mockSlashingVerifier)));
+        longjing.setPolicyVerifier(PolicyViolationVerifier(address(mockPolicyVerifier)));
 
         // Generate test identity commitments using Poseidon (matching circuit)
         secretKey1 = keccak256(abi.encodePacked('secret1'));
@@ -122,11 +122,11 @@ contract ZkApiCreditsTest is Test {
             block.timestamp
         );
 
-        zkApi.deposit{value: depositAmount}(idCommitment1);
+        longjing.deposit{value: depositAmount}(idCommitment1);
         vm.stopPrank();
 
         // Verify deposit was recorded
-        ZkApiCredits.Deposit memory dep = zkApi.getDeposit(idCommitment1);
+        LongjingCredits.Deposit memory dep = longjing.getDeposit(idCommitment1);
         assertEq(dep.idCommitment, idCommitment1);
         assertEq(dep.rlnStake, depositAmount / 2);
         assertEq(dep.policyStake, depositAmount / 2);
@@ -134,14 +134,14 @@ contract ZkApiCreditsTest is Test {
         assertEq(dep.timestamp, block.timestamp);
 
         // Verify anonymity set size increased
-        assertEq(zkApi.getAnonymitySetSize(), 1);
+        assertEq(longjing.getAnonymitySetSize(), 1);
     }
 
     function test_Deposit_InsufficientAmount() public {
         vm.startPrank(user1);
 
-        vm.expectRevert(ZkApiCredits.InsufficientDeposit.selector);
-        zkApi.deposit{value: 0.001 ether}(idCommitment1);
+        vm.expectRevert(LongjingCredits.InsufficientDeposit.selector);
+        longjing.deposit{value: 0.001 ether}(idCommitment1);
 
         vm.stopPrank();
     }
@@ -150,11 +150,11 @@ contract ZkApiCreditsTest is Test {
         vm.startPrank(user1);
 
         // First deposit succeeds
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         // Second deposit with same commitment fails
-        vm.expectRevert(ZkApiCredits.DepositAlreadyExists.selector);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        vm.expectRevert(LongjingCredits.DepositAlreadyExists.selector);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         vm.stopPrank();
     }
@@ -162,16 +162,16 @@ contract ZkApiCreditsTest is Test {
     function test_Deposit_MultipleUsers() public {
         // User 1 deposits
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         // User 2 deposits
         vm.prank(user2);
-        zkApi.deposit{value: 0.02 ether}(idCommitment2);
+        longjing.deposit{value: 0.02 ether}(idCommitment2);
 
         // Verify both deposits
-        assertEq(zkApi.getAnonymitySetSize(), 2);
-        assertTrue(zkApi.getDeposit(idCommitment1).active);
-        assertTrue(zkApi.getDeposit(idCommitment2).active);
+        assertEq(longjing.getAnonymitySetSize(), 2);
+        assertTrue(longjing.getDeposit(idCommitment1).active);
+        assertTrue(longjing.getDeposit(idCommitment2).active);
     }
 
     // ============ Withdrawal Tests ============
@@ -181,7 +181,7 @@ contract ZkApiCreditsTest is Test {
 
         // User deposits
         vm.prank(user1);
-        zkApi.deposit{value: depositAmount}(idCommitment1);
+        longjing.deposit{value: depositAmount}(idCommitment1);
 
         // User withdraws
         address payable recipient = payable(makeAddr('recipient'));
@@ -192,24 +192,24 @@ contract ZkApiCreditsTest is Test {
         // Public signals: [signalX (input), merkleRootExpected (input), nullifier (output), signalY (output), idCommitment (output), merkleRoot (output)]
         uint256[7] memory publicSignals = [
             0, // signalX (RLN signal x input)
-            uint256(zkApi.merkleRoot()), // merkleRootExpected input
+            uint256(longjing.merkleRoot()), // merkleRootExpected input
             uint256(uint160(address(recipient))), // recipient input (front-running protection)
             0, // nullifier output
             0, // signalY output
             uint256(idCommitment1), // idCommitment output
-            uint256(zkApi.merkleRoot()) // merkleRoot output
+            uint256(longjing.merkleRoot()) // merkleRoot output
         ];
 
         vm.prank(user1);
         vm.expectEmit(true, true, false, true);
         emit WithdrawalMade(idCommitment1, depositAmount, recipient);
 
-        zkApi.withdraw(idCommitment1, recipient, proof, publicSignals);
+        longjing.withdraw(idCommitment1, recipient, proof, publicSignals);
 
         // Verify withdrawal
         assertEq(recipient.balance, balanceBefore + depositAmount);
 
-        ZkApiCredits.Deposit memory dep = zkApi.getDeposit(idCommitment1);
+        LongjingCredits.Deposit memory dep = longjing.getDeposit(idCommitment1);
         assertFalse(dep.active);
         assertEq(dep.rlnStake, 0);
         assertEq(dep.policyStake, 0);
@@ -218,23 +218,23 @@ contract ZkApiCreditsTest is Test {
     function test_Withdraw_InvalidProof() public {
         // User deposits
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         // Try to withdraw with invalid proof
         address payable recipient = payable(makeAddr('recipient'));
         uint256[8] memory proof = _generateInvalidProof();
         uint256[7] memory publicSignals = [
             0, // signalX
-            uint256(zkApi.merkleRoot()), // merkleRootExpected
+            uint256(longjing.merkleRoot()), // merkleRootExpected
             uint256(uint160(address(recipient))), // recipient (front-running protection)
             0, 0, // nullifier, signalY
             uint256(idCommitment1), // idCommitment
-            uint256(zkApi.merkleRoot()) // merkleRoot
+            uint256(longjing.merkleRoot()) // merkleRoot
         ];
 
         vm.prank(user1);
-        vm.expectRevert(ZkApiCredits.InvalidProof.selector);
-        zkApi.withdraw(idCommitment1, recipient, proof, publicSignals);
+        vm.expectRevert(LongjingCredits.InvalidProof.selector);
+        longjing.withdraw(idCommitment1, recipient, proof, publicSignals);
     }
 
     function test_Withdraw_DepositNotFound() public {
@@ -242,15 +242,15 @@ contract ZkApiCreditsTest is Test {
         uint256[8] memory proof = _generateMockProof();
         uint256[7] memory publicSignals = [
             0, // signalX
-            uint256(zkApi.merkleRoot()), // merkleRootExpected
+            uint256(longjing.merkleRoot()), // merkleRootExpected
             uint256(uint160(address(recipient))), // recipient (front-running protection)
             0, 0, // nullifier, signalY
             uint256(idCommitment1), // idCommitment
-            uint256(zkApi.merkleRoot()) // merkleRoot
+            uint256(longjing.merkleRoot()) // merkleRoot
         ];
 
-        vm.expectRevert(ZkApiCredits.DepositNotFound.selector);
-        zkApi.withdraw(idCommitment1, recipient, proof, publicSignals);
+        vm.expectRevert(LongjingCredits.DepositNotFound.selector);
+        longjing.withdraw(idCommitment1, recipient, proof, publicSignals);
     }
 
     // Helper functions for mock proofs
@@ -272,7 +272,7 @@ contract ZkApiCreditsTest is Test {
 
         // User deposits
         vm.prank(user1);
-        zkApi.deposit{value: depositAmount}(idCommitment1);
+        longjing.deposit{value: depositAmount}(idCommitment1);
 
         // Simulate double-spend detection with ZK proof
         bytes32 nullifier = keccak256(abi.encodePacked('nullifier1'));
@@ -309,7 +309,7 @@ contract ZkApiCreditsTest is Test {
             depositAmount / 2
         );
 
-        zkApi.slashDoubleSpend(
+        longjing.slashDoubleSpend(
             secretKey1,
             nullifier,
             idCommitment1,
@@ -318,11 +318,11 @@ contract ZkApiCreditsTest is Test {
         );
 
         // Verify slashing
-        assertTrue(zkApi.revealedSecretKeys(secretKey1));
-        assertTrue(zkApi.slashedNullifiers(nullifier));
+        assertTrue(longjing.revealedSecretKeys(secretKey1));
+        assertTrue(longjing.slashedNullifiers(nullifier));
         assertEq(slasher.balance, slasherBalanceBefore + depositAmount / 2);
 
-        ZkApiCredits.Deposit memory dep = zkApi.getDeposit(idCommitment1);
+        LongjingCredits.Deposit memory dep = longjing.getDeposit(idCommitment1);
         assertFalse(dep.active);
         assertEq(dep.rlnStake, 0);
     }
@@ -330,7 +330,7 @@ contract ZkApiCreditsTest is Test {
     function test_SlashDoubleSpend_AlreadySlashed() public {
         // User deposits
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         // First slash succeeds
         bytes32 nullifier = keccak256(abi.encodePacked('nullifier1'));
@@ -356,7 +356,7 @@ contract ZkApiCreditsTest is Test {
         ];
 
         vm.prank(slasher);
-        zkApi.slashDoubleSpend(
+        longjing.slashDoubleSpend(
             secretKey1,
             nullifier,
             idCommitment1,
@@ -366,8 +366,8 @@ contract ZkApiCreditsTest is Test {
 
         // Second slash fails
         vm.prank(slasher);
-        vm.expectRevert(ZkApiCredits.AlreadySlashed.selector);
-        zkApi.slashDoubleSpend(
+        vm.expectRevert(LongjingCredits.AlreadySlashed.selector);
+        longjing.slashDoubleSpend(
             secretKey1,
             nullifier,
             idCommitment1,
@@ -381,61 +381,61 @@ contract ZkApiCreditsTest is Test {
     function test_SetServerAddress() public {
         address newServer = makeAddr('newServer');
 
-        zkApi.setServerAddress(newServer);
+        longjing.setServerAddress(newServer);
 
-        assertEq(zkApi.serverAddress(), newServer);
+        assertEq(longjing.serverAddress(), newServer);
     }
 
     function test_SetMinStakes() public {
         uint256 newRlnStake = 0.01 ether;
         uint256 newPolicyStake = 0.02 ether;
 
-        zkApi.setMinStakes(newRlnStake, newPolicyStake);
+        longjing.setMinStakes(newRlnStake, newPolicyStake);
 
-        assertEq(zkApi.minRlnStake(), newRlnStake);
-        assertEq(zkApi.minPolicyStake(), newPolicyStake);
+        assertEq(longjing.minRlnStake(), newRlnStake);
+        assertEq(longjing.minPolicyStake(), newPolicyStake);
     }
 
     function test_PauseUnpause() public {
         // Pause
-        zkApi.pause();
+        longjing.pause();
 
         // Deposits should fail when paused
         vm.prank(user1);
         vm.expectRevert();
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         // Unpause
-        zkApi.unpause();
+        longjing.unpause();
 
         // Deposits should work again
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
-        assertTrue(zkApi.getDeposit(idCommitment1).active);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+        assertTrue(longjing.getDeposit(idCommitment1).active);
     }
 
     // ============ View Function Tests ============
 
     function test_GetAllIdentityCommitments() public {
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         vm.prank(user2);
-        zkApi.deposit{value: 0.01 ether}(idCommitment2);
+        longjing.deposit{value: 0.01 ether}(idCommitment2);
 
-        bytes32[] memory commitments = zkApi.getAllIdentityCommitments();
+        bytes32[] memory commitments = longjing.getAllIdentityCommitments();
         assertEq(commitments.length, 2);
         assertEq(commitments[0], idCommitment1);
         assertEq(commitments[1], idCommitment2);
     }
 
     function test_MerkleRootUpdates() public {
-        bytes32 rootBefore = zkApi.merkleRoot();
+        bytes32 rootBefore = longjing.merkleRoot();
 
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
-        bytes32 rootAfter = zkApi.merkleRoot();
+        bytes32 rootAfter = longjing.merkleRoot();
         assertTrue(rootBefore != rootAfter);
     }
 
@@ -463,28 +463,28 @@ contract ZkApiCreditsTest is Test {
 
         // Deposit all 5
         vm.prank(depositor1);
-        zkApi.deposit{value: 0.01 ether}(id1);
+        longjing.deposit{value: 0.01 ether}(id1);
 
         vm.prank(depositor2);
-        zkApi.deposit{value: 0.01 ether}(id2);
+        longjing.deposit{value: 0.01 ether}(id2);
 
         vm.prank(depositor3);
-        zkApi.deposit{value: 0.01 ether}(id3);
+        longjing.deposit{value: 0.01 ether}(id3);
 
         vm.prank(depositor4);
-        zkApi.deposit{value: 0.01 ether}(id4);
+        longjing.deposit{value: 0.01 ether}(id4);
 
         vm.prank(depositor5);
-        zkApi.deposit{value: 0.01 ether}(id5);
+        longjing.deposit{value: 0.01 ether}(id5);
 
-        bytes32 storedRoot = zkApi.merkleRoot();
+        bytes32 storedRoot = longjing.merkleRoot();
 
         // Test proof generation and verification for each leaf
         for (uint256 i = 0; i < 5; i++) {
-            (bytes32[20] memory pathElements, uint8[20] memory pathIndices) = zkApi.getMerkleProof(i);
+            (bytes32[20] memory pathElements, uint8[20] memory pathIndices) = longjing.getMerkleProof(i);
 
             // Get the leaf
-            bytes32 leaf = zkApi.identityCommitments(i);
+            bytes32 leaf = longjing.identityCommitments(i);
 
             // Manually verify the proof reconstructs the root
             bytes32 computedHash = leaf;
@@ -510,10 +510,10 @@ contract ZkApiCreditsTest is Test {
     function test_PolicyViolationSlashing_Success() public {
         // First, user makes a deposit
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         // Verify initial policy stake
-        ZkApiCredits.Deposit memory depBefore = zkApi.getDeposit(idCommitment1);
+        LongjingCredits.Deposit memory depBefore = longjing.getDeposit(idCommitment1);
         assertEq(depBefore.policyStake, 0.005 ether);
 
         // Create mock proof and public signals
@@ -537,20 +537,20 @@ contract ZkApiCreditsTest is Test {
         vm.expectEmit(true, true, false, true);
         emit PolicyViolationSlashed(nullifier, idCommitment1, 0.005 ether, evidenceHash);
 
-        zkApi.slashPolicyViolation(nullifier, idCommitment1, proof, publicSignals);
+        longjing.slashPolicyViolation(nullifier, idCommitment1, proof, publicSignals);
         vm.stopPrank();
 
         // Verify policy stake was burned
-        ZkApiCredits.Deposit memory depAfter = zkApi.getDeposit(idCommitment1);
+        LongjingCredits.Deposit memory depAfter = longjing.getDeposit(idCommitment1);
         assertEq(depAfter.policyStake, 0);
 
         // Verify nullifier is marked as slashed
-        assertTrue(zkApi.slashedNullifiers(nullifier));
+        assertTrue(longjing.slashedNullifiers(nullifier));
     }
 
     function test_PolicyViolationSlashing_OnlyServer() public {
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         uint256[8] memory proof;
         proof[0] = 1;
@@ -566,14 +566,14 @@ contract ZkApiCreditsTest is Test {
 
         // Non-server cannot slash
         vm.startPrank(user2);
-        vm.expectRevert(ZkApiCredits.Unauthorized.selector);
-        zkApi.slashPolicyViolation(nullifier, idCommitment1, proof, publicSignals);
+        vm.expectRevert(LongjingCredits.Unauthorized.selector);
+        longjing.slashPolicyViolation(nullifier, idCommitment1, proof, publicSignals);
         vm.stopPrank();
     }
 
     function test_PolicyViolationSlashing_RequiresProof() public {
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         uint256[8] memory proof; // All zeros - will fail mock verifier
 
@@ -588,8 +588,8 @@ contract ZkApiCreditsTest is Test {
 
         // Should revert due to invalid proof
         vm.startPrank(server);
-        vm.expectRevert(ZkApiCredits.InvalidProof.selector);
-        zkApi.slashPolicyViolation(nullifier, idCommitment1, proof, publicSignals);
+        vm.expectRevert(LongjingCredits.InvalidProof.selector);
+        longjing.slashPolicyViolation(nullifier, idCommitment1, proof, publicSignals);
         vm.stopPrank();
     }
 
@@ -600,10 +600,10 @@ contract ZkApiCreditsTest is Test {
 
         // User deposits
         vm.prank(user1);
-        zkApi.deposit{value: depositAmount}(idCommitment1);
+        longjing.deposit{value: depositAmount}(idCommitment1);
 
-        // Give the zkApi contract some eth to pay refunds
-        vm.deal(address(zkApi), 1 ether);
+        // Give the longjing contract some eth to pay refunds
+        vm.deal(address(longjing), 1 ether);
 
         // Create refund parameters
         bytes32 refundNullifier = keccak256('refund_nullifier');
@@ -615,7 +615,7 @@ contract ZkApiCreditsTest is Test {
         proof[0] = 1;
 
         // Public signals: [signalX (input), refundValueClaimed (input), serverPublicKeyX (input), serverPublicKeyY (input), recipient (input), nullifier (output), signalY (output), idCommitment (output)]
-        (bytes32 serverPubKeyX, bytes32 serverPubKeyY) = zkApi.serverPublicKey();
+        (bytes32 serverPubKeyX, bytes32 serverPubKeyY) = longjing.serverPublicKey();
         uint256[8] memory publicSignals;
         publicSignals[0] = 0; // signalX
         publicSignals[1] = refundAmount; // refundValueClaimed
@@ -630,7 +630,7 @@ contract ZkApiCreditsTest is Test {
 
         // Redeem refund
         vm.prank(user1);
-        zkApi.redeemRefund(
+        longjing.redeemRefund(
             idCommitment1,
             refundNullifier,
             refundAmount,
@@ -641,20 +641,20 @@ contract ZkApiCreditsTest is Test {
 
         // Verify refund was sent
         assertEq(recipient.balance, balanceBefore + refundAmount);
-        assertTrue(zkApi.redeemedRefunds(refundNullifier));
+        assertTrue(longjing.redeemedRefunds(refundNullifier));
 
         // Verify deposit still active
-        ZkApiCredits.Deposit memory dep = zkApi.getDeposit(idCommitment1);
+        LongjingCredits.Deposit memory dep = longjing.getDeposit(idCommitment1);
         assertTrue(dep.active);
     }
 
     function test_RedeemRefund_AlreadyRedeemed() public {
         // User deposits
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
-        // Give the zkApi contract some eth
-        vm.deal(address(zkApi), 1 ether);
+        // Give the longjing contract some eth
+        vm.deal(address(longjing), 1 ether);
 
         // Create refund parameters
         bytes32 refundNullifier = keccak256('refund_nullifier');
@@ -665,7 +665,7 @@ contract ZkApiCreditsTest is Test {
         uint256[8] memory proof;
         proof[0] = 1;
 
-        (bytes32 serverPubKeyX, bytes32 serverPubKeyY) = zkApi.serverPublicKey();
+        (bytes32 serverPubKeyX, bytes32 serverPubKeyY) = longjing.serverPublicKey();
         uint256[8] memory publicSignals;
         publicSignals[0] = 0; // signalX
         publicSignals[1] = refundAmount; // refundValueClaimed
@@ -678,7 +678,7 @@ contract ZkApiCreditsTest is Test {
 
         // First redemption succeeds
         vm.prank(user1);
-        zkApi.redeemRefund(
+        longjing.redeemRefund(
             idCommitment1,
             refundNullifier,
             refundAmount,
@@ -689,8 +689,8 @@ contract ZkApiCreditsTest is Test {
 
         // Second redemption with same nullifier fails
         vm.prank(user1);
-        vm.expectRevert(ZkApiCredits.RefundAlreadyRedeemed.selector);
-        zkApi.redeemRefund(
+        vm.expectRevert(LongjingCredits.RefundAlreadyRedeemed.selector);
+        longjing.redeemRefund(
             idCommitment1,
             refundNullifier,
             refundAmount,
@@ -703,7 +703,7 @@ contract ZkApiCreditsTest is Test {
     function test_RedeemRefund_InvalidProof() public {
         // User deposits
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         bytes32 refundNullifier = keccak256('refund_nullifier');
         uint256 refundAmount = 0.002 ether;
@@ -712,7 +712,7 @@ contract ZkApiCreditsTest is Test {
         // Invalid proof (all zeros)
         uint256[8] memory proof;
 
-        (bytes32 serverPubKeyX, bytes32 serverPubKeyY) = zkApi.serverPublicKey();
+        (bytes32 serverPubKeyX, bytes32 serverPubKeyY) = longjing.serverPublicKey();
         uint256[8] memory publicSignals;
         publicSignals[0] = 0; // signalX
         publicSignals[1] = refundAmount; // refundValueClaimed
@@ -724,8 +724,8 @@ contract ZkApiCreditsTest is Test {
         publicSignals[7] = uint256(idCommitment1); // idCommitment output
 
         vm.prank(user1);
-        vm.expectRevert(ZkApiCredits.InvalidProof.selector);
-        zkApi.redeemRefund(
+        vm.expectRevert(LongjingCredits.InvalidProof.selector);
+        longjing.redeemRefund(
             idCommitment1,
             refundNullifier,
             refundAmount,
@@ -743,7 +743,7 @@ contract ZkApiCreditsTest is Test {
         uint256[8] memory proof;
         proof[0] = 1;
 
-        (bytes32 serverPubKeyX, bytes32 serverPubKeyY) = zkApi.serverPublicKey();
+        (bytes32 serverPubKeyX, bytes32 serverPubKeyY) = longjing.serverPublicKey();
         uint256[8] memory publicSignals;
         publicSignals[0] = 0; // signalX
         publicSignals[1] = refundAmount; // refundValueClaimed
@@ -754,8 +754,8 @@ contract ZkApiCreditsTest is Test {
         publicSignals[6] = 0; // signalY output
         publicSignals[7] = uint256(idCommitment1); // idCommitment output
 
-        vm.expectRevert(ZkApiCredits.DepositNotFound.selector);
-        zkApi.redeemRefund(
+        vm.expectRevert(LongjingCredits.DepositNotFound.selector);
+        longjing.redeemRefund(
             idCommitment1,
             refundNullifier,
             refundAmount,
@@ -770,37 +770,37 @@ contract ZkApiCreditsTest is Test {
     // ============ Pause Edge Cases ============
 
     function test_Deposit_WhenPaused() public {
-        zkApi.pause();
+        longjing.pause();
 
         vm.prank(user1);
         vm.expectRevert();
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
     }
 
     function test_Withdraw_WhenNotPaused() public {
         // Deposit while not paused
         vm.prank(user1);
-        zkApi.deposit{value: 0.01 ether}(idCommitment1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         // Note: withdraw doesn't have whenNotPaused modifier
         // so it should work even if contract is paused
-        zkApi.pause();
+        longjing.pause();
 
         address payable recipient = payable(makeAddr('recipient'));
         uint256[8] memory proof = _generateMockProof();
         uint256[7] memory publicSignals = [
             0,
-            uint256(zkApi.merkleRoot()),
+            uint256(longjing.merkleRoot()),
             uint256(uint160(address(recipient))), // recipient (front-running protection)
             0,
             0,
             uint256(idCommitment1),
-            uint256(zkApi.merkleRoot())
+            uint256(longjing.merkleRoot())
         ];
 
         // This should succeed even when paused
         vm.prank(user1);
-        zkApi.withdraw(idCommitment1, recipient, proof, publicSignals);
+        longjing.withdraw(idCommitment1, recipient, proof, publicSignals);
 
         assertEq(recipient.balance, 0.01 ether);
     }

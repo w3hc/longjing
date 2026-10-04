@@ -208,7 +208,7 @@ contract WithdrawalVerifier {
          }
      }
 
-    /// @notice Wrapper function for ZkApiCredits contract compatibility
+    /// @notice Wrapper function for LongjingCredits contract compatibility
     function verifyWithdrawalProof(
         uint256[8] calldata _proof,
         uint256[7] calldata _publicSignals

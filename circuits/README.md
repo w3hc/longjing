@@ -169,7 +169,7 @@ snarkjs groth16 verify verification_key.json public.json proof.json
 
 ## Integration
 
-The generated verifier contract (`ZkApiVerifier.sol`) should be deployed onchain and called by the `ZkApiCredits` contract to verify proofs.
+The generated verifier contract (`LongjingVerifier.sol`) should be deployed onchain and called by the `LongjingCredits` contract to verify proofs.
 
 ## References
 

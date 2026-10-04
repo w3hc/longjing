@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers testing for the ZK API system, including:
+This guide covers testing for the Longjing system, including:
 
 - **Unit Tests**: Jest-based tests for individual components
 - **E2E Tests**: Full flow integration tests with real blockchain and proofs

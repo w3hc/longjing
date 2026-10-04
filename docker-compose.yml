@@ -1,8 +1,8 @@
 version: '3.8'
 
 services:
-  zk-api:
-    image: julienberanger/zk-api:latest
+  longjing:
+    image: julienberanger/longjing:latest
     pull_policy: always
     ports:
       - "3000:3000"

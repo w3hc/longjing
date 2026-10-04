@@ -3,8 +3,8 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
-import { ProofGenService } from '../src/zk-api/proof-gen.service';
-import { RefundSignerService } from '../src/zk-api/refund-signer.service';
+import { ProofGenService } from '../src/longjing/proof-gen.service';
+import { RefundSignerService } from '../src/longjing/refund-signer.service';
 
 // Type definitions for API responses
 interface ProofMetadata {
@@ -71,7 +71,7 @@ describe('Proof Generation Integration (e2e)', () => {
   describe('Withdrawal Proof Generation (e2e)', () => {
     it('should generate withdrawal proof via API endpoint', async () => {
       const response = await request(app.getHttpServer())
-        .post('/zk-api/proofs/withdrawal')
+        .post('/longjing/proofs/withdrawal')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -112,7 +112,7 @@ describe('Proof Generation Integration (e2e)', () => {
     it('should validate withdrawal proof inputs', async () => {
       // Missing secretKey
       await request(app.getHttpServer())
-        .post('/zk-api/proofs/withdrawal')
+        .post('/longjing/proofs/withdrawal')
         .send({
           ticketIndex: `0x${ticketIndex.toString(16)}`,
           signalX: `0x${signalX.toString(16)}`,
@@ -121,7 +121,7 @@ describe('Proof Generation Integration (e2e)', () => {
 
       // Missing ticketIndex
       await request(app.getHttpServer())
-        .post('/zk-api/proofs/withdrawal')
+        .post('/longjing/proofs/withdrawal')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           signalX: `0x${signalX.toString(16)}`,
@@ -130,7 +130,7 @@ describe('Proof Generation Integration (e2e)', () => {
 
       // Missing signalX
       await request(app.getHttpServer())
-        .post('/zk-api/proofs/withdrawal')
+        .post('/longjing/proofs/withdrawal')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -140,7 +140,7 @@ describe('Proof Generation Integration (e2e)', () => {
 
     it('should generate consistent proofs for same inputs', async () => {
       const response1 = await request(app.getHttpServer())
-        .post('/zk-api/proofs/withdrawal')
+        .post('/longjing/proofs/withdrawal')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -149,7 +149,7 @@ describe('Proof Generation Integration (e2e)', () => {
         .expect(200);
 
       const response2 = await request(app.getHttpServer())
-        .post('/zk-api/proofs/withdrawal')
+        .post('/longjing/proofs/withdrawal')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -199,7 +199,7 @@ describe('Proof Generation Integration (e2e)', () => {
     it('should generate refund proof via API endpoint', async () => {
       const recipient = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'; // Test recipient
       const response = await request(app.getHttpServer())
-        .post('/zk-api/proofs/refund')
+        .post('/longjing/proofs/refund')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -234,7 +234,7 @@ describe('Proof Generation Integration (e2e)', () => {
       suppressErrorLogs(async () => {
         // Invalid secretKey format - BigInt conversion will fail, resulting in 500
         const response = await request(app.getHttpServer())
-          .post('/zk-api/proofs/refund')
+          .post('/longjing/proofs/refund')
           .send({
             secretKey: 'invalid',
             ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -312,7 +312,7 @@ describe('Proof Generation Integration (e2e)', () => {
       );
 
       const response = await request(app.getHttpServer())
-        .post('/zk-api/proofs/slashing')
+        .post('/longjing/proofs/slashing')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -357,7 +357,7 @@ describe('Proof Generation Integration (e2e)', () => {
         );
 
         await request(app.getHttpServer())
-          .post('/zk-api/proofs/slashing')
+          .post('/longjing/proofs/slashing')
           .send({
             secretKey: `0x${secretKey.toString(16)}`,
             ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -435,7 +435,7 @@ describe('Proof Generation Integration (e2e)', () => {
   describe('Proof Format Compatibility (e2e)', () => {
     it('should format proofs compatible with Solidity contract', async () => {
       const response = await request(app.getHttpServer())
-        .post('/zk-api/proofs/withdrawal')
+        .post('/longjing/proofs/withdrawal')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -472,7 +472,7 @@ describe('Proof Generation Integration (e2e)', () => {
 
     it('should maintain Groth16 proof structure', async () => {
       const response = await request(app.getHttpServer())
-        .post('/zk-api/proofs/withdrawal')
+        .post('/longjing/proofs/withdrawal')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -501,7 +501,7 @@ describe('Proof Generation Integration (e2e)', () => {
       const start = Date.now();
 
       await request(app.getHttpServer())
-        .post('/zk-api/proofs/withdrawal')
+        .post('/longjing/proofs/withdrawal')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
@@ -518,7 +518,7 @@ describe('Proof Generation Integration (e2e)', () => {
     it('should handle concurrent proof generation requests', async () => {
       const requests = Array.from({ length: 3 }, (_, i) =>
         request(app.getHttpServer())
-          .post('/zk-api/proofs/withdrawal')
+          .post('/longjing/proofs/withdrawal')
           .send({
             secretKey: `0x${BigInt(secretKey + BigInt(i)).toString(16)}`,
             ticketIndex: `0x${ticketIndex.toString(16)}`,

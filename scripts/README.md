@@ -52,7 +52,7 @@ Manual testing utilities and verification tools.
 
 Client-side TEE attestation verification for Intel TDX quotes from Phala Network deployments.
 
-**Purpose:** Verify that a ZK API server is running in a genuine Intel TDX TEE environment.
+**Purpose:** Verify that a Longjing server is running in a genuine Intel TDX TEE environment.
 
 **Usage:**
 ```bash

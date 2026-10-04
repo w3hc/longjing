@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ZkApiService } from './zk-api.service';
+import { LongjingService } from './longjing.service';
 import { NullifierStoreService } from './nullifier-store.service';
 import { ProofVerifierService } from './proof-verifier.service';
 import { ProofGenService } from './proof-gen.service';
@@ -11,12 +11,12 @@ import { RefundSignerService } from './refund-signer.service';
 import { BlockchainService } from './blockchain.service';
 import { SlashingService } from './slashing.service';
 import { SlashingProofService } from './slashing-proof.service';
-import { ZkApiRequestDto } from './dto/api-request.dto';
+import { LongjingRequestDto } from './dto/api-request.dto';
 import { SecretsService } from '../config/secrets.service';
 import { TeePlatformService } from '../attestation/tee-platform.service';
 
-describe('ZkApiService', () => {
-  let service: ZkApiService;
+describe('LongjingService', () => {
+  let service: LongjingService;
   let nullifierStore: NullifierStoreService;
   let proofVerifier: ProofVerifierService;
   let ethRateOracle: EthRateOracleService;
@@ -51,7 +51,7 @@ describe('ZkApiService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        ZkApiService,
+        LongjingService,
         NullifierStoreService,
         ProofVerifierService,
         ProofGenService,
@@ -108,7 +108,7 @@ describe('ZkApiService', () => {
       })
       .compile();
 
-    service = module.get<ZkApiService>(ZkApiService);
+    service = module.get<LongjingService>(LongjingService);
     nullifierStore = module.get<NullifierStoreService>(NullifierStoreService);
     proofVerifier = module.get<ProofVerifierService>(ProofVerifierService);
     ethRateOracle = module.get<EthRateOracleService>(EthRateOracleService);
@@ -130,7 +130,7 @@ describe('ZkApiService', () => {
   });
 
   describe('handleRequest', () => {
-    const validRequest: ZkApiRequestDto = {
+    const validRequest: LongjingRequestDto = {
       payload: 'What does 苟全性命於亂世，不求聞達於諸侯。mean?',
       nullifier: '0x1234567890abcdef',
       signal: {
@@ -194,7 +194,7 @@ describe('ZkApiService', () => {
       await service.handleRequest(validRequest);
 
       // Second request with same nullifier but different signal
-      const doubleSpendRequest: ZkApiRequestDto = {
+      const doubleSpendRequest: LongjingRequestDto = {
         ...validRequest,
         signal: {
           x: '0xeeff0011',
@@ -229,7 +229,7 @@ describe('ZkApiService', () => {
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
       jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
 
-      const request1: ZkApiRequestDto = {
+      const request1: LongjingRequestDto = {
         ...validRequest,
         signal: {
           x: '0x' + signalX1.toString(16),
@@ -237,7 +237,7 @@ describe('ZkApiService', () => {
         },
       };
 
-      const request2: ZkApiRequestDto = {
+      const request2: LongjingRequestDto = {
         ...validRequest,
         signal: {
           x: '0x' + signalX2.toString(16),

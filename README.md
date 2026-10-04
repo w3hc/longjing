@@ -1,10 +1,29 @@
-# ZK API Usage Credits
+# Longjing
 
-Anonymous API access using zero-knowledge proofs. Deposit ETH once, then make API requests that can't be linked back to you — not by an eavesdropper, and not by the operator running the service.
+Anonymous, prepaid API access behind a TEE gateway. Deposit ETH once, then make API requests that can't be linked back to you — not by an eavesdropper, and not by the operator running the service.
 
 Most paid API access today silently ties every request to a payment identity. There's no technical reason it has to. This project is an attempt to make unlinkable, prepaid API access a normal thing that exists — something anyone can run, fork, and build on.
 
-Implementation of [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) by Davide Crapis & Vitalik Buterin.
+Longjing implements the original Rate-Limit Nullifier (RLN) protocol from [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) by Davide Crapis & Vitalik Buterin, and wraps it in what the protocol alone doesn't give you:
+
+- **A TEE gateway** — the server runs in an Intel TDX enclave, terminates TLS inside it, and binds its TLS and ML-KEM keys to the attestation quote, so clients can check what they're talking to before sending anything.
+- **A generic provider layer** — any upstream API (LLMs or otherwise) plugs in behind the same proof, pricing and refund flow.
+- **Metadata hardening** — header sanitizing, timing protection, response padding and cost quantization, so the traffic around a valid proof doesn't give the user away.
+
+## Longjing and ethereum/zkapi
+
+[ethereum/zkapi](https://github.com/ethereum/zkapi) is a separate implementation of the same proposal, built by Open Anonymity with the Ethereum Foundation. The two projects made different choices:
+
+| | Longjing | ethereum/zkapi |
+|---|---|---|
+| **Double-spend protection** | Original RLN: reusing a ticket index leaks the secret key, and anyone can slash the RLN stake | State-anchor chain: each request consumes a one-time, server-signed state; replaying an old state is caught during a withdrawal challenge window |
+| **Accounting** | Signed refund tickets accumulate client-side and are proven in-circuit (`(i + 1) · C_max ≤ D + R`) | Private balance carried in the signed state; net settlement in gwei at withdrawal or expiry |
+| **Stakes** | Separate RLN stake (claimable) and policy stake (burnable) | No policy stake; policy penalties are a bounded balance deduction |
+| **Withdrawal** | Direct ZK withdrawal, no server involvement | Instant mutual close with the server, or an escape hatch with a 24h challenge window |
+| **Request path** | Client → TEE gateway → provider; the gateway holds the provider credentials | Browser → provider directly; the server authorizes leases and settles |
+| **Stack** | Circom + snarkjs (Groth16, EdDSA), NestJS, Foundry | Rust + WASM (Groth16, Schnorr), browser SDK, Foundry |
+
+If you want the simplified protocol with a browser SDK, use zkapi. If you want the original RLN design behind an attested gateway that can front any provider, that's what Longjing is for. See [OVERVIEW.md](docs/OVERVIEW.md#longjing-and-ethereumzkapi) for details.
 
 > **Status:** working implementation, actively developed. Read [What this protects — and what it doesn't](#what-this-protects--and-what-it-doesnt) before relying on it for anything where your safety is at stake.
 
@@ -40,7 +59,7 @@ Privacy tooling is only as honest as its threat model. Here's the real boundary,
 - Your balance and spending history from the operator and from observers
 
 **It does not, on its own, protect:**
-- **The content of your request from the upstream API provider.** If you query an LLM, that provider still sees the plaintext prompt. ZK-API hides *who* asked, not *what was asked* from the endpoint that answers it.
+- **The content of your request from the upstream API provider.** If you query an LLM, that provider still sees the plaintext prompt. Longjing hides *who* asked, not *what was asked* from the endpoint that answers it.
 - **Network-layer identity.** Your IP can deanonymize you regardless of the proof. Use Tor or an equivalent if that's part of your threat model — this is not optional for adversaries who can watch the network.
 - **Timing and metadata.** Request timing, frequency, and size can leak information. Batching and padding help; they don't make the problem disappear.
 - **A compromised or malicious TEE.** TEE guarantees rest on hardware and vendor trust assumptions. A nation-state adversary is a different threat model than a curious operator, and this project does not claim to defeat the former.

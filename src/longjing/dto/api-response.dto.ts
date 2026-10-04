@@ -96,7 +96,7 @@ export class RefundTicketDto {
   };
 }
 
-export class ZkApiResponseDto {
+export class LongjingResponseDto {
   @ApiProperty({ description: 'External API response content' })
   response: string;
 

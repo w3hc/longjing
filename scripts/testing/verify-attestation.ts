@@ -3,13 +3,13 @@
 /**
  * Cross-Platform TEE Attestation Verification Utility
  *
- * This script verifies TEE attestation quotes from ZK API instances.
+ * This script verifies TEE attestation quotes from Longjing instances.
  * Supports: Phala Network, Intel TDX, AMD SEV-SNP, AWS Nitro
  *
  * Usage:
  *   pnpm test:attestation
  *   pnpm test:attestation <attestation-url>
- *   pnpm test:attestation https://your-zk-api.phala.network/attestation
+ *   pnpm test:attestation https://your-longjing.phala.network/attestation
  *
  * Or with local JSON file:
  *   pnpm test:attestation attestation.json
@@ -416,7 +416,7 @@ function verifyTimestamp(timestamp: string, maxAgeSeconds: number = 300): boolea
  * Main verification function
  */
 async function verifyAttestation(source: string) {
-  log('\n🔍 ZK API TEE Attestation Verifier', 'cyan');
+  log('\n🔍 Longjing TEE Attestation Verifier', 'cyan');
   log('═══════════════════════════════════\n', 'cyan');
 
   try {
@@ -723,7 +723,7 @@ async function verifyTdxQuote(attestation: AttestationQuote) {
     info('   - Phala Attestation: https://docs.phala.com/phala-cloud/attestation/overview');
     info('   - Intel TDX Spec: https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html');
     info('   - DCAP on GitHub: https://github.com/intel/SGXDataCenterAttestationPrimitives');
-    info('   - ZK API TEE Docs: docs/TEE_SETUP.md');
+    info('   - Longjing TEE Docs: docs/TEE_SETUP.md');
     info('');
 
 }

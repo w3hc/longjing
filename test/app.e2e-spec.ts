@@ -77,11 +77,11 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
     // Deploy contract
     console.log('\n=== Deploying Contract ===');
     const deployOutput = await execAsync(
-      `cd contracts && forge script script/DeployZkApiCredits.s.sol:DeployZkApiCredits --rpc-url ${RPC_URL} --broadcast --private-key ${PRIVATE_KEY} 2>&1`,
+      `cd contracts && forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url ${RPC_URL} --broadcast --private-key ${PRIVATE_KEY} 2>&1`,
     );
 
     const match = deployOutput.stdout.match(
-      /ZkApiCredits deployed at: (0x[a-fA-F0-9]{40})/,
+      /LongjingCredits deployed at: (0x[a-fA-F0-9]{40})/,
     );
     if (!match) {
       throw new Error(
@@ -181,7 +181,7 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
       };
 
       const response = await request(app.getHttpServer())
-        .post('/zk-api/request')
+        .post('/longjing/request')
         .send(apiRequest)
         .expect(200);
 

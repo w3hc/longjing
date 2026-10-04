@@ -156,7 +156,7 @@ async function main() {
   console.log(JSON.stringify(publicInputs, null, 2));
   console.log();
 
-  console.log('📋 To use this proof with the API, send a POST request to /zk-api/request');
+  console.log('📋 To use this proof with the API, send a POST request to /longjing/request');
 
   // Explicitly exit to prevent hanging (snarkjs/circomlibjs may keep event loop alive)
   process.exit(0);

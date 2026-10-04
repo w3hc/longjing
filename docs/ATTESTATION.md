@@ -1,6 +1,6 @@
 # TEE Attestation Verification Guide
 
-This guide explains how to verify ZK API's TEE attestation quotes to ensure you're communicating with authentic TEE hardware before sending sensitive data.
+This guide explains how to verify Longjing's TEE attestation quotes to ensure you're communicating with authentic TEE hardware before sending sensitive data.
 
 ## Table of Contents
 
@@ -13,7 +13,7 @@ This guide explains how to verify ZK API's TEE attestation quotes to ensure you'
 
 ## Overview
 
-ZK API implements **application attestation** using the `report_data` field to bind the ML-KEM encryption key to the TEE quote. This prevents man-in-the-middle attacks where an attacker could substitute their own encryption key.
+Longjing implements **application attestation** using the `report_data` field to bind the ML-KEM encryption key to the TEE quote. This prevents man-in-the-middle attacks where an attacker could substitute their own encryption key.
 
 ### What Gets Verified
 
@@ -52,7 +52,7 @@ The easiest way to verify attestation:
 pnpm test:attestation
 
 # Verify remote server
-pnpm test:attestation https://your-zk-api.phala.network/attestation
+pnpm test:attestation https://your-longjing.phala.network/attestation
 
 # Verify from file
 pnpm test:attestation attestation.json
@@ -118,7 +118,7 @@ The `report_data` field is a **user-controlled input** to the TEE attestation qu
 | **AMD SEV-SNP** | `REPORT_DATA` | 64 bytes | SNP report structure offset 80 |
 | **AWS Nitro** | `user_data` | Up to 512 bytes | NSM attestation document |
 
-### How ZK API Uses It
+### How Longjing Uses It
 
 ```typescript
 // Server-side (src/attestation/attestation.service.ts)
@@ -417,7 +417,7 @@ async function verifyPlatformQuote(attestation: AttestationQuote): Promise<void>
 }
 
 // Usage
-verifyServerAttestation('https://your-zk-api.phala.network')
+verifyServerAttestation('https://your-longjing.phala.network')
   .then(() => {
     // Safe to send sensitive data
     console.log('Server verified, proceeding with encrypted request...');
@@ -486,7 +486,7 @@ def verify_phala_quote(quote):
 
 # Usage
 try:
-    verify_server_attestation('https://your-zk-api.phala.network')
+    verify_server_attestation('https://your-longjing.phala.network')
     print("Safe to send sensitive data")
 except Exception as e:
     print(f"❌ Verification failed: {e}")
@@ -591,7 +591,7 @@ if (Date.now() - new Date(attestation.timestamp) < 300000) {
 - [Intel TDX Attestation Overview](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/attestation.html)
 - [AMD SEV-SNP Attestation Documentation](https://www.amd.com/system/files/TechDocs/56860.pdf)
 - [AWS Nitro Enclaves Attestation](https://docs.aws.amazon.com/enclaves/latest/user/verify-root.html)
-- [ZK API TEE Setup Guide](TEE_SETUP.md)
+- [Longjing TEE Setup Guide](TEE_SETUP.md)
 
 ## Support
 
@@ -599,4 +599,4 @@ For attestation verification issues:
 1. Run `pnpm test:attestation` to diagnose
 2. Check server logs for attestation generation errors
 3. Review platform-specific troubleshooting in [TEE_SETUP.md](TEE_SETUP.md)
-4. File issues at https://github.com/your-org/zk-api/issues
+4. File issues at https://github.com/your-org/longjing/issues
