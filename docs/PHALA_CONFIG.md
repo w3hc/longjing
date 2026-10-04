@@ -1,6 +1,6 @@
 # Phala Cloud Deployment Guide
 
-This guide covers deploying the ZK API API to Phala Cloud's Trusted Execution Environment (TEE).
+This guide covers deploying the Longjing API to Phala Cloud's Trusted Execution Environment (TEE).
 
 ## Overview
 
@@ -34,12 +34,12 @@ Phala Cloud provides confidential computing infrastructure using Intel TDX (Trus
 Phala Cloud runs on **AMD64/x86_64** architecture. If building on Apple Silicon (ARM64), you must cross-compile:
 
 ```bash
-docker buildx build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/zk-api:latest --push .
+docker buildx build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/longjing:latest --push .
 ```
 
 For this project:
 ```bash
-docker buildx build --platform linux/amd64 -t julienberanger/zk-api:latest --push .
+docker buildx build --platform linux/amd64 -t julienberanger/longjing:latest --push .
 ```
 
 ### Image Configuration
@@ -63,8 +63,8 @@ Environment variables must use the `${VAR}` syntax for Phala's encrypted secrets
 version: '3.8'
 
 services:
-  zk-api:
-    image: julienberanger/zk-api:latest
+  longjing:
+    image: julienberanger/longjing:latest
     pull_policy: always  # Force pull latest image on every deployment
     ports:
       - "3000:3000"
@@ -120,7 +120,7 @@ Copy the output keys to your `.env.prod` file.
 1. **Build and push Docker image**:
    ```bash
    pnpm build
-   docker buildx build --platform linux/amd64 -t julienberanger/zk-api:latest --push .
+   docker buildx build --platform linux/amd64 -t julienberanger/longjing:latest --push .
    ```
 
 2. **Deploy to Phala Cloud**:
@@ -147,7 +147,7 @@ To update an existing deployment:
 1. **Rebuild and push new image** (use `--no-cache` to force fresh build):
    ```bash
    pnpm build
-   docker buildx build --platform linux/amd64 -t julienberanger/zk-api:latest --no-cache --push .
+   docker buildx build --platform linux/amd64 -t julienberanger/longjing:latest --no-cache --push .
    ```
 
 2. **Update deployment** (required to pull new image):
@@ -201,8 +201,8 @@ phala ssh --interactive
 
 # Inside SSH session:
 docker ps -a
-docker logs dstack-zk-api-1
-docker inspect dstack-zk-api-1
+docker logs dstack-longjing-1
+docker inspect dstack-longjing-1
 ```
 
 ### SSH Key Management
@@ -331,7 +331,7 @@ This usually means the container isn't starting. SSH into the CVM and check:
 
 ```bash
 phala ssh --interactive
-docker logs dstack-zk-api-1
+docker logs dstack-longjing-1
 ```
 
 Common issues:
@@ -344,7 +344,7 @@ Common issues:
 Your Docker image was built for the wrong architecture. Rebuild with:
 
 ```bash
-docker buildx build --platform linux/amd64 -t julienberanger/zk-api:latest --push .
+docker buildx build --platform linux/amd64 -t julienberanger/longjing:latest --push .
 ```
 
 ### Container keeps restarting
@@ -352,12 +352,12 @@ docker buildx build --platform linux/amd64 -t julienberanger/zk-api:latest --pus
 Check logs via SSH:
 ```bash
 phala ssh --interactive
-docker logs dstack-zk-api-1
+docker logs dstack-longjing-1
 ```
 
 Verify secrets are properly injected:
 ```bash
-docker exec dstack-zk-api-1 env | grep ADMIN_MLKEM
+docker exec dstack-longjing-1 env | grep ADMIN_MLKEM
 ```
 
 ### Attestation returns `"platform": "none"`

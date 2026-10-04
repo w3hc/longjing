@@ -4,7 +4,7 @@
 
 ## Overview
 
-ZK API includes **ML-KEM-1024** (Module-Lattice-Based Key-Encapsulation Mechanism) for post-quantum cryptographic security. ML-KEM is standardized by NIST as [FIPS 203](https://csrc.nist.gov/pubs/fips/203/final) and provides security against both classical and quantum computer attacks.
+Longjing includes **ML-KEM-1024** (Module-Lattice-Based Key-Encapsulation Mechanism) for post-quantum cryptographic security. ML-KEM is standardized by NIST as [FIPS 203](https://csrc.nist.gov/pubs/fips/203/final) and provides security against both classical and quantum computer attacks.
 
 ## Table of Contents
 
@@ -64,7 +64,7 @@ Client                          Server (TEE)
 
 ## Multi-Recipient Encryption
 
-ZK API implements **multi-recipient ML-KEM encryption**, allowing multiple parties to independently decrypt the same data.
+Longjing implements **multi-recipient ML-KEM encryption**, allowing multiple parties to independently decrypt the same data.
 
 ### How It Works
 
@@ -279,7 +279,7 @@ const plaintext = await mlkemDecrypt(
 
 ### Key Generation (Server Startup)
 
-**ZK API now uses TEE-generated keys** for enhanced security. The ML-KEM key pair is generated inside the TEE, and the private key never leaves the secure enclave.
+**Longjing now uses TEE-generated keys** for enhanced security. The ML-KEM key pair is generated inside the TEE, and the private key never leaves the secure enclave.
 
 ```typescript
 // src/attestation/tee-key-manager.service.ts
@@ -401,10 +401,10 @@ This section explains how to test the ML-KEM multi-recipient encryption implemen
 
 #### Step 1: Generate Server ML-KEM Keypair
 
-Generate quantum-resistant keys for the zk-api server:
+Generate quantum-resistant keys for the longjing server:
 
 ```bash
-cd /Users/ju/zk-api
+cd /path/to/longjing
 pnpm ts-node scripts/generate-admin-keypair.ts
 ```
 
@@ -431,7 +431,7 @@ ADMIN_MLKEM_PUBLIC_KEY=<paste_public_key_here>
 ADMIN_MLKEM_PRIVATE_KEY=<paste_private_key_here>
 ```
 
-#### Step 3: Start ZK API Server
+#### Step 3: Start Longjing Server
 
 ```bash
 pnpm start:dev
@@ -558,11 +558,11 @@ This script tests:
 Create a test client using w3pk (in a separate directory or in w3pk repository):
 
 ```typescript
-// test-zk-api-mlkem.ts
+// test-longjing-mlkem.ts
 import { createWeb3Passkey, mlkemEncrypt } from 'w3pk';
 import { Wallet } from 'ethers';
 
-async function testZkApiMLKEM() {
+async function testLongjingMLKEM() {
   // 1. Get server's attestation (includes ML-KEM public key)
   const attestation = await fetch('http://localhost:3000/secret/attestation')
     .then(r => r.json());
@@ -639,7 +639,7 @@ async function testZkApiMLKEM() {
   console.log(`\n🎉 All tests passed! Multi-recipient ML-KEM working correctly.`);
 }
 
-testZkApiMLKEM().catch(err => {
+testLongjingMLKEM().catch(err => {
   console.error('❌ Test failed:', err);
   process.exit(1);
 });
@@ -648,7 +648,7 @@ testZkApiMLKEM().catch(err => {
 Run the test:
 
 ```bash
-pnpm ts-node test-zk-api-mlkem.ts
+pnpm ts-node test-longjing-mlkem.ts
 ```
 
 #### Step 7: Test API with curl (Manual Testing)
@@ -726,7 +726,7 @@ Follow the complete deployment process:
 pnpm build
 
 # 2. Build and push Docker image for AMD64
-docker buildx build --platform linux/amd64 -t YOUR_USERNAME/zk-api:latest --no-cache --push .
+docker buildx build --platform linux/amd64 -t YOUR_USERNAME/longjing:latest --no-cache --push .
 
 # 3. Deploy to Phala Cloud
 phala deploy --interactive
@@ -752,7 +752,7 @@ Get your endpoint URL (format: `https://<APP_ID>-3000.<CLUSTER>.phala.network`)
 Run the complete store+access test against your Phala deployment:
 
 ```bash
-ZK_API_URL=https://your-app-id-3000.dstack-pha-prod9.phala.network pnpm ts-node scripts/test-store-and-access.ts
+LONGJING_URL=https://your-app-id-3000.dstack-pha-prod9.phala.network pnpm ts-node scripts/test-store-and-access.ts
 ```
 
 Expected output:
@@ -1157,7 +1157,7 @@ A: Generate new ML-KEM keypair, update attestation, re-encrypt all secrets. Old 
 
 ### Libraries
 
-- [mlkem](https://www.npmjs.com/package/mlkem) - WASM implementation used in zk-api
+- [mlkem](https://www.npmjs.com/package/mlkem) - WASM implementation used in longjing
 - [w3pk](https://github.com/w3hc/w3pk) - Client-side integration
 - [@phala/dstack-sdk](https://www.npmjs.com/package/@phala/dstack-sdk) - Phala Network TEE
 
@@ -1170,9 +1170,9 @@ A: Generate new ML-KEM keypair, update attestation, re-encrypt all secrets. Old 
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/w3hc/zk-api/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/w3hc/zk-api/discussions)
-- **Matrix**: [#zk-api:matrix.org](https://matrix.to/#/#zk-api:matrix.org)
+- **Issues**: [GitHub Issues](https://github.com/w3hc/longjing/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/w3hc/longjing/discussions)
+- **Matrix**: [#longjing:matrix.org](https://matrix.to/#/#longjing:matrix.org)
 
 ---
 

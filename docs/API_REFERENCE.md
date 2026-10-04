@@ -1,6 +1,6 @@
-# ZK API Reference
+# Longjing API Reference
 
-Complete API reference for the ZK API privacy-preserving system for accessing external API services.
+Complete API reference for the Longjing privacy-preserving system for accessing external API services.
 
 **Reference Implementation**: This documentation uses Claude API as an example. The same patterns apply to any external API service integration.
 
@@ -15,14 +15,14 @@ https://your-domain.com  (production)
 
 ## Table of Contents
 
-- [ZK API Reference](#zk-api-reference)
+- [Longjing API Reference](#longjing-api-reference)
   - [Base URL](#base-url)
   - [Table of Contents](#table-of-contents)
   - [App Endpoints](#app-endpoints)
-    - [POST /zk-api/request](#post-zk-apirequest)
-    - [POST /zk-api/estimate-cost](#post-zk-apiestimate-cost)
-    - [POST /zk-api/redeem-refund](#post-zk-apiredeem-refund)
-    - [GET /zk-api/server-pubkey](#get-zk-apiserver-pubkey)
+    - [POST /longjing/request](#post-longjingrequest)
+    - [POST /longjing/estimate-cost](#post-longjingestimate-cost)
+    - [POST /longjing/redeem-refund](#post-longjingredeem-refund)
+    - [GET /longjing/server-pubkey](#get-longjingserver-pubkey)
   - [Available for Future Implementation](#available-for-future-implementation)
   - [Health Check Endpoints](#health-check-endpoints)
     - [GET /health](#get-health)
@@ -50,7 +50,7 @@ https://your-domain.com  (production)
 
 ## App Endpoints
 
-### POST /zk-api/request
+### POST /longjing/request
 
 Submit anonymous external API request with Zero-Knowledge proof of solvency (example: Claude API).
 
@@ -111,7 +111,7 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
 
 ```bash
 # Request
-curl -k -X POST https://localhost:3000/zk-api/request \
+curl -k -X POST https://localhost:3000/longjing/request \
   -H "Content-Type: application/json" \
   -d '{
     "payload": "What does 苟全性命於亂世，不求聞達於諸侯。mean?",
@@ -174,7 +174,7 @@ curl -k -X POST https://localhost:3000/zk-api/request \
 
 ---
 
-### POST /zk-api/redeem-refund
+### POST /longjing/redeem-refund
 
 Redeem a signed refund ticket onchain.
 
@@ -217,7 +217,7 @@ Redeem a signed refund ticket onchain.
 
 ```bash
 # Request
-curl -k -X POST https://localhost:3000/zk-api/redeem-refund \
+curl -k -X POST https://localhost:3000/longjing/redeem-refund \
   -H "Content-Type: application/json" \
   -d '{
     "idCommitment": "0xabcd...",
@@ -249,7 +249,7 @@ curl -k -X POST https://localhost:3000/zk-api/redeem-refund \
 
 ---
 
-### POST /zk-api/estimate-cost
+### POST /longjing/estimate-cost
 
 Estimate the cost of an API request before making a deposit. Returns estimated cost in USD and wei, plus a recommended deposit amount with safety margin.
 
@@ -300,7 +300,7 @@ Estimate the cost of an API request before making a deposit. Returns estimated c
 
 ```bash
 # Estimate cost for Claude API request
-curl -k -X POST https://localhost:3000/zk-api/estimate-cost \
+curl -k -X POST https://localhost:3000/longjing/estimate-cost \
   -H "Content-Type: application/json" \
   -d '{
     "provider": "claude",
@@ -322,7 +322,7 @@ curl -k -X POST https://localhost:3000/zk-api/estimate-cost \
 
 ---
 
-### GET /zk-api/server-pubkey
+### GET /longjing/server-pubkey
 
 Get the server's EdDSA public key for verifying refund ticket signatures.
 
@@ -341,7 +341,7 @@ Get the server's EdDSA public key for verifying refund ticket signatures.
 
 ```bash
 # Request
-curl -k https://localhost:3000/zk-api/server-pubkey
+curl -k https://localhost:3000/longjing/server-pubkey
 
 # Response
 {
@@ -566,7 +566,7 @@ All endpoints return consistent error responses:
        │
        │ 2. Deposit to smart contract
        ▼
-   zkApiCredits.deposit(idCommitment, { value: 0.01 ETH })
+   longjingCredits.deposit(idCommitment, { value: 0.01 ETH })
        │
        │ 3. For each request:
        ▼
@@ -584,7 +584,7 @@ All endpoints return consistent error responses:
        │
        │ 5. Submit request
        ▼
-   POST /zk-api/request
+   POST /longjing/request
    {
      payload: "What does 苟全性命於亂世，不求聞達於諸侯。mean?",
      proof: {...},
@@ -619,7 +619,7 @@ All endpoints return consistent error responses:
        │
        │ 8. After multiple requests, redeem refunds
        ▼
-   POST /zk-api/redeem-refund
+   POST /longjing/redeem-refund
    { nullifier, value, signature, recipient }
        │
        ▼
@@ -662,13 +662,13 @@ import { ethers } from 'ethers';
 const provider = new ethers.JsonRpcProvider('https://mainnet.infura.io/v3/YOUR_KEY');
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
-const zkApiCredits = new ethers.Contract(
-  ZK_API_CREDITS_ADDRESS,
-  ZK_API_CREDITS_ABI,
+const longjingCredits = new ethers.Contract(
+  LONGJING_CREDITS_ADDRESS,
+  LONGJING_CREDITS_ABI,
   wallet
 );
 
-const tx = await zkApiCredits.deposit(idCommitment, {
+const tx = await longjingCredits.deposit(idCommitment, {
   value: ethers.parseEther('0.01')
 });
 
@@ -744,7 +744,7 @@ const { proof, nullifier, signal } = await generateProof(
   'What does 苟全性命於亂世，不求聞達於諸侯。mean?'
 );
 
-const response = await fetch('https://api.zkapi.example/zk-api/request', {
+const response = await fetch('https://api.longjing.example/longjing/request', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -771,7 +771,7 @@ ticketIndex++;
 ```typescript
 // Redeem accumulated refunds
 for (const ticket of refundTickets) {
-  const response = await fetch('https://api.zkapi.example/zk-api/redeem-refund', {
+  const response = await fetch('https://api.longjing.example/longjing/redeem-refund', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -850,7 +850,7 @@ Assuming ETH = $2,000:
 - **Documentation:** [docs/](.)
 - **ZK System Guide:** [ZK.md](ZK.md)
 - **Testing Guide:** [TESTING_GUIDE.md](TESTING_GUIDE.md)
-- **Smart Contract:** [contracts/src/ZkApiCredits.sol](../contracts/src/ZkApiCredits.sol)
+- **Smart Contract:** [contracts/src/LongjingCredits.sol](../contracts/src/LongjingCredits.sol)
 - **Issues:** GitHub repository
 
 ---

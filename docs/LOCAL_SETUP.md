@@ -1,6 +1,6 @@
 # Local Setup (Without Docker)
 
-This guide covers running ZK API locally on your machine without Docker, ideal for development and debugging.
+This guide covers running Longjing locally on your machine without Docker, ideal for development and debugging.
 
 ## Prerequisites
 
@@ -115,9 +115,9 @@ Key endpoints:
 
 - `GET /` - Swagger UI documentation
 - `GET /health` - Health check
-- `POST /zk-api/request` - Submit anonymous Claude API request
-- `POST /zk-api/redeem-refund` - Redeem refund ticket
-- `GET /zk-api/server-pubkey` - Get server's EdDSA public key
+- `POST /longjing/request` - Submit anonymous Claude API request
+- `POST /longjing/redeem-refund` - Redeem refund ticket
+- `GET /longjing/server-pubkey` - Get server's EdDSA public key
 
 See [API_REFERENCE.md](./API_REFERENCE.md) for complete endpoint documentation.
 
@@ -190,12 +190,12 @@ This runs:
 ## Project Structure
 
 ```
-zk-api/
+longjing/
 ├── src/
 │   ├── main.ts              # Application entry point
 │   ├── app.module.ts        # Root module
 │   ├── config/              # Configuration services
-│   ├── zk-api/              # ZK proof endpoints
+│   ├── longjing/              # ZK proof endpoints
 │   ├── auth/                # Authentication (SIWE)
 │   ├── filters/             # Exception filters
 │   └── logging/             # Custom loggers

@@ -1,10 +1,10 @@
 # Sign-In with Ethereum (SIWE)
 
-This document explains how to use the SIWE authentication system in ZK API.
+This document explains how to use the SIWE authentication system in Longjing.
 
 ## Overview
 
-ZK API implements a minimalistic SIWE authentication system using **NestJS Guards** that allows users to authenticate using their Ethereum wallet. The system uses:
+Longjing implements a minimalistic SIWE authentication system using **NestJS Guards** that allows users to authenticate using their Ethereum wallet. The system uses:
 
 - **Guard-based authentication** - NestJS Guards validate SIWE signatures on protected endpoints
 - **Header-based credentials** - SIWE message and signature sent via HTTP headers
@@ -80,7 +80,7 @@ Issued At: 2026-03-17T16:49:38.495Z' \
 
 ```
 ┌─────────┐                    ┌─────────────┐                    ┌─────────┐
-│ Client  │                    │   ZK API    │                    │ Wallet  │
+│ Client  │                    │   Longjing    │                    │ Wallet  │
 └────┬────┘                    └──────┬──────┘                    └────┬────┘
      │                                │                                │
      │  1. POST /auth/nonce           │                                │
@@ -183,7 +183,7 @@ await w3pk.register({ username: 'user@example.com' });
 // or
 await w3pk.login();
 
-// Step 1: Get nonce from ZK API
+// Step 1: Get nonce from Longjing
 const nonceResponse = await fetch('https://localhost:3000/auth/nonce', {
   method: 'POST',
 });
@@ -208,7 +208,7 @@ const { signature } = await w3pk.signMessage(siweMessage, {
   signingMethod: 'SIWE'  // EIP-4361 compliant
 });
 
-// Step 5: Access protected endpoint with ZK API
+// Step 5: Access protected endpoint with Longjing
 const response = await fetch('https://localhost:3000/hello', {
   method: 'POST',
   headers: {

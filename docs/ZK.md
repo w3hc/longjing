@@ -1,10 +1,10 @@
 # Zero-Knowledge Proofs and Circuits
 
-This document provides a comprehensive overview of the Zero-Knowledge (ZK) proof system and circuit implementation for the ZK API Credits project.
+This document provides a comprehensive overview of the Zero-Knowledge (ZK) proof system and circuit implementation for the Longjing project.
 
 ## Overview
 
-The ZK API system enables privacy-preserving access to any external API service using Zero-Knowledge proofs, Rate-Limit Nullifiers (RLN), and Ethereum smart contracts. Users deposit ETH once and make thousands of anonymous API calls without revealing their identity or linking requests together.
+The Longjing system enables privacy-preserving access to any external API service using Zero-Knowledge proofs, Rate-Limit Nullifiers (RLN), and Ethereum smart contracts. Users deposit ETH once and make thousands of anonymous API calls without revealing their identity or linking requests together.
 
 **Reference Implementation**: Claude API integration is provided as a complete example.
 
@@ -50,7 +50,7 @@ This commitment is stored in the Merkle tree anonymity set onchain, allowing use
                                                   │ HTTPS
                                                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                     ZK API Server (NestJS)                  │
+│                     Longjing Server (NestJS)                  │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │ 1. Nullifier Check (Double-spend detection)         │   │
 │  │    - NullifierStoreService                          │   │
@@ -78,7 +78,7 @@ This commitment is stored in the Merkle tree anonymity set onchain, allowing use
 ┌─────────────────────────────────────────────────────────────┐
 │              Ethereum Mainnet (Smart Contract)              │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │ ZkApiCredits.sol                                    │   │
+│  │ LongjingCredits.sol                                    │   │
 │  │  - deposit()         : Add funds + ID commitment    │   │
 │  │  - withdraw()        : Reclaim unused funds         │   │
 │  │  - redeemRefund()    : Claim refund tickets         │   │
@@ -101,8 +101,8 @@ The ZK proof system now supports **cryptographically valid Groth16 SNARK verific
 **Current (Real):** Full cryptographic verification with trusted setup
 
 **Key Changes:**
-- New [SnarkjsProofService](../src/zk-api/snarkjs-proof.service.ts) for real proof generation/verification
-- Updated [ProofVerifierService](../src/zk-api/proof-verifier.service.ts) to use cryptographic verification
+- New [SnarkjsProofService](../src/longjing/snarkjs-proof.service.ts) for real proof generation/verification
+- Updated [ProofVerifierService](../src/longjing/proof-verifier.service.ts) to use cryptographic verification
 - Automated trusted setup script: `npm run setup:circuit`
 - Falls back to mock mode if trusted setup not complete (dev-friendly)
 
@@ -182,7 +182,7 @@ A stripped-down version for testing that omits EdDSA signature verification, foc
 
 ## Smart Contract
 
-**File**: [contracts/src/ZkApiCredits.sol](../contracts/src/ZkApiCredits.sol)
+**File**: [contracts/src/LongjingCredits.sol](../contracts/src/LongjingCredits.sol)
 
 Manages deposits, withdrawals, slashing, and the Merkle root.
 
@@ -230,19 +230,19 @@ function isNullifierUsed(bytes32 nullifier) external view returns (bool)
 
 | Service | Purpose | Location |
 |---------|---------|----------|
-| **ZkApiService** | Main orchestrator for chat requests | [src/zk-api/zk-api.service.ts](../src/zk-api/zk-api.service.ts) |
-| **ProofGenService** | RLN primitives (Poseidon, nullifier/signal generation) | [src/zk-api/proof-gen.service.ts](../src/zk-api/proof-gen.service.ts) |
-| **ProofVerifierService** | ZK proof verification | [src/zk-api/proof-verifier.service.ts](../src/zk-api/proof-verifier.service.ts) |
-| **ZKProofService** | Full snarkjs integration for Groth16 proofs | [src/zk-api/zkproof.service.ts](../src/zk-api/zkproof.service.ts) |
-| **BlockchainService** | Ethers.js contract interface, Merkle tree sync | [src/zk-api/blockchain.service.ts](../src/zk-api/blockchain.service.ts) |
-| **MerkleTreeService** | Off-chain Merkle tree with Poseidon hash | [src/zk-api/merkle-tree.service.ts](../src/zk-api/merkle-tree.service.ts) |
-| **NullifierStoreService** | Tracks used nullifiers (SQLite persistent storage) | [src/zk-api/nullifier-store.service.ts](../src/zk-api/nullifier-store.service.ts) |
-| **EthRateOracleService** | Fetches ETH/USD rates from Kraken | [src/zk-api/eth-rate-oracle.service.ts](../src/zk-api/eth-rate-oracle.service.ts) |
-| **RefundSignerService** | Signs refund tickets with EdDSA (Babyjubjub + Poseidon) | [src/zk-api/refund-signer.service.ts](../src/zk-api/refund-signer.service.ts) |
+| **LongjingService** | Main orchestrator for chat requests | [src/longjing/longjing.service.ts](../src/longjing/longjing.service.ts) |
+| **ProofGenService** | RLN primitives (Poseidon, nullifier/signal generation) | [src/longjing/proof-gen.service.ts](../src/longjing/proof-gen.service.ts) |
+| **ProofVerifierService** | ZK proof verification | [src/longjing/proof-verifier.service.ts](../src/longjing/proof-verifier.service.ts) |
+| **ZKProofService** | Full snarkjs integration for Groth16 proofs | [src/longjing/zkproof.service.ts](../src/longjing/zkproof.service.ts) |
+| **BlockchainService** | Ethers.js contract interface, Merkle tree sync | [src/longjing/blockchain.service.ts](../src/longjing/blockchain.service.ts) |
+| **MerkleTreeService** | Off-chain Merkle tree with Poseidon hash | [src/longjing/merkle-tree.service.ts](../src/longjing/merkle-tree.service.ts) |
+| **NullifierStoreService** | Tracks used nullifiers (SQLite persistent storage) | [src/longjing/nullifier-store.service.ts](../src/longjing/nullifier-store.service.ts) |
+| **EthRateOracleService** | Fetches ETH/USD rates from Kraken | [src/longjing/eth-rate-oracle.service.ts](../src/longjing/eth-rate-oracle.service.ts) |
+| **RefundSignerService** | Signs refund tickets with EdDSA (Babyjubjub + Poseidon) | [src/longjing/refund-signer.service.ts](../src/longjing/refund-signer.service.ts) |
 
 ### API Endpoints
 
-#### POST `/zk-api/chat`
+#### POST `/longjing/chat`
 
 Submit anonymous Claude API request with ZK proof.
 
@@ -287,11 +287,11 @@ Submit anonymous Claude API request with ZK proof.
 }
 ```
 
-#### GET `/zk-api/server-pubkey`
+#### GET `/longjing/server-pubkey`
 
 Get server's EdDSA public key for refund signature verification.
 
-#### GET `/zk-api/merkle-root`
+#### GET `/longjing/merkle-root`
 
 Get current Merkle root from onchain contract.
 
@@ -305,7 +305,7 @@ const secretKey = generateRandomKey();
 const idCommitment = poseidon([secretKey]);
 
 // Onchain
-await zkApiCredits.deposit(idCommitment, { value: parseEther('0.01') });
+await longjingCredits.deposit(idCommitment, { value: parseEther('0.01') });
 ```
 
 ### 2. Making Requests (Repeatable)
@@ -327,7 +327,7 @@ const x = poseidon([payload]);
 const y = secretKey + a * x;
 
 // Submit request
-const response = await fetch('/zk-api/chat', {
+const response = await fetch('/longjing/chat', {
   method: 'POST',
   body: JSON.stringify({
     messages: [{ role: 'user', content: 'What does 苟全性命於亂世，不求聞達於諸侯。mean?' }],
@@ -354,7 +354,7 @@ const signal2 = { x: x2, y: y2 };  // x2 ≠ x1
 const k = (y1 * x2 - y2 * x1) / (x2 - x1);
 
 // Submit to smart contract
-await zkApiCredits.slashDoubleSpend(k, nullifier, signal1, signal2);
+await longjingCredits.slashDoubleSpend(k, nullifier, signal1, signal2);
 ```
 
 ## Cryptographic Primitives
@@ -486,7 +486,7 @@ Assuming ETH = $2,000:
 npm test
 
 # Run specific test suite
-npm test -- zk-api.service.spec.ts
+npm test -- longjing.service.spec.ts
 
 # Run with coverage
 npm test -- --coverage
@@ -598,7 +598,7 @@ npx snarkjs zkey contribute api_credit_proof_0000.zkey api_credit_proof_final.zk
 npx snarkjs zkey export verificationkey api_credit_proof_final.zkey verification_key.json
 ```
 
-Then update `src/zk-api/snarkjs-proof.service.ts` to point to the production artifacts.
+Then update `src/longjing/snarkjs-proof.service.ts` to point to the production artifacts.
 
 **Security Note:** Both test and production circuits implement identical cryptographic verification. The difference is in capacity (number of refund tickets, tree depth, etc.), not security.
 

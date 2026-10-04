@@ -1,10 +1,10 @@
 # Provider Abstraction Layer
 
-This document describes the provider abstraction layer introduced in Phase 1 of the Universal ZK-API implementation.
+This document describes the provider abstraction layer introduced in Phase 1 of the Universal Longjing implementation.
 
 ## Overview
 
-The provider abstraction layer enables ZK-API to support multiple external API services (Claude, OpenAI, Stripe, etc.) through a unified interface, while maintaining zero-knowledge privacy guarantees and hardcoded pricing configuration.
+The provider abstraction layer enables Longjing to support multiple external API services (Claude, OpenAI, Stripe, etc.) through a unified interface, while maintaining zero-knowledge privacy guarantees and hardcoded pricing configuration.
 
 **Status**: Phase 1 & 2 Complete ✅
 - Provider abstraction interface
@@ -68,7 +68,7 @@ providerRegistry.register(claudeProvider);
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      ZK-API Service                         │
+│                      Longjing Service                         │
 │  (Proof Verification, Nullifier Checking, Refund Signing)  │
 └────────────────┬────────────────────────────────────────────┘
                  │
@@ -334,7 +334,7 @@ export class UsageDto {
 
 New public endpoint for estimating costs before making requests:
 
-### `POST /zk-api/estimate-cost`
+### `POST /longjing/estimate-cost`
 
 **Request:**
 ```json
@@ -471,7 +471,7 @@ The QUICK_START guide includes:
 
 ### Complete Workflow: Adding a New Provider
 
-**Example:** Adding Claude API support to ZK-API (IMPLEMENTED ✅)
+**Example:** Adding Claude API support to Longjing (IMPLEMENTED ✅)
 
 #### Step 1: Implement Provider with Hardcoded Pricing
 
@@ -647,7 +647,7 @@ export class ClaudeModule implements OnModuleInit {
 
 ```typescript
 // User estimates cost
-const estimate = await fetch('https://api.example.com/zk-api/estimate-cost', {
+const estimate = await fetch('https://api.example.com/longjing/estimate-cost', {
   method: 'POST',
   body: JSON.stringify({
     provider: 'claude',
@@ -659,8 +659,8 @@ const estimate = await fetch('https://api.example.com/zk-api/estimate-cost', {
 
 // Returns: recommendedDepositWei based on hardcoded pricing
 
-// User makes ZK API call
-const result = await zkApi.call({
+// User makes Longjing call
+const result = await longjing.call({
   provider: 'claude',
   endpoint: '/v1/messages',
   body: {
@@ -742,7 +742,7 @@ export class StripeProvider extends BaseProvider implements ApiProvider {
 
 ```typescript
 // Client-side usage
-const estimate = await fetch('https://api.example.com/zk-api/estimate-cost', {
+const estimate = await fetch('https://api.example.com/longjing/estimate-cost', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -755,7 +755,7 @@ const estimate = await fetch('https://api.example.com/zk-api/estimate-cost', {
 const { recommendedDepositWei } = await estimate.json();
 
 // Use recommendedDepositWei for smart contract deposit
-await zkApiContract.deposit(idCommitment, { value: recommendedDepositWei });
+await longjingContract.deposit(idCommitment, { value: recommendedDepositWei });
 ```
 
 ## Migration Guide
@@ -871,7 +871,7 @@ Phase 1 is **100% backwards compatible**. No breaking changes to:
 ## Support
 
 For questions or issues related to the provider abstraction layer:
-- GitHub Issues: https://github.com/your-org/zk-api/issues
+- GitHub Issues: https://github.com/your-org/longjing/issues
 - Documentation: See [OVERVIEW.md](./OVERVIEW.md) for system architecture
 
 ## License
