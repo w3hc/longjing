@@ -16,10 +16,12 @@
  *
  * What it verifies:
  *   1. Platform detection (not 'mock')
- *   2. report_data binding to ML-KEM public key (SHA-256 match)
- *   3. Quote structure validity
- *   4. Measurement extraction
- *   5. Quote freshness (timestamp)
+ *   2. report_data binding to ML-KEM public key (SHA-256 match, bytes 0-31)
+ *   3. report_data binding to the served TLS certificate (SHA-256 match,
+ *      bytes 32-63) — proves TLS terminates inside the attested enclave
+ *   4. Quote structure validity
+ *   5. Measurement extraction
+ *   6. Quote freshness (timestamp)
  *
  * What it does NOT verify (requires platform-specific verification):
  *   - Full cryptographic signature verification
@@ -31,6 +33,7 @@
 
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import * as tls from 'tls';
 
 interface AttestationQuote {
   platform: 'phala' | 'intel-tdx' | 'amd-sev-snp' | 'aws-nitro' | 'mock';
@@ -148,11 +151,56 @@ async function fetchMlKemPublicKey(baseUrl: string): Promise<Buffer> {
 }
 
 /**
- * Verify report_data binding to ML-KEM public key
+ * Fetch the DER-encoded TLS leaf certificate the server actually presents.
+ * Certificate validity is NOT checked here — the certificate is instead
+ * pinned against the attestation quote's report_data (bytes 32-63).
+ */
+function fetchServedTlsCertificate(baseUrl: string): Promise<Buffer | null> {
+  const url = new URL(baseUrl);
+  if (url.protocol !== 'https:') {
+    return Promise.resolve(null);
+  }
+
+  const host = url.hostname;
+  const port = url.port ? parseInt(url.port, 10) : 443;
+  log(`Fetching served TLS certificate from: ${host}:${port}`, 'blue');
+
+  return new Promise((resolve) => {
+    const socket = tls.connect(
+      {
+        host,
+        port,
+        servername: host,
+        // Trust is established via attestation binding, not a CA chain
+        rejectUnauthorized: false,
+      },
+      () => {
+        const cert = socket.getPeerCertificate(true);
+        socket.end();
+        resolve(cert && cert.raw ? Buffer.from(cert.raw) : null);
+      },
+    );
+    socket.setTimeout(10000, () => {
+      socket.destroy();
+      resolve(null);
+    });
+    socket.on('error', (err) => {
+      warning(`Could not fetch TLS certificate: ${err.message}`);
+      resolve(null);
+    });
+  });
+}
+
+/**
+ * Verify report_data binding:
+ *   bytes 0-31:  SHA-256(mlkem_public_key)
+ *   bytes 32-63: SHA-256(tls_leaf_cert_der) — zero when the server does not
+ *                terminate TLS itself (external proxy; weaker guarantee)
  */
 function verifyReportDataBinding(
   reportData: string,
   mlkemPublicKey: Buffer,
+  servedTlsCertDer: Buffer | null,
 ): boolean {
   if (mlkemPublicKey.length === 0) {
     warning('No ML-KEM public key available, skipping report_data verification');
@@ -162,23 +210,59 @@ function verifyReportDataBinding(
   log(`\n🔑 Report Data Binding Verification:`, 'blue');
   info(`  ML-KEM public key size: ${mlkemPublicKey.length} bytes`);
 
-  // Compute expected report_data: SHA-256(mlkem_public_key) || 0x00...00
-  const hash = crypto.createHash('sha256').update(mlkemPublicKey).digest();
-  const expectedReportData = Buffer.concat([hash, Buffer.alloc(32)]).toString('hex');
+  const actual = Buffer.from(reportData, 'hex');
+  const actualMlkemHalf = actual.subarray(0, 32).toString('hex');
+  const actualTlsHalf = actual.subarray(32, 64).toString('hex');
 
-  info(`  Expected report_data (first 32 bytes): ${expectedReportData.substring(0, 64)}`);
-  info(`  Actual report_data (first 32 bytes):   ${reportData.substring(0, 64)}`);
+  // Bytes 0-31: SHA-256(mlkem_public_key)
+  const expectedMlkemHalf = crypto
+    .createHash('sha256')
+    .update(mlkemPublicKey)
+    .digest('hex');
 
-  if (reportData.toLowerCase() === expectedReportData.toLowerCase()) {
-    success('✅ report_data matches SHA-256(ML-KEM public key)');
-    success('   The attestation quote is cryptographically bound to the encryption key');
-    return true;
-  } else {
+  info(`  Expected ML-KEM half (bytes 0-31):  ${expectedMlkemHalf}`);
+  info(`  Actual ML-KEM half (bytes 0-31):    ${actualMlkemHalf}`);
+
+  if (actualMlkemHalf.toLowerCase() !== expectedMlkemHalf.toLowerCase()) {
     error('❌ report_data does NOT match SHA-256(ML-KEM public key)');
     error('   The quote is NOT bound to the advertised encryption key');
     error('   DO NOT trust this server!');
     return false;
   }
+  success('✅ report_data matches SHA-256(ML-KEM public key)');
+  success('   The attestation quote is cryptographically bound to the encryption key');
+
+  // Bytes 32-63: SHA-256(tls_leaf_cert_der)
+  if (actualTlsHalf === '0'.repeat(64)) {
+    warning('report_data TLS half is zero — the server is NOT binding its TLS certificate');
+    warning('TLS likely terminates OUTSIDE the TEE (external proxy)');
+    warning('Request bodies may be visible in plaintext at the TLS terminator');
+    return true; // ML-KEM binding still valid; caller decides on trust
+  }
+
+  if (!servedTlsCertDer) {
+    warning('Could not fetch served TLS certificate; skipping TLS binding check');
+    return true;
+  }
+
+  const expectedTlsHalf = crypto
+    .createHash('sha256')
+    .update(servedTlsCertDer)
+    .digest('hex');
+
+  info(`  Expected TLS half (bytes 32-63):    ${expectedTlsHalf}`);
+  info(`  Actual TLS half (bytes 32-63):      ${actualTlsHalf}`);
+
+  if (actualTlsHalf.toLowerCase() !== expectedTlsHalf.toLowerCase()) {
+    error('❌ report_data does NOT match the served TLS certificate');
+    error('   The TLS endpoint you connected to is NOT the attested enclave');
+    error('   (possible MITM or TLS termination outside the TEE)');
+    error('   DO NOT trust this server!');
+    return false;
+  }
+  success('✅ report_data matches SHA-256(served TLS certificate)');
+  success('   TLS terminates inside the attested enclave');
+  return true;
 }
 
 /**
@@ -352,15 +436,21 @@ async function verifyAttestation(source: string) {
 
     success(`Platform: ${attestation.platform}`);
 
-    // 3. Verify report_data binding to ML-KEM public key
+    // 3. Verify report_data binding to ML-KEM public key + served TLS cert
     let mlkemPublicKey: Buffer = Buffer.alloc(0);
     if (source.startsWith('http://') || source.startsWith('https://')) {
       const baseUrl = new URL(source).origin;
       mlkemPublicKey = await fetchMlKemPublicKey(baseUrl);
-      const reportDataValid = verifyReportDataBinding(attestation.reportData, mlkemPublicKey);
+      const servedTlsCertDer = await fetchServedTlsCertificate(baseUrl);
+      const reportDataValid = verifyReportDataBinding(
+        attestation.reportData,
+        mlkemPublicKey,
+        servedTlsCertDer,
+      );
       if (!reportDataValid && mlkemPublicKey.length > 0) {
         error('\n❌ CRITICAL: report_data verification FAILED');
         error('The attestation quote is NOT bound to the ML-KEM public key');
+        error('and/or the served TLS certificate');
         error('This could indicate a man-in-the-middle attack or misconfiguration');
         error('DO NOT trust this server!');
         process.exit(1);
