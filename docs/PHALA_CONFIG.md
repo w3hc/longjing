@@ -31,16 +31,7 @@ Phala Cloud provides confidential computing infrastructure using Intel TDX (Trus
 
 ### Architecture
 
-Phala Cloud runs on **AMD64/x86_64** architecture. If building on Apple Silicon (ARM64), you must cross-compile:
-
-```bash
-docker buildx build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/longjing:latest --push .
-```
-
-For this project:
-```bash
-docker buildx build --platform linux/amd64 -t julienberanger/longjing:latest --push .
-```
+Phala Cloud runs on **AMD64/x86_64** architecture. Released images are built for `linux/amd64` in CI, see [DOCKER.md](./DOCKER.md#releases).
 
 ### Image Configuration
 
@@ -64,8 +55,7 @@ version: '3.8'
 
 services:
   longjing:
-    image: julienberanger/longjing:latest
-    pull_policy: always  # Force pull latest image on every deployment
+    image: ghcr.io/w3hc/longjing@sha256:<digest>  # From the release notes
     ports:
       - "3000:3000"
     volumes:
@@ -79,7 +69,7 @@ services:
 ```
 
 **Important**:
-- The `pull_policy: always` ensures Phala pulls the latest image on every deployment
+- The image is pinned by digest, so the attested compose hash commits to the code that runs. Never use a mutable tag such as `latest`
 - The `/var/run/dstack.sock` volume mount is **required** for TEE attestation to work - without it, your app will run in mock mode
 
 ### .env.prod
@@ -117,11 +107,7 @@ Copy the output keys to your `.env.prod` file.
 
 ### Initial Deployment
 
-1. **Build and push Docker image**:
-   ```bash
-   pnpm build
-   docker buildx build --platform linux/amd64 -t julienberanger/longjing:latest --push .
-   ```
+1. **Pin the release image**: push a `v*` tag, then set `image:` in `docker-compose.yml` to the digest from the release notes (see [DOCKER.md](./DOCKER.md#releases)).
 
 2. **Deploy to Phala Cloud**:
    ```bash
@@ -144,11 +130,7 @@ Copy the output keys to your `.env.prod` file.
 
 To update an existing deployment:
 
-1. **Rebuild and push new image** (use `--no-cache` to force fresh build):
-   ```bash
-   pnpm build
-   docker buildx build --platform linux/amd64 -t julienberanger/longjing:latest --no-cache --push .
-   ```
+1. **Release and pin the new image**: push a new `v*` tag and pin the digest from its release notes in `docker-compose.yml`. The compose hash changes with it.
 
 2. **Update deployment** (required to pull new image):
    ```bash
@@ -341,11 +323,7 @@ Common issues:
 
 ### "exec format error"
 
-Your Docker image was built for the wrong architecture. Rebuild with:
-
-```bash
-docker buildx build --platform linux/amd64 -t julienberanger/longjing:latest --push .
-```
+Your Docker image was built for the wrong architecture. Deploy a released image, which CI builds for `linux/amd64`, see [DOCKER.md](./DOCKER.md#releases).
 
 ### Container keeps restarting
 

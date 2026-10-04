@@ -155,13 +155,10 @@ docker build -t longjing:latest .
 For Phala Cloud or other AMD64 environments (from Apple Silicon):
 
 ```bash
-docker buildx build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/longjing:latest --push .
+docker buildx build --platform linux/amd64 -t longjing:local .
 ```
 
-Example:
-```bash
-docker buildx build --platform linux/amd64 -t julienberanger/longjing:latest --push .
-```
+Images that get deployed are not built by hand: see [Releases](#releases).
 
 ## Configuration
 
@@ -210,15 +207,14 @@ services:
 
 ### docker-compose.yml
 
-Production configuration using pre-built image:
+Production configuration using a released image, pinned by digest:
 
 ```yaml
 version: '3.8'
 
 services:
   longjing:
-    image: julienberanger/longjing:latest
-    pull_policy: always
+    image: ghcr.io/w3hc/longjing@sha256:<digest>
     ports:
       - "3000:3000"
     volumes:
@@ -232,6 +228,39 @@ services:
 ```
 
 **Note**: The `/var/run/dstack.sock` volume mount is required when deploying to Phala Network or other DStack-based TEE infrastructure. Without it, the application will run in mock mode.
+
+## Releases
+
+On dstack, the attestation commits to the compose file, not to the image contents. A mutable tag such as `latest` would let whoever controls the registry ship different code under the same attested compose hash, so `docker-compose.yml` pins the image by digest, and that digest is built in CI from a tagged commit.
+
+### Release → digest → compose hash
+
+1. Push a `v*` tag. [`release.yml`](../.github/workflows/release.yml) builds the image for `linux/amd64`, pushes it to `ghcr.io/w3hc/longjing:<tag>`, attests its build provenance, and adds its digest to the GitHub release notes.
+2. Pin that digest in `docker-compose.yml`:
+   ```yaml
+   image: ghcr.io/w3hc/longjing@sha256:<digest>
+   ```
+3. Deploy. The compose hash, which dstack extends into RTMR3, now commits to that exact image.
+
+### Checking a digest
+
+The build is reproducible: the base image is pinned by digest, pnpm comes from corepack at the version and hash in `package.json`, dependencies come from the lockfile, circuit artifacts are checked against the sha256 in `circuits/artifacts.json`, pnpm's timestamped state files are removed, and file timestamps are clamped to the tagged commit's time. CI builds every pull request twice and fails if the digests differ. To check a release yourself:
+
+```bash
+git checkout v0.2.2
+export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+  --build-arg SOURCE_DATE_EPOCH \
+  --output type=oci,dest=longjing.tar,rewrite-timestamp=true \
+  --metadata-file metadata.json .
+jq -r '."containerimage.digest"' metadata.json
+```
+
+It must print the digest in the release notes and in `docker-compose.yml`. The build needs a `docker-container` builder (`docker buildx create --use`). You can also check the provenance attestation:
+
+```bash
+gh attestation verify oci://ghcr.io/w3hc/longjing@sha256:<digest> --repo w3hc/longjing
+```
 
 ## Troubleshooting
 
