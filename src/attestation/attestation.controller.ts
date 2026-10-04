@@ -6,17 +6,22 @@ import { TeePlatform } from './attestation.types';
 /**
  * Attestation controller.
  * Provides cryptographic proof of the code running inside the TEE.
- * Binds the TEE-generated ML-KEM public key to the attestation quote via report_data.
+ * Binds the TEE-generated ML-KEM public key and the in-enclave TLS
+ * certificate to the attestation quote via report_data.
  *
  * Security model:
  * - ML-KEM key pair is generated inside the TEE
  * - Private key is sealed and never leaves the TEE
- * - Public key is bound to attestation via report_data
+ * - Public key is bound to attestation via report_data (first 32 bytes)
+ * - The TLS certificate served by this process is bound via report_data
+ *   (second 32 bytes), proving TLS terminates inside the enclave
  *
  * Clients should:
  * 1. Fetch the attestation quote from this endpoint
  * 2. Fetch the ML-KEM public key from /mlkem/pubkey
- * 3. Verify report_data = SHA-256(mlkem_public_key) || 0x00...00
+ * 3. Verify report_data = SHA-256(mlkem_public_key) || SHA-256(tls_cert_der),
+ *    where tls_cert_der is the DER encoding of the TLS certificate presented
+ *    by this server (a zero second half means TLS terminates OUTSIDE the TEE)
  * 4. Verify the quote signature with the TEE platform's verification service
  * 5. Compare the measurement hash against the published value
  * 6. Only send sensitive data if verification succeeds
@@ -32,7 +37,8 @@ export class AttestationController {
    * Clients must verify this cryptographically before trusting the service.
    * In non-TEE environments, returns a mock quote with platform='mock'.
    *
-   * @returns Attestation quote with embedded report_data (SHA-256 of ML-KEM public key)
+   * @returns Attestation quote with embedded report_data
+   *          (SHA-256 of ML-KEM public key || SHA-256 of TLS certificate)
    */
   @Get()
   @ApiOperation({
@@ -55,7 +61,8 @@ export class AttestationController {
         },
         reportData: {
           type: 'string',
-          description: 'Hex-encoded report_data (SHA-256 of ML-KEM public key)',
+          description:
+            'Hex-encoded report_data: SHA-256(mlkem_public_key) || SHA-256(tls_cert_der)',
         },
         measurement: {
           type: 'string',
@@ -89,28 +96,28 @@ export class AttestationController {
         return (
           'Verify this quote using Phala verification service (https://verifier.phala.network/verify). ' +
           'Compare RTMR measurements against published values. ' +
-          'Verify report_data = SHA-256(mlkem_public_key) || 0x00...00. ' +
+          'Verify report_data = SHA-256(mlkem_public_key) || SHA-256(tls_cert_der). ' +
           'Docs: https://docs.phala.com/phala-cloud/attestation/verify-your-application'
         );
       case 'intel-tdx':
         return (
           'Verify this TDX quote using Intel DCAP verification. ' +
           'Compare MRTD measurement against published value. ' +
-          'Verify report_data = SHA-256(mlkem_public_key) || 0x00...00. ' +
+          'Verify report_data = SHA-256(mlkem_public_key) || SHA-256(tls_cert_der). ' +
           'Verification service: https://api.trustedservices.intel.com/tdx/certification/v4/qe/identity'
         );
       case 'amd-sev-snp':
         return (
           'Verify this SEV-SNP report using AMD verification tools. ' +
           'Compare MEASUREMENT against published value. ' +
-          'Verify report_data = SHA-256(mlkem_public_key) || 0x00...00. ' +
+          'Verify report_data = SHA-256(mlkem_public_key) || SHA-256(tls_cert_der). ' +
           'Verification service: https://kdsintf.amd.com/vcek/v1/{product}/cert_chain'
         );
       case 'aws-nitro':
         return (
           'Verify this Nitro attestation document using AWS verification. ' +
           'Compare PCR0 against published value. ' +
-          'Verify user_data = SHA-256(mlkem_public_key) || 0x00...00. ' +
+          'Verify user_data = SHA-256(mlkem_public_key) || SHA-256(tls_cert_der). ' +
           'Use aws-nitro-enclaves-cose library for verification'
         );
       case 'mock':
