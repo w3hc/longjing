@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `docker-compose.yml` pins the `v0.3.0` image, `ghcr.io/w3hc/longjing@sha256:d7beb7b690a6a2841530ceb26d18095005af1dd65fa34cc473971657bb096577`, in place of the placeholder ([#112](https://github.com/w3hc/longjing/issues/112)).
+
 ## [0.3.0] - 2026-10-04
 
 ### Added
