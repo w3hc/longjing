@@ -2,9 +2,9 @@ version: '3.8'
 
 services:
   longjing:
-    # Pinned by digest so the attested compose hash commits to the image.
+    # v0.3.0, pinned by digest so the attested compose hash commits to the image.
     # Take the digest from the release notes, see docs/DOCKER.md#releases.
-    image: ghcr.io/w3hc/longjing@sha256:<set from the release notes>
+    image: ghcr.io/w3hc/longjing@sha256:d7beb7b690a6a2841530ceb26d18095005af1dd65fa34cc473971657bb096577
     ports:
       - "3000:3000"
     volumes:
