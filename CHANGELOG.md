@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `ZK_CIRCUIT` selects the circuit the server verifies requests with: `api_request` (the default in production) or `api_credit_proof_test` (the default elsewhere) ([#88](https://github.com/w3hc/longjing/issues/88)).
-- Committed `api_request` artifacts in `circuits/build/` (witness generator, proving key, verification key), set up from the public Perpetual Powers of Tau plus a single local contribution; the Docker image now ships the verification key ([#88](https://github.com/w3hc/longjing/issues/88)).
+- `api_request` artifacts (witness generator, proving key, verification key), set up from the public Perpetual Powers of Tau plus a single local contribution; the Docker image now ships the verification key ([#88](https://github.com/w3hc/longjing/issues/88)).
+- `pnpm circuits:fetch` downloads the circuit artifacts from the `circuits-v1` release into `circuits/build/` and checks each one against the sha256 pinned in `circuits/artifacts.json`. CI and the Docker build run it ([#89](https://github.com/w3hc/longjing/issues/89)).
 - In-enclave TLS termination in production: the key is derived via the dstack KMS or loaded from `TLS_KEY_PATH` / `TLS_CERT_PATH` in enclave storage, and startup fails closed without it unless `ALLOW_EXTERNAL_TLS_TERMINATION=true` ([#81](https://github.com/w3hc/zk-api/issues/81)).
 - `verify-attestation` checks the served TLS certificate against attestation `report_data`.
 
@@ -31,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `circuits/build/` is no longer tracked in Git, which drops 50 files (189 MB) from every new checkout. Only the 16 artifacts the code loads are published; `.r1cs`, `.sym`, intermediate `_0000.zkey` and `.ptau` files are not ([#89](https://github.com/w3hc/longjing/issues/89)).
 - `setWithdrawalVerifier`, `setRefundVerifier`, `setSlashingVerifier`, `setPolicyVerifier` and `setServerAddress`, replaced by the timelocked `proposeChange` / `executeChange` flow.
 
 ### Fixed

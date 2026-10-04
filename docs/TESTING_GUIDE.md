@@ -247,7 +247,7 @@ Failed to deploy contract
 ```
 Circuit artifacts not found
 ```
-**Solution:** Ensure circuit artifacts are built in `circuits/build/`
+**Solution:** Fetch the circuit artifacts into `circuits/build/` with `pnpm circuits:fetch`
 
 ### Jest Won't Exit
 ```
