@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Notes in `LongjingCredits` expire `NOTE_TTL` (365 days) after their deposit. Once `noteExpiry()` has passed, the operator can call `claimExpired()` to collect what's left on a note whose user disappeared; until then, the user can still withdraw. Time spent paused doesn't count toward the TTL, and `claimExpired()` is blocked while paused, so the owner can't pause to block exits and then sweep expired notes as in ethereum/zkapi ([#90](https://github.com/w3hc/longjing/issues/90)).
 - `ZK_CIRCUIT` selects the circuit the server verifies requests with: `api_request` (the default in production) or `api_credit_proof_test` (the default elsewhere) ([#88](https://github.com/w3hc/longjing/issues/88)).
 - `api_request` artifacts (witness generator, proving key, verification key), set up from the public Perpetual Powers of Tau plus a single local contribution; the Docker image now ships the verification key ([#88](https://github.com/w3hc/longjing/issues/88)).
 - `pnpm circuits:fetch` downloads the circuit artifacts from the `circuits-v1` release into `circuits/build/` and checks each one against the sha256 pinned in `circuits/artifacts.json`. CI and the Docker build run it ([#89](https://github.com/w3hc/longjing/issues/89)).
