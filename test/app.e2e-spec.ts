@@ -144,7 +144,8 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
       const randomSecretKey = Math.floor(Math.random() * 1000000);
       const randomTicketIndex = Date.now() % 1000;
 
-      const proofCmd = `npx ts-node scripts/testing/generate-proof.ts ${randomSecretKey} ${randomTicketIndex}`;
+      const payload = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
+      const proofCmd = `npx ts-node scripts/testing/generate-proof.ts ${randomSecretKey} ${randomTicketIndex} ${JSON.stringify(payload)}`;
       const proofOutput = await execAsync(proofCmd);
 
       // Parse proof output
@@ -165,10 +166,10 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
 
       // Make API request
       const apiRequest = {
-        payload: 'What does 苟全性命於亂世，不求聞達於諸侯。mean?',
+        payload,
         nullifier: publicInputs.nullifier,
         signal: {
-          x: publicInputs.signalX.replace('0x', ''),
+          x: publicInputs.signalX,
           y: publicInputs.signalY.replace('0x', ''),
         },
         proof: JSON.stringify(proof),

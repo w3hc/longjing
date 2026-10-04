@@ -15,7 +15,7 @@ The Longjing system enables privacy-preserving access to any external API servic
 RLN is a cryptographic primitive that prevents double-spending while preserving privacy:
 
 - **Nullifier**: A unique identifier for each request: `nullifier = Poseidon(a)` where `a = Poseidon(secretKey, ticketIndex)`
-- **Signal**: A proof of authenticity: `y = secretKey + a * x` where `x = Poseidon(message)`
+- **Signal**: A proof of authenticity: `y = secretKey + a * x` where `x = SHA-256(payload) mod p` (UTF-8 payload, p the BN254 scalar field order); the server rejects any request whose `x` does not match its payload
 - **Double-Spend Detection**: If the same `ticketIndex` is reused with different messages, the secret key can be recovered algebraically
 
 ### Identity Commitment
@@ -323,7 +323,7 @@ const proof = await generateProof({
 // Compute RLN signal
 const a = poseidon([secretKey, ticketIndex]);
 const nullifier = poseidon([a]);
-const x = poseidon([payload]);
+const x = BigInt('0x' + createHash('sha256').update(payload, 'utf8').digest('hex')) % p;
 const y = secretKey + a * x;
 
 // Submit request
