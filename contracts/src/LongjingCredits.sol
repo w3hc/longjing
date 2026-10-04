@@ -114,6 +114,19 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     /// @notice Queued changes, executable once block.timestamp >= eta
     mapping(Target => PendingChange) public pendingChanges;
 
+    /// @notice Time after which the operator can claim what is left on a note
+    /// @dev Counted from the deposit, excluding any time the contract spent paused
+    uint256 public constant NOTE_TTL = 365 days;
+
+    /// @notice Total time spent paused, excluding the current pause
+    uint256 public totalPausedTime;
+
+    /// @notice When the current pause started (0 when not paused)
+    uint256 public pausedAt;
+
+    /// @notice Paused time already elapsed when each note was deposited
+    mapping(bytes32 => uint256) public pausedTimeAtDeposit;
+
     // ============ Events ============
 
     event DepositMade(
@@ -156,6 +169,12 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
 
     event ChangeCancelled(Target indexed target, address value);
 
+    event NoteExpiredClaimed(
+        bytes32 indexed idCommitment,
+        uint256 amount,
+        address indexed operator
+    );
+
     event RefundRedeemed(
         bytes32 indexed idCommitment,
         bytes32 indexed nullifier,
@@ -177,6 +196,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     error ZeroAddress();
     error NoPendingChange();
     error TimelockNotExpired();
+    error NoteNotExpired();
 
     // ============ Constructor ============
 
@@ -242,6 +262,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
             timestamp: block.timestamp,
             active: true
         });
+        pausedTimeAtDeposit[_idCommitment] = _pausedTime();
 
         // Add to Merkle tree
         identityCommitments.push(_idCommitment);
@@ -548,7 +569,48 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         );
     }
 
+    /**
+     * @notice Claim what is left on a note once its TTL has passed
+     * @param _idCommitment The note's identity commitment
+     * @dev Only the operator can claim, and not while paused. The user can still
+     *      withdraw an expired note until the operator claims it.
+     */
+    function claimExpired(
+        bytes32 _idCommitment
+    ) external nonReentrant whenNotPaused {
+        if (msg.sender != serverAddress) revert Unauthorized();
+
+        Deposit storage userDeposit = deposits[_idCommitment];
+        if (!userDeposit.active) revert DepositNotFound();
+        if (block.timestamp < noteExpiry(_idCommitment)) revert NoteNotExpired();
+
+        uint256 amount = userDeposit.rlnStake + userDeposit.policyStake;
+
+        userDeposit.active = false;
+        userDeposit.rlnStake = 0;
+        userDeposit.policyStake = 0;
+
+        (bool success, ) = msg.sender.call{value: amount}('');
+        require(success, 'Transfer failed');
+
+        emit NoteExpiredClaimed(_idCommitment, amount, msg.sender);
+    }
+
     // ============ View Functions ============
+
+    /**
+     * @notice When a note expires, pushed back by every second spent paused since its deposit
+     * @dev Pausing can therefore never bring a note's expiry closer
+     */
+    function noteExpiry(bytes32 _idCommitment) public view returns (uint256) {
+        Deposit storage userDeposit = deposits[_idCommitment];
+        if (!userDeposit.active) revert DepositNotFound();
+        return
+            userDeposit.timestamp +
+            NOTE_TTL +
+            _pausedTime() -
+            pausedTimeAtDeposit[_idCommitment];
+    }
 
     /**
      * @notice Get deposit details for an identity commitment
@@ -651,6 +713,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
      */
     function pause() external onlyOwner {
         _pause();
+        pausedAt = block.timestamp;
     }
 
     /**
@@ -658,9 +721,19 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
      */
     function unpause() external onlyOwner {
         _unpause();
+        totalPausedTime += block.timestamp - pausedAt;
+        pausedAt = 0;
     }
 
     // ============ Internal Functions ============
+
+    /**
+     * @notice Total time spent paused, including the current pause
+     */
+    function _pausedTime() internal view returns (uint256) {
+        return
+            paused() ? totalPausedTime + block.timestamp - pausedAt : totalPausedTime;
+    }
 
     /**
      * @notice Update the Merkle root after adding new identity commitment
