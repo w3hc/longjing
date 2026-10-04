@@ -126,7 +126,12 @@ template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
     numRefundsBound.in[1] <== MAX_REFUNDS;
     numRefundsBound.out === 1;
 
+    // Bound every solvency operand so the arithmetic below cannot wrap the field
+    var INDEX_BITS = 32;
+    var AMOUNT_BITS = 128;
+
     component refundActive[MAX_REFUNDS];
+    component refundValueBits[MAX_REFUNDS];
     component refundMessageHashers[MAX_REFUNDS];
     component refundSignatureVerifiers[MAX_REFUNDS];
     signal refundSum[MAX_REFUNDS + 1];
@@ -140,6 +145,9 @@ template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
 
         // Turned-off slots must carry a zero value
         refundValues[i] * (1 - refundActive[i].out) === 0;
+
+        refundValueBits[i] = Num2Bits(AMOUNT_BITS);
+        refundValueBits[i].in <== refundValues[i];
 
         // Hash refund ticket: Poseidon(idCommitment, nullifier, value, timestamp)
         refundMessageHashers[i] = Poseidon(4);
@@ -165,6 +173,16 @@ template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
 
     // ========== 4. SOLVENCY CHECK: (i + 1) · C_max ≤ D + R ==========
     // This is the core formula from the original proposal
+    // With i < 2^32 and C_max, D, R_j < 2^128, both sides stay below 2^252
+
+    component ticketIndexBits = Num2Bits(INDEX_BITS);
+    ticketIndexBits.in <== ticketIndex;
+
+    component maxCostBits = Num2Bits(AMOUNT_BITS);
+    maxCostBits.in <== maxCost;
+
+    component initialDepositBits = Num2Bits(AMOUNT_BITS);
+    initialDepositBits.in <== initialDeposit;
 
     signal availableBalance;
     availableBalance <== initialDeposit + totalRefunds;

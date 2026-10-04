@@ -106,8 +106,13 @@ template ApiCreditProof(levels, maxRefunds) {
     // - refund-signer.service.ts hashRefundData()
     // - refund_redemption.circom signature verification
     // - LongjingCredits.sol _hashRefundData()
+    // Bound every solvency operand so the arithmetic below cannot wrap the field
+    var INDEX_BITS = 32;
+    var AMOUNT_BITS = 128;
+
     component refundVerifiers[maxRefunds];
     component refundHashers[maxRefunds];
+    component refundValueBits[maxRefunds];
     component enabledChecks[maxRefunds];
     component valueMux[maxRefunds];
     signal isEnabled[maxRefunds];
@@ -139,6 +144,9 @@ template ApiCreditProof(levels, maxRefunds) {
         refundVerifiers[i].S <== refundSignaturesS[i];
         refundVerifiers[i].M <== refundHashers[i].out;
 
+        refundValueBits[i] = Num2Bits(AMOUNT_BITS);
+        refundValueBits[i].in <== refundValues[i];
+
         // Accumulate refunds (only count if enabled)
         // Use Mux to select: enabled ? refundValues[i] : 0
         valueMux[i] = Mux1();
@@ -152,6 +160,17 @@ template ApiCreditProof(levels, maxRefunds) {
     totalRefunds <== refundSum[maxRefunds];
 
     // 4. Solvency check: (ticketIndex + 1) * maxCost <= initialDeposit + totalRefunds
+    // With ticketIndex < 2^32 and maxCost, initialDeposit, refundValues < 2^128,
+    // both sides stay below 2^252
+    component ticketIndexBits = Num2Bits(INDEX_BITS);
+    ticketIndexBits.in <== ticketIndex;
+
+    component maxCostBits = Num2Bits(AMOUNT_BITS);
+    maxCostBits.in <== maxCost;
+
+    component initialDepositBits = Num2Bits(AMOUNT_BITS);
+    initialDepositBits.in <== initialDeposit;
+
     signal availableBalance;
     availableBalance <== initialDeposit + totalRefunds;
 

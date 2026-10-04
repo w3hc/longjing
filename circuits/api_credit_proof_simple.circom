@@ -74,6 +74,16 @@ template ApiCreditProofSimple(levels) {
     }
 
     // 3. Simple solvency check: (ticketIndex + 1) * maxCost <= initialDeposit
+    // Bound every operand so the arithmetic cannot wrap the field
+    component ticketIndexBits = Num2Bits(32);
+    ticketIndexBits.in <== ticketIndex;
+
+    component maxCostBits = Num2Bits(128);
+    maxCostBits.in <== maxCost;
+
+    component initialDepositBits = Num2Bits(128);
+    initialDepositBits.in <== initialDeposit;
+
     signal requiredBalance;
     requiredBalance <== (ticketIndex + 1) * maxCost;
 

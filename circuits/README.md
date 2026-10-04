@@ -131,6 +131,8 @@ npx snarkjs zkey export solidityverifier build/withdrawal.zkey ../contracts/src/
 
 `numRefunds` must be at most `MAX_REFUNDS`, and every slot from `numRefunds` up must have a `refundValues` entry of `0`, or witness generation fails.
 
+`ticketIndex` must fit in 32 bits, and `maxCost`, `initialDeposit` and every `refundValues` entry must fit in 128 bits, or witness generation fails. These bounds keep both sides of the solvency check below 2^252, so `(ticketIndex + 1) * maxCost` cannot wrap around the field.
+
 ## Output Format
 
 ```json
