@@ -131,10 +131,10 @@ Helper scripts for manual testing and debugging.
 ### Generate ZK Proof
 
 ```bash
-npx ts-node scripts/testing/generate-proof.ts <secretKey> <ticketIndex>
+npx ts-node scripts/testing/generate-proof.ts <secretKey> <ticketIndex> [payload]
 ```
 
-Generates a complete ZK proof for testing API requests.
+Generates a complete ZK proof for testing API requests, with the signal x bound to `payload`.
 
 ### Compute Poseidon Hash
 

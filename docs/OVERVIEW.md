@@ -157,7 +157,7 @@ The ZK circuits prove critical properties in zero-knowledge:
    ```
    a = Poseidon(secretKey, ticketIndex)
    nullifier = Poseidon(a)
-   x = Poseidon(message)
+   x = SHA-256(message) mod p
    y = secretKey + a * x
    ```
 
@@ -324,7 +324,7 @@ RLN is a cryptographic primitive that allows one-time use of tickets while prese
 ```
 a = Poseidon(secretKey, ticketIndex)
 nullifier = Poseidon(a)
-x = Poseidon(message)
+x = SHA-256(message) mod p
 y = secretKey + a × x
 ```
 

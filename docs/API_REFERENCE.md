@@ -64,7 +64,7 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
   proof: string;                // Groth16 ZK proof (JSON string)
   nullifier: string;            // Unique nullifier for this request
   signal: {
-    x: string;                  // RLN signal x component
+    x: string;                  // RLN signal x = SHA-256(payload) mod p
     y: string;                  // RLN signal y component
   };
   maxCost: string;              // Maximum cost willing to pay (in wei)
@@ -101,7 +101,7 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
 
 **Status Codes:**
 - `200 OK` - Request processed successfully
-- `400 Bad Request` - Invalid request parameters
+- `400 Bad Request` - Invalid request parameters, or `signal.x` does not match the payload hash
 - `401 Unauthorized` - Invalid ZK proof
 - `403 Forbidden` - Nullifier already used, double-spend detected, or rate limit exceeded
 - `429 Too Many Requests` - Rate limit exceeded (generic message for privacy)
@@ -579,7 +579,7 @@ All endpoints return consistent error responses:
        ▼
    a = Hash(secretKey, ticketIndex)
    nullifier = Hash(a)
-   x = Hash(payload)
+   x = SHA-256(payload) mod p
    y = secretKey + a × x
        │
        │ 5. Submit request
@@ -695,7 +695,7 @@ async function generateProof(
   // Compute RLN values
   const a = poseidon([secretKey, ticketIndex]);
   const nullifier = poseidon([a]);
-  const x = poseidon([payload]);
+  const x = BigInt('0x' + createHash('sha256').update(payload, 'utf8').digest('hex')) % F.p;
   const y = F.add(secretKey, F.mul(a, x));
 
   // Circuit inputs
