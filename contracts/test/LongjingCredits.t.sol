@@ -4,10 +4,6 @@ pragma solidity 0.8.35;
 import {Test} from 'forge-std/Test.sol';
 import {LongjingCredits} from '../src/LongjingCredits.sol';
 import {PoseidonHasher} from '../src/PoseidonHasher.sol';
-import {WithdrawalVerifier} from '../src/WithdrawalVerifier.sol';
-import {RefundRedemptionVerifier} from '../src/RefundRedemptionVerifier.sol';
-import {DoubleSpendSlashingVerifier} from '../src/DoubleSpendSlashingVerifier.sol';
-import {PolicyViolationVerifier} from '../src/PolicyViolationVerifier.sol';
 import {MockWithdrawalVerifier} from './MockWithdrawalVerifier.sol';
 import {MockSlashingVerifier} from './MockSlashingVerifier.sol';
 import {MockRefundVerifier} from './MockRefundVerifier.sol';
@@ -89,10 +85,15 @@ contract LongjingCreditsTest is Test {
         mockPolicyVerifier = new MockPolicyVerifier();
 
         // Replace production verifiers with mocks for testing
-        longjing.setWithdrawalVerifier(WithdrawalVerifier(address(mockWithdrawalVerifier)));
-        longjing.setRefundVerifier(RefundRedemptionVerifier(address(mockRefundVerifier)));
-        longjing.setSlashingVerifier(DoubleSpendSlashingVerifier(address(mockSlashingVerifier)));
-        longjing.setPolicyVerifier(PolicyViolationVerifier(address(mockPolicyVerifier)));
+        longjing.proposeChange(LongjingCredits.Target.WithdrawalVerifier, address(mockWithdrawalVerifier));
+        longjing.proposeChange(LongjingCredits.Target.RefundVerifier, address(mockRefundVerifier));
+        longjing.proposeChange(LongjingCredits.Target.SlashingVerifier, address(mockSlashingVerifier));
+        longjing.proposeChange(LongjingCredits.Target.PolicyVerifier, address(mockPolicyVerifier));
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY());
+        longjing.executeChange(LongjingCredits.Target.WithdrawalVerifier);
+        longjing.executeChange(LongjingCredits.Target.RefundVerifier);
+        longjing.executeChange(LongjingCredits.Target.SlashingVerifier);
+        longjing.executeChange(LongjingCredits.Target.PolicyVerifier);
 
         // Generate test identity commitments using Poseidon (matching circuit)
         secretKey1 = keccak256(abi.encodePacked('secret1'));
@@ -381,7 +382,9 @@ contract LongjingCreditsTest is Test {
     function test_SetServerAddress() public {
         address newServer = makeAddr('newServer');
 
-        longjing.setServerAddress(newServer);
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, newServer);
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY());
+        longjing.executeChange(LongjingCredits.Target.ServerAddress);
 
         assertEq(longjing.serverAddress(), newServer);
     }

@@ -93,6 +93,27 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     DoubleSpendSlashingVerifier public slashingVerifier;
     PolicyViolationVerifier public policyVerifier;
 
+    /// @notice Delay before a proposed verifier or server address change can be executed
+    /// @dev Gives users time to exit before a change they disagree with takes effect
+    uint256 public constant ADMIN_DELAY = 7 days;
+
+    /// @notice Settings that can only be changed through the timelock
+    enum Target {
+        WithdrawalVerifier,
+        RefundVerifier,
+        SlashingVerifier,
+        PolicyVerifier,
+        ServerAddress
+    }
+
+    struct PendingChange {
+        address value;
+        uint256 eta; // 0 when nothing is pending
+    }
+
+    /// @notice Queued changes, executable once block.timestamp >= eta
+    mapping(Target => PendingChange) public pendingChanges;
+
     // ============ Events ============
 
     event DepositMade(
@@ -129,6 +150,12 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         address indexed newAddress
     );
 
+    event ChangeProposed(Target indexed target, address value, uint256 eta);
+
+    event ChangeExecuted(Target indexed target, address value);
+
+    event ChangeCancelled(Target indexed target, address value);
+
     event RefundRedeemed(
         bytes32 indexed idCommitment,
         bytes32 indexed nullifier,
@@ -147,6 +174,9 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     error Unauthorized();
     error InvalidSignature();
     error RefundAlreadyRedeemed();
+    error ZeroAddress();
+    error NoPendingChange();
+    error TimelockNotExpired();
 
     // ============ Constructor ============
 
@@ -560,15 +590,6 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     // ============ Admin Functions ============
 
     /**
-     * @notice Update the server address (for policy slashing)
-     */
-    function setServerAddress(address _newServerAddress) external onlyOwner {
-        address oldAddress = serverAddress;
-        serverAddress = _newServerAddress;
-        emit ServerAddressUpdated(oldAddress, _newServerAddress);
-    }
-
-    /**
      * @notice Update minimum stake requirements
      */
     function setMinStakes(
@@ -580,39 +601,49 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-     * @notice Set withdrawal verifier (for testing or upgrades)
+     * @notice Queue a verifier or server address change, executable after ADMIN_DELAY
+     * @dev Overwrites any change already pending for the same target and restarts the delay
      */
-    function setWithdrawalVerifier(
-        WithdrawalVerifier _verifier
-    ) external onlyOwner {
-        withdrawalVerifier = _verifier;
+    function proposeChange(Target _target, address _value) external onlyOwner {
+        if (_value == address(0)) revert ZeroAddress();
+        uint256 eta = block.timestamp + ADMIN_DELAY;
+        pendingChanges[_target] = PendingChange({value: _value, eta: eta});
+        emit ChangeProposed(_target, _value, eta);
     }
 
     /**
-     * @notice Set refund verifier (for testing or upgrades)
+     * @notice Apply a queued change once its delay has elapsed
      */
-    function setRefundVerifier(
-        RefundRedemptionVerifier _verifier
-    ) external onlyOwner {
-        refundVerifier = _verifier;
+    function executeChange(Target _target) external onlyOwner {
+        PendingChange memory change = pendingChanges[_target];
+        if (change.eta == 0) revert NoPendingChange();
+        if (block.timestamp < change.eta) revert TimelockNotExpired();
+        delete pendingChanges[_target];
+
+        if (_target == Target.WithdrawalVerifier) {
+            withdrawalVerifier = WithdrawalVerifier(change.value);
+        } else if (_target == Target.RefundVerifier) {
+            refundVerifier = RefundRedemptionVerifier(change.value);
+        } else if (_target == Target.SlashingVerifier) {
+            slashingVerifier = DoubleSpendSlashingVerifier(change.value);
+        } else if (_target == Target.PolicyVerifier) {
+            policyVerifier = PolicyViolationVerifier(change.value);
+        } else {
+            emit ServerAddressUpdated(serverAddress, change.value);
+            serverAddress = change.value;
+        }
+
+        emit ChangeExecuted(_target, change.value);
     }
 
     /**
-     * @notice Set slashing verifier (for testing or upgrades)
+     * @notice Drop a queued change
      */
-    function setSlashingVerifier(
-        DoubleSpendSlashingVerifier _verifier
-    ) external onlyOwner {
-        slashingVerifier = _verifier;
-    }
-
-    /**
-     * @notice Set policy violation verifier (for testing or upgrades)
-     */
-    function setPolicyVerifier(
-        PolicyViolationVerifier _verifier
-    ) external onlyOwner {
-        policyVerifier = _verifier;
+    function cancelChange(Target _target) external onlyOwner {
+        PendingChange memory change = pendingChanges[_target];
+        if (change.eta == 0) revert NoPendingChange();
+        delete pendingChanges[_target];
+        emit ChangeCancelled(_target, change.value);
     }
 
     /**
