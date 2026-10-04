@@ -8,45 +8,83 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
+export type ZkCircuit = 'api_request' | 'api_credit_proof_test';
+
+const CIRCUIT_ARTIFACTS: Record<
+  ZkCircuit,
+  { wasm: string; zkey: string; vKey: string }
+> = {
+  api_request: {
+    wasm: 'circuits/build/api_request_js/api_request.wasm',
+    zkey: 'circuits/build/api_request.zkey',
+    vKey: 'circuits/build/api_request_verification_key.json',
+  },
+  api_credit_proof_test: {
+    wasm: 'circuits/build/api_credit_proof_test_js/api_credit_proof_test.wasm',
+    zkey: 'circuits/build/api_credit_proof_test.zkey',
+    vKey: 'circuits/build/verification_key.json',
+  },
+};
+
 /**
  * Service for real ZK-SNARK proof generation and verification using snarkjs
  *
- * This replaces the mock implementation with cryptographically valid proofs.
- * Requires a completed trusted setup (zkey + verification key).
+ * The circuit comes from ZK_CIRCUIT. Production verifies with api_request and
+ * refuses to start without its verification key; other environments default
+ * to the lighter test circuit.
  */
 @Injectable()
 export class SnarkjsProofService implements OnModuleInit {
   private readonly logger = new Logger(SnarkjsProofService.name);
   private snarkjs: any;
   private vKey: any;
+  private readonly circuit: ZkCircuit;
   private wasmPath: string;
   private zkeyPath: string;
+  private vKeyPath: string;
   private isSetup = false;
 
   constructor() {
-    // Paths to circuit artifacts
-    // NOTE: Currently using test circuit due to full circuit (775K constraints)
-    // taking 12+ hours on M1. Generate full circuit on cloud infrastructure.
-    // See docs/ZK.md for details.
-    this.wasmPath = join(
-      process.cwd(),
-      'circuits/build/api_credit_proof_test_js/api_credit_proof_test.wasm',
-    );
-    this.zkeyPath = join(
-      process.cwd(),
-      'circuits/build/api_credit_proof_test.zkey',
-    );
+    const isProduction = process.env.NODE_ENV === 'production';
+    const circuit =
+      process.env.ZK_CIRCUIT ||
+      (isProduction ? 'api_request' : 'api_credit_proof_test');
+
+    if (!(circuit in CIRCUIT_ARTIFACTS)) {
+      throw new Error(`Unknown ZK_CIRCUIT: ${circuit}`);
+    }
+    this.circuit = circuit as ZkCircuit;
+
+    const artifacts = CIRCUIT_ARTIFACTS[this.circuit];
+    this.wasmPath = join(process.cwd(), artifacts.wasm);
+    this.zkeyPath = join(process.cwd(), artifacts.zkey);
+    this.vKeyPath = join(process.cwd(), artifacts.vKey);
   }
 
   /**
    * NestJS lifecycle hook - initialize the service when module loads
    */
   async onModuleInit() {
-    await this.initialize();
+    if (process.env.NODE_ENV !== 'production') {
+      await this.initialize();
+      return;
+    }
+
+    if (this.circuit !== 'api_request') {
+      throw new Error(
+        `ZK_CIRCUIT=${this.circuit} is not allowed in production. Use api_request.`,
+      );
+    }
+
+    if (!(await this.initialize())) {
+      throw new Error(
+        `Cannot verify requests: verification key missing at ${this.vKeyPath}`,
+      );
+    }
   }
 
   /**
-   * Initialize snarkjs and load verification key
+   * Initialize snarkjs and load the verification key
    */
   initialize(): Promise<boolean> {
     if (this.isSetup) {
@@ -54,43 +92,21 @@ export class SnarkjsProofService implements OnModuleInit {
     }
 
     try {
-      // Dynamically import snarkjs
       this.snarkjs = require('snarkjs');
 
-      // Check if circuit artifacts exist
-      if (!existsSync(this.wasmPath)) {
+      if (!existsSync(this.vKeyPath)) {
         this.logger.warn(
-          `WASM file not found at ${this.wasmPath}. Using mock proofs.`,
-        );
-        return Promise.resolve(false);
-      }
-
-      if (!existsSync(this.zkeyPath)) {
-        this.logger.warn(
-          `zkey file not found at ${this.zkeyPath}. Using mock proofs.`,
-        );
-        return Promise.resolve(false);
-      }
-
-      // Load verification key
-      const vKeyPath = join(
-        process.cwd(),
-        'circuits/build/verification_key.json',
-      );
-
-      if (!existsSync(vKeyPath)) {
-        this.logger.warn(
-          `Verification key not found at ${vKeyPath}. Using mock proofs.`,
+          `Verification key not found at ${this.vKeyPath}. Proofs cannot be verified.`,
         );
         return Promise.resolve(false);
       }
 
       const fs = require('fs');
-      const vKeyContent = fs.readFileSync(vKeyPath, 'utf8') as string;
+      const vKeyContent = fs.readFileSync(this.vKeyPath, 'utf8') as string;
       this.vKey = JSON.parse(vKeyContent);
 
       this.isSetup = true;
-      this.logger.log('SnarkJS proof system initialized successfully');
+      this.logger.log(`SnarkJS initialized with circuit ${this.circuit}`);
       this.logger.log(
         `Loaded vKey delta[0][0]: ${this.vKey.vk_delta_2[0][0].substring(0, 20)}...`,
       );
@@ -99,6 +115,13 @@ export class SnarkjsProofService implements OnModuleInit {
       this.logger.error('Failed to initialize snarkjs', error);
       return Promise.resolve(false);
     }
+  }
+
+  /**
+   * Circuit whose verification key is loaded
+   */
+  getCircuit(): ZkCircuit {
+    return this.circuit;
   }
 
   /**
@@ -114,22 +137,19 @@ export class SnarkjsProofService implements OnModuleInit {
    * @param input Circuit inputs
    * @returns Proof and public signals
    */
-  async generateProof(input: {
-    secretKey: string;
-    ticketIndex: string;
-    signalX: string;
-    idCommitmentExpected: string;
-  }): Promise<{
+  async generateProof(input: Record<string, string | string[]>): Promise<{
     proof: any;
     publicSignals: string[];
   }> {
-    if (!this.isSetup) {
-      const initialized = await this.initialize();
-      if (!initialized) {
-        throw new Error(
-          'Proof system not initialized. Circuit artifacts missing.',
-        );
-      }
+    const initialized = await this.initialize();
+    if (
+      !initialized ||
+      !existsSync(this.wasmPath) ||
+      !existsSync(this.zkeyPath)
+    ) {
+      throw new Error(
+        'Proof system not initialized. Circuit artifacts missing.',
+      );
     }
 
     try {
@@ -231,13 +251,17 @@ export class SnarkjsProofService implements OnModuleInit {
    * Get circuit information
    */
   getCircuitInfo(): {
+    circuit: ZkCircuit;
     wasmPath: string;
     zkeyPath: string;
+    vKeyPath: string;
     isSetup: boolean;
   } {
     return {
+      circuit: this.circuit,
       wasmPath: this.wasmPath,
       zkeyPath: this.zkeyPath,
+      vKeyPath: this.vKeyPath,
       isSetup: this.isSetup,
     };
   }
