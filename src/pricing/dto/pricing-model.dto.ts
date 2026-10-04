@@ -10,11 +10,7 @@ import {
 import { Type } from 'class-transformer';
 
 export type PricingType =
-  | 'per-token'
-  | 'per-call'
-  | 'per-unit'
-  | 'tiered'
-  | 'composite';
+  'per-token' | 'per-call' | 'per-unit' | 'tiered' | 'composite';
 
 export class PricingRate {
   @IsEnum(['per-token', 'per-call', 'per-unit', 'tiered', 'composite'])

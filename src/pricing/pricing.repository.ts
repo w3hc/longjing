@@ -199,11 +199,7 @@ export class PricingRepository {
    */
   private rowToPricingModel(row: PricingModelRow): PricingModel {
     const pricingType = row.pricing_type as
-      | 'per-token'
-      | 'per-call'
-      | 'per-unit'
-      | 'tiered'
-      | 'composite';
+      'per-token' | 'per-call' | 'per-unit' | 'tiered' | 'composite';
 
     return {
       providerId: row.provider_id,

@@ -412,7 +412,7 @@ AWS Nitro Enclaves provide isolated compute environments on EC2 instances.
    ```bash
    # Create Dockerfile for enclave
    cat > Dockerfile.enclave <<EOF
-   FROM node:20-slim
+   FROM node:24-slim
 
    WORKDIR /app
 
@@ -594,7 +594,7 @@ If you want to deploy Longjing on Phala's Intel TDX infrastructure using Dstack:
 4. **Containerize Longjing** for Dstack deployment:
    ```dockerfile
    # Dockerfile
-   FROM node:20-slim
+   FROM node:24-slim
 
    WORKDIR /app
 

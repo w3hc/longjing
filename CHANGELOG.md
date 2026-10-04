@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-04
+
 ### Added
 
 - CI now runs `forge fmt --check`, the Prettier format check (`pnpm format:check`) and lint without `--fix` (`pnpm lint:check`), and a `proof` job that installs circom 2.2.2, compiles the circuits and generates and verifies real Groth16 proofs (`pnpm test:proof`). Contract checks moved to their own `contracts` job ([#91](https://github.com/w3hc/longjing/issues/91)).
@@ -28,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Node 24 instead of Node 20 in the Docker images and CI, on the same `node:24-alpine` digest as wulong. Every dependency is bumped to its latest version, aligned with wulong where they share one: NestJS 12, TypeScript 6, `@anthropic-ai/sdk` 0.131, `better-sqlite3` 13. NestJS 12 ships as ESM only, so the test scripts run Jest with `--experimental-vm-modules`. `tsconfig.json` now matches wulong's: `rootDir` replaces the deprecated `baseUrl`, and `types` and `strict: false` are set explicitly since TypeScript 6 changed their defaults ([#110](https://github.com/w3hc/longjing/issues/110)).
 - Formatted the contracts with `forge fmt` ([#91](https://github.com/w3hc/longjing/issues/91)).
 - Attestation `report_data` is now `SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)`; the second half was previously zero.
 - Renamed the project from zk-api to Longjing ([#83](https://github.com/w3hc/zk-api/issues/83)): package `longjing`, Docker image `julienberanger/longjing`, routes under `/longjing/*`, NestJS module `LongjingModule` in `src/longjing/`, contract `LongjingCredits`, and SQLite file `longjing.db`.
