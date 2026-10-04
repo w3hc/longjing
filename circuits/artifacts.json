@@ -1,0 +1,21 @@
+{
+  "release": "https://github.com/w3hc/longjing/releases/download/circuits-v1",
+  "files": {
+    "api_request_js/api_request.wasm": "496e9ae5eefff50b82e3ad2212479e84db7d3bd400b0d0c53090ce130912f7c7",
+    "api_request.zkey": "49f1f5dc2cdb2bc2ee9312ee7a74c7dd4bc9da767c3a3efe1eaacc89b9662396",
+    "api_request_verification_key.json": "3630a74c0c517bc82d5dac9fdb7c211dec2c99007d9348b186cc5cc3a22cd62d",
+    "api_credit_proof_test_js/api_credit_proof_test.wasm": "f07b48ab83f6323d31612df4c8168528dcf8c584176a2f94b74a88782a41047b",
+    "api_credit_proof_test.zkey": "eae00f14aaa6c34ebe1aae37d10ec763c9be5319e3c86f4168c4c153d0d234ba",
+    "verification_key.json": "fd7f928560db95622e036f96b80d00e0354ae8bde5fdff025827ca09fe11ce8a",
+    "api_credit_proof_simple_js/api_credit_proof_simple.wasm": "1e9c3ddfd8b8e92806f6619e49dc15617a1f62c5718a28b89340005c3cac702f",
+    "refund_redemption_js/refund_redemption.wasm": "0286469214fd0155d0089f4f4461a27051f14bc025da9645b3971cb587a0b7a7",
+    "refund_redemption.zkey": "9e01a0ad2575e3af76958a4b450b031d67456accf6bd8ec10347764d93ff115e",
+    "refund_redemption_verification_key.json": "4b3ca434d32825e0549895ddfe0ba554fed9ffedcd6cea7dafbd07ebd4170b9e",
+    "double_spend_slashing_js/double_spend_slashing.wasm": "3ce31bdcdd900d2ccbc9386f62e0932541eea6f1709cbf4ad8a66e2c3a71d49c",
+    "double_spend_slashing_final.zkey": "9fe7e3b7377663d2b3f8f156bc0634eb108dde0de39e26e2b1c470373af98494",
+    "double_spend_slashing_verification_key.json": "3fe435f01ef8cde970a6dcd1862338d2d6c1150475af8cf365b4eb6f4a047da1",
+    "withdrawal_js/withdrawal.wasm": "fc049ab2e427cb521f275a47b6a65d8b50c9da8866a80b7f95f8163154bdeb42",
+    "withdrawal.zkey": "4d0258acfc75a37b9b776dcc12bcb89a7b63868e293186552116f83f0d565c91",
+    "withdrawal_verification_key.json": "4bdf4c62a5573abe365ff71be18c4637c3aec5d6e251702ae2e00936aade8691"
+  }
+}

@@ -19,6 +19,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "verify:attestation": "ts-node scripts/testing/verify-attestation.ts",
     "setup:circuit": "ts-node scripts/setup/setup-trusted-setup.ts",
+    "circuits:fetch": "ts-node scripts/setup/fetch-circuits.ts",
     "dance": "pnpm format && pnpm lint && pnpm test && pnpm build && (cd contracts && forge test) && pnpm outdated || true",
     "dance:full": "pnpm format && pnpm lint && pnpm test && pnpm test:e2e && pnpm build && (cd contracts && forge test) && pnpm outdated || true"
   },
