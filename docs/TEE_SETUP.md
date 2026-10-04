@@ -771,7 +771,7 @@ curl -k https://your-server:443/attestation | jq .
 # {
 #   "platform": "phala" | "intel-tdx" | "amd-sev-snp" | "aws-nitro",
 #   "quote": "base64-encoded-attestation-quote",
-#   "reportData": "hex-sha256-of-mlkem-pubkey-padded-to-128-chars",
+#   "reportData": "hex: sha256(mlkem-pubkey) || sha256(tls-cert-der), 128 chars",
 #   "measurement": "hex-measurement-hash",
 #   "timestamp": "2026-03-17T...",
 #   "instructions": "Platform-specific verification instructions..."
@@ -782,16 +782,19 @@ curl -k https://your-server:443/attestation | jq .
 
 ### 2. Verify report_data Binding (Critical Security Check)
 
-The attestation quote cryptographically binds the **TEE-generated ML-KEM public key** to the TEE measurement using the `report_data` field. This provides two critical security guarantees:
+The attestation quote cryptographically binds the **TEE-generated ML-KEM public key** (first 32 bytes) and the **in-enclave TLS certificate** (second 32 bytes) to the TEE measurement using the `report_data` field. This provides three critical security guarantees:
 
 1. **Key Origin**: The ML-KEM key pair was generated **inside the TEE**, not loaded from environment variables
 2. **MITM Prevention**: An attacker cannot serve their own encryption key while replaying a valid TEE attestation
+3. **TLS Endpoint Binding**: The TLS certificate the server presents is bound to the quote, proving the TLS session terminates **inside the attested enclave** (not at an external proxy)
 
 **How it works:**
 - On first startup in a TEE environment, ZK API generates a new ML-KEM-1024 key pair inside the secure enclave
 - The private key is sealed using platform-specific mechanisms and never leaves the TEE
-- The public key is bound to the attestation quote via `report_data = SHA-256(public_key) || 0x00...00`
-- Clients verify this binding to ensure they're encrypting to a TEE-sealed private key
+- The TLS private key is derived in-enclave via the dstack KMS (or loaded from enclave-only storage)
+- Both are bound to the attestation quote via `report_data = SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)`
+- Clients verify this binding to ensure they're encrypting to a TEE-sealed private key **and** talking TLS directly to the enclave
+- A `report_data` whose second half is all zeros means the server is **not** terminating TLS itself — treat that as a weaker deployment
 
 **Security comparison:**
 - ❌ **Old approach**: Keys in `ADMIN_MLKEM_PRIVATE_KEY` environment variable → Operator can access private key
@@ -817,16 +820,23 @@ curl -k https://your-server:443/mlkem/pubkey > pubkey.json
 REPORT_DATA=$(cat attestation.json | jq -r '.reportData')
 PUBKEY=$(cat pubkey.json | jq -r '.publicKey')
 
-# 4. Compute expected report_data: SHA-256(pubkey) || 0x00...00 (64 bytes total)
-EXPECTED=$(echo -n "$PUBKEY" | base64 -d | sha256sum | cut -d' ' -f1)
-EXPECTED_PADDED="${EXPECTED}$(printf '0%.0s' {1..64})"  # Pad to 128 hex chars (64 bytes)
+# 4. Compute expected report_data:
+#    SHA-256(mlkem_pubkey) || SHA-256(tls_leaf_cert_der) (64 bytes total)
+EXPECTED_MLKEM=$(echo -n "$PUBKEY" | base64 -d | sha256sum | cut -d' ' -f1)
+
+# Fetch the TLS certificate the server actually presents and hash its DER
+openssl s_client -connect your-server:443 -servername your-server </dev/null 2>/dev/null \
+  | openssl x509 -outform DER > served-cert.der
+EXPECTED_TLS=$(sha256sum served-cert.der | cut -d' ' -f1)
+
+EXPECTED="${EXPECTED_MLKEM}${EXPECTED_TLS}"
 
 # 5. Verify they match
-if [ "$REPORT_DATA" = "$EXPECTED_PADDED" ]; then
-  echo "✅ report_data matches ML-KEM public key - Quote is properly bound"
+if [ "$REPORT_DATA" = "$EXPECTED" ]; then
+  echo "✅ report_data matches ML-KEM public key AND served TLS cert"
 else
   echo "❌ report_data MISMATCH - DO NOT TRUST THIS SERVER"
-  echo "Expected: $EXPECTED_PADDED"
+  echo "Expected: $EXPECTED"
   echo "Got:      $REPORT_DATA"
   exit 1
 fi
@@ -847,13 +857,31 @@ With `report_data` binding, this attack is cryptographically impossible.
 
 ### 3. Verify TLS Termination Inside TEE
 
-```bash
-# Confirm TLS private key never touched the host
-# The key should only exist inside the TEE memory
-# Check host filesystem - key should NOT be there
-sudo find /var /tmp /root -name "tls.key" 2>/dev/null
+In production, ZK API terminates TLS **inside the enclave**. The TLS private key is obtained in one of two ways, and the server **fails closed** if neither is available:
 
-# Should return no results
+1. **dstack KMS (Phala/Dstack — default)**: the key is derived inside the CVM via `getTlsKey()` (`/var/run/dstack.sock` or legacy `/var/run/tappd.sock`). It exists only in enclave memory and never touches the host.
+2. **Operator-provisioned** (`TLS_KEY_PATH` / `TLS_CERT_PATH`): for non-dstack TEE platforms; the files must live in enclave-only storage.
+
+Setting `ALLOW_EXTERNAL_TLS_TERMINATION=true` restores plain HTTP behind an external TLS proxy. **Do not use this with real user secrets** — request bodies (including `secretKey` on `/zk-api/proofs/*`) become visible in plaintext at the termination proxy, outside the TEE trust boundary.
+
+**Phala/dstack gateway configuration:** the gateway must run in **TLS-passthrough mode** so it forwards raw TLS to the enclave instead of terminating it. Use the `s`-suffixed port in the gateway domain:
+
+```
+https://<app-id>-3000s.<gateway-base-domain>     ← TLS passthrough (correct)
+https://<app-id>-3000.<gateway-base-domain>      ← gateway terminates TLS (do NOT use for /proofs/*)
+```
+
+**Verification:**
+
+```bash
+# 1. The served certificate must hash to bytes 32-63 of the attestation
+#    report_data (see section 2 above) — this is the cryptographic proof
+#    that your TLS session ends inside the attested enclave. Automated:
+pnpm verify:attestation https://your-server:443/attestation
+
+# 2. Confirm the TLS private key never touched the host filesystem
+sudo find /var /tmp /root -name "tls.key" 2>/dev/null
+# Should return no results (dstack-derived keys exist only in enclave memory)
 ```
 
 ### 4. Test Health Endpoints

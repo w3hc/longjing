@@ -2,13 +2,20 @@
  * Attestation Service
  *
  * Orchestrates cross-platform TEE attestation with report_data binding
- * Binds TEE-generated ML-KEM public key to attestation quotes using SHA-256 hash
+ * Binds the TEE-generated ML-KEM public key AND the in-enclave TLS
+ * certificate to attestation quotes using SHA-256 hashes:
+ *
+ *   report_data = SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)
  *
  * Security model:
  * - ML-KEM key pair is generated inside the TEE
  * - Private key is sealed and never leaves the TEE
- * - Public key is bound to attestation via report_data
- * - Clients can verify: attestation → report_data → public key → encrypted messages
+ * - Public key is bound to attestation via report_data (first 32 bytes)
+ * - TLS terminates inside the enclave; the served certificate is bound via
+ *   report_data (second 32 bytes), so clients can verify the TLS session
+ *   ends inside the attested enclave — not at an external proxy
+ * - Clients can verify: attestation → report_data → public key / TLS cert
+ *   → encrypted messages and transport
  */
 
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
@@ -22,6 +29,7 @@ import { SevSnpPlatform } from './platforms/sev-snp.platform';
 import { NitroPlatform } from './platforms/nitro.platform';
 import { MockPlatform } from './platforms/mock.platform';
 import { TeeKeyManagerService } from './tee-key-manager.service';
+import { getTlsLeafCertificate } from '../tls/tls-context';
 
 @Injectable()
 export class AttestationService implements OnModuleInit {
@@ -96,13 +104,20 @@ export class AttestationService implements OnModuleInit {
   }
 
   /**
-   * Build report_data from ML-KEM public key
+   * Build report_data from the ML-KEM public key and the TLS leaf certificate
    * @param mlkemPublicKey - ML-KEM-1024 public key (1568 bytes)
-   * @returns SHA-256 hash of the public key, zero-padded to 64 bytes
+   * @returns SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)
+   *          (second half is zero when this process is not terminating TLS,
+   *          e.g. behind an external proxy — clients should treat that as
+   *          a weaker guarantee)
    */
   private buildReportData(mlkemPublicKey: Buffer): Buffer {
-    const hash = createHash('sha256').update(mlkemPublicKey).digest(); // 32 bytes
-    return Buffer.concat([hash, Buffer.alloc(32)]); // → 64 bytes
+    const mlkemHash = createHash('sha256').update(mlkemPublicKey).digest(); // 32 bytes
+    const tlsCertDer = getTlsLeafCertificate();
+    const tlsHash = tlsCertDer
+      ? createHash('sha256').update(tlsCertDer).digest() // 32 bytes
+      : Buffer.alloc(32);
+    return Buffer.concat([mlkemHash, tlsHash]); // → 64 bytes
   }
 
   /**
@@ -121,7 +136,7 @@ export class AttestationService implements OnModuleInit {
       throw new Error('ML-KEM public key not available from TEE Key Manager');
     }
 
-    // Build report_data: SHA-256(mlkem_public_key) || 0x00...00
+    // Build report_data: SHA-256(mlkem_public_key) || SHA-256(tls_cert_der)
     const reportData = this.buildReportData(mlkemPublicKey);
 
     this.logger.log(

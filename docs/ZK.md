@@ -89,6 +89,8 @@ This commitment is stored in the Merkle tree anonymity set onchain, allowing use
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**In-TEE TLS termination:** in production, the HTTPS hop above ends inside the enclave. The TLS private key is derived in-enclave (dstack KMS) and the served certificate is bound into the attestation `report_data` (bytes 32-63), so clients can prove their TLS session ends inside the attested enclave, not at a gateway. Any proxy in front must run in TLS-passthrough mode. See [TEE_SETUP.md](TEE_SETUP.md#3-verify-tls-termination-inside-tee).
+
 ## Implementation Status
 
 ### ✅ Completed: Real ZK Proof Verification
@@ -530,7 +532,7 @@ circom api_credit_proof.circom --r1cs --wasm --sym
 - [ ] Implement proper key management (HSM/KMS) for EdDSA signing key
 - [ ] Add event listener for onchain Deposit events
 - [ ] Deploy contract to testnet/mainnet
-- [ ] Security audit (contract + circuit + backend)
+- [ ] Independent review (contract + circuit + backend)
 - [ ] Rate limiting per IP/nullifier
 - [ ] Monitoring and alerting for double-spend attempts
 - [ ] Gas optimization
@@ -584,7 +586,7 @@ The full production circuit (`api_credit_proof`) has **775,250 constraints**, wh
 - Smaller constraint count (~10K)
 - **Same cryptographic security guarantees**
 - Suitable for development and testing
-- All C-1 security audit fixes verified with test circuit
+- Mock verification removal verified with test circuit
 
 **To Generate Full Circuit Artifacts:**
 

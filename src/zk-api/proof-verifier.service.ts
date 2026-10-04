@@ -170,7 +170,7 @@ export class ProofVerifierService {
       this.verificationCount++;
 
       // CRITICAL: Real cryptographic verification is required
-      // The mock fallback has been removed per security audit SEC_AUDIT_JUNE_30.md
+      // The mock fallback has been removed
       if (!this.snarkjsProofService.isAvailable()) {
         this.failedVerifications++;
         this.logger.error(

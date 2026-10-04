@@ -177,7 +177,7 @@ describe('ProofVerifierService', () => {
     });
 
     it('should cryptographically reject proof with invalid witness (CRITICAL TEST)', async () => {
-      // This is the missing end-to-end negative test per SEC_AUDIT_JUNE_30.md line 64
+      // End-to-end negative test: a structurally valid but invalid proof must be rejected
       // "real-but-wrong witness → production verifier → asserted rejection"
 
       snarkjsProofService.isAvailable.mockReturnValue(true);
@@ -291,7 +291,7 @@ describe('ProofVerifierService', () => {
     });
 
     it('should not use mock verifications (deprecated)', async () => {
-      // Mock verification has been removed per security audit
+      // Mock verification has been removed
       // This test verifies that mock verification is no longer available
       snarkjsProofService.isAvailable.mockReturnValue(false);
 

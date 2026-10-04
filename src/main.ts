@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0
 // Copyright (C) 2026 Julien Béranger and the W3HC
 
-import * as fs from 'fs';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -10,18 +9,18 @@ import { AppModule } from './app.module';
 import { SanitizedLogger } from './logging/sanitized-logger';
 import { TeeExceptionFilter } from './filters/tee-exception.filter';
 import { ProofVerifierService } from './zk-api/proof-verifier.service';
+import { loadTlsMaterial } from './tls/tee-tls';
 
 async function bootstrap() {
   const isProd = process.env.NODE_ENV === 'production';
 
-  // HTTPS only in dev with self-signed certs
-  // Production uses HTTP behind Phala's TLS termination proxy
-  const httpsOptions = !isProd
-    ? {
-        key: fs.readFileSync('./secrets/tls.key'),
-        cert: fs.readFileSync('./secrets/tls.cert'),
-      }
-    : undefined;
+  // TLS terminates INSIDE the TEE:
+  // - dev: self-signed certs from ./secrets
+  // - prod: key derived in-enclave via dstack KMS (or operator-provisioned
+  //   enclave storage), failing closed if neither is available.
+  // The served certificate is bound into the attestation report_data so
+  // clients can verify the TLS endpoint is the attested enclave.
+  const { httpsOptions, source: tlsSource } = await loadTlsMaterial(isProd);
 
   const app = await NestFactory.create(AppModule, {
     httpsOptions,
@@ -106,8 +105,10 @@ async function bootstrap() {
   await app.listen(port);
 
   // Log startup only in dev mode (production logger filters this out)
-  const protocol = isProd ? 'http' : 'https';
-  console.log(`Application is running on: ${protocol}://localhost:${port}`);
+  const protocol = httpsOptions ? 'https' : 'http';
+  console.log(
+    `Application is running on: ${protocol}://localhost:${port} (TLS source: ${tlsSource})`,
+  );
 }
 
 void bootstrap();
