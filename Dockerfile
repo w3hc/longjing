@@ -34,6 +34,9 @@ RUN pnpm install --prod --frozen-lockfile
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
 
+# Copy the verification key of the production request circuit
+COPY --from=builder /app/circuits/build/api_request_verification_key.json ./circuits/build/
+
 # Expose port
 EXPOSE 3000
 
