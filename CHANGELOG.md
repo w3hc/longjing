@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `api_request.circom` now enforces `numRefunds ≤ MAX_REFUNDS`, gates each refund slot with a `LessThan` constraint instead of a ternary on a signal, and forces turned-off slots to a zero value, so a prover can no longer inflate the refund sum. The circuit compiles again under circom 2.2 ([#86](https://github.com/w3hc/longjing/issues/86)).
 - The server now rejects requests whose RLN signal `x` is not `SHA-256(payload) mod p`, so a proof and signal can no longer be replayed with another payload, and clients can no longer pick `x` freely. Double-spend detection compares `x` numerically ([#85](https://github.com/w3hc/longjing/issues/85)).
 - Verifier and server address changes in `LongjingCredits` now go through a 7-day timelock: the owner calls `proposeChange`, anyone can watch the `ChangeProposed` event, and `executeChange` only succeeds once `ADMIN_DELAY` has elapsed, giving users time to exit first. `cancelChange` drops a queued change ([#84](https://github.com/w3hc/longjing/issues/84)).
 

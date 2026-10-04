@@ -116,12 +116,31 @@ template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
     merkleRoot === merkleRootExpected;
 
     // ========== 3. Verify Refund Signatures and Sum Refunds ==========
+    // Bound numRefunds to [0, MAX_REFUNDS]
+    var REFUND_BITS = 8;
+    component numRefundsBits = Num2Bits(REFUND_BITS);
+    numRefundsBits.in <== numRefunds;
+
+    component numRefundsBound = LessEqThan(REFUND_BITS);
+    numRefundsBound.in[0] <== numRefunds;
+    numRefundsBound.in[1] <== MAX_REFUNDS;
+    numRefundsBound.out === 1;
+
+    component refundActive[MAX_REFUNDS];
     component refundMessageHashers[MAX_REFUNDS];
     component refundSignatureVerifiers[MAX_REFUNDS];
     signal refundSum[MAX_REFUNDS + 1];
     refundSum[0] <== 0;
 
     for (var i = 0; i < MAX_REFUNDS; i++) {
+        // Slot i is active iff i < numRefunds
+        refundActive[i] = LessThan(REFUND_BITS);
+        refundActive[i].in[0] <== i;
+        refundActive[i].in[1] <== numRefunds;
+
+        // Turned-off slots must carry a zero value
+        refundValues[i] * (1 - refundActive[i].out) === 0;
+
         // Hash refund ticket: Poseidon(idCommitment, nullifier, value, timestamp)
         refundMessageHashers[i] = Poseidon(4);
         refundMessageHashers[i].inputs[0] <== idCommitment;
@@ -129,9 +148,8 @@ template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
         refundMessageHashers[i].inputs[2] <== refundValues[i];
         refundMessageHashers[i].inputs[3] <== refundTimestamps[i];
 
-        // Verify EdDSA signature (only if i < numRefunds)
         refundSignatureVerifiers[i] = EdDSAMiMCVerifier();
-        refundSignatureVerifiers[i].enabled <== (i < numRefunds) ? 1 : 0;
+        refundSignatureVerifiers[i].enabled <== refundActive[i].out;
         refundSignatureVerifiers[i].Ax <== serverPublicKeyX;
         refundSignatureVerifiers[i].Ay <== serverPublicKeyY;
         refundSignatureVerifiers[i].R8x <== refundSignaturesR8x[i];
@@ -139,8 +157,7 @@ template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
         refundSignatureVerifiers[i].S <== refundSignaturesS[i];
         refundSignatureVerifiers[i].M <== refundMessageHashers[i].out;
 
-        // Accumulate refunds (only count if i < numRefunds)
-        refundSum[i + 1] <== refundSum[i] + ((i < numRefunds) ? refundValues[i] : 0);
+        refundSum[i + 1] <== refundSum[i] + refundValues[i] * refundActive[i].out;
     }
 
     signal totalRefunds;
