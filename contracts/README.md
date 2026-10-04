@@ -190,7 +190,7 @@ Current gas costs (approximate):
 
 ### Known Limitations
 1. **Merkle tree storage cost** - Stores all nodes on-chain for correct proof generation (gas intensive for large trees)
-2. **Admin privileges** - Contract owner can change verifier contracts and minimum stakes
+2. **Admin privileges** - Contract owner can change minimum stakes instantly, and verifier contracts and the server address through `proposeChange` / `executeChange` after a 7-day `ADMIN_DELAY`
 
 ### Security Model
 - **RLN stake** - Claimable by anyone proving double-spend

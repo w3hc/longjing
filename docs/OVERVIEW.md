@@ -55,7 +55,7 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
 
 Both projects are experimental and both evolve; this comparison reflects ethereum/zkapi as of October 2026.
 
-**Trust Assumptions**: For production deployment, the system requires: (1) server key rotation mechanism, (2) timelock on admin functions, (3) trusted setup ceremonies (development setup complete, production needs 50+ participants), and (4) independent review. See security considerations below.
+**Trust Assumptions**: For production deployment, the system requires: (1) server key rotation mechanism, (2) timelock on the remaining admin functions (verifier and server address changes already wait 7 days), (3) trusted setup ceremonies (development setup complete, production needs 50+ participants), and (4) independent review. See security considerations below.
 
 ## TEE Deployment: Why This Matters
 
@@ -555,7 +555,7 @@ This relies on economic incentives:
 **Trust Assumptions**:
 
 - `getMerkleProof()` is public onchain (no server dependency for withdrawals)
-- **Admin control**: Contract owner can slash policy stakes and change server address
+- **Admin control**: Contract owner can change verifiers and the server address (which can slash policy stakes), but only 7 days after a public `ChangeProposed` event, so users can withdraw first
 - **Deposit linkability**: First deposit publicly links wallet address to identity commitment
 
 ## Roadmap

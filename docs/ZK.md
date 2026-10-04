@@ -568,7 +568,7 @@ This implementation follows the [original ZK API Credits proposal](https://ethre
 For production deployment, address these trust dependencies:
 1. **Onchain Merkle tree** - Users can withdraw without server
 2. **Server key rotation** - Update EdDSA public key with timelock
-3. **Admin timelocks** - Prevent instant parameter changes
+3. **Admin timelocks** - Verifier and server address changes already wait 7 days; extend to the remaining parameters
 4. **Emergency withdrawal** - Automatic after server downtime period
 
 See [OVERVIEW.md](./OVERVIEW.md#implementation-alignment-with-original-proposal) for complete comparison.
