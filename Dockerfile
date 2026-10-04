@@ -1,47 +1,45 @@
-FROM node:20-alpine AS builder
+# node:20-alpine, pinned by digest so the same Dockerfile always builds on the same base
+ARG NODE_IMAGE=node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+
+FROM ${NODE_IMAGE} AS base
 
 WORKDIR /app
 
-# Copy package files
+# pnpm comes from corepack, at the version and hash pinned in package.json
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
+
 COPY package.json pnpm-lock.yaml ./
 
-# Install pnpm
-RUN npm install -g pnpm@10.23.0
+FROM base AS builder
 
-# Install dependencies
 RUN pnpm install --frozen-lockfile
 
-# Copy source code
 COPY . .
 
 # Fetch the pinned circuit artifacts
 RUN pnpm circuits:fetch
 
-# Build the application
 RUN pnpm build
 
-# Production stage
-FROM node:20-alpine
+FROM base AS prod-deps
+
+# pnpm's state files record the install time, which would make the image digest differ per build
+RUN pnpm install --prod --frozen-lockfile \
+  && rm -f node_modules/.modules.yaml node_modules/.pnpm-workspace-state-v1.json
+
+# Runtime stage: dist, production dependencies and the verification key only, no pnpm
+FROM ${NODE_IMAGE}
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json pnpm-lock.yaml ./
-
-# Install pnpm
-RUN npm install -g pnpm@10.23.0
-
-# Install production dependencies only
-RUN pnpm install --prod --frozen-lockfile
-
-# Copy built application from builder
+COPY package.json ./
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
 # Copy the verification key of the production request circuit
 COPY --from=builder /app/circuits/build/api_request_verification_key.json ./circuits/build/
 
-# Expose port
 EXPOSE 3000
 
-# Start the application
 CMD ["node", "dist/src/main.js"]
