@@ -25,7 +25,7 @@ Adding a new provider involves:
 
 ## Prerequisites
 
-- Node.js 18+ installed
+- Node.js 24+ installed
 - Familiarity with NestJS and TypeScript
 - API credentials for the service you're integrating
 - Understanding of the provider's pricing model
