@@ -25,20 +25,16 @@ pragma solidity 0.8.35;
  */
 library BabyJubJub {
     /// @notice Prime field size for Baby Jubjub (same as BN128 scalar field)
-    uint256 constant PRIME_Q =
-        21888242871839275222246405745257275088548364400416034343698204186575808495617;
+    uint256 constant PRIME_Q = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
     /// @notice Subgroup order - the number of points in the prime-order subgroup
-    uint256 constant SUBORDER =
-        2736030358979909402780800718157159386076813972158567259200215660948447373041;
+    uint256 constant SUBORDER = 2736030358979909402780800718157159386076813972158567259200215660948447373041;
 
     /// @notice Generator point X coordinate - base point for scalar multiplication
-    uint256 constant GX =
-        5299619240641551281634865583518297030282874472190772894086521144482721001553;
+    uint256 constant GX = 5299619240641551281634865583518297030282874472190772894086521144482721001553;
 
     /// @notice Generator point Y coordinate - base point for scalar multiplication
-    uint256 constant GY =
-        16950150798460657717958625567821834550301663161624707787222815936182638968203;
+    uint256 constant GY = 16950150798460657717958625567821834550301663161624707787222815936182638968203;
 
     /// @notice Curve coefficient 'd' in twisted Edwards form: ax^2 + y^2 = 1 + dx^2y^2
     uint256 constant D = 168696;
@@ -62,12 +58,7 @@ library BabyJubJub {
      * @return x3 X coordinate of the resulting point
      * @return y3 Y coordinate of the resulting point
      */
-    function pointAdd(
-        uint256 x1,
-        uint256 y1,
-        uint256 x2,
-        uint256 y2
-    ) internal pure returns (uint256 x3, uint256 y3) {
+    function pointAdd(uint256 x1, uint256 y1, uint256 x2, uint256 y2) internal pure returns (uint256 x3, uint256 y3) {
         uint256 beta = mulmod(x1, y2, PRIME_Q);
         uint256 gamma = mulmod(y1, x2, PRIME_Q);
 
@@ -81,11 +72,7 @@ library BabyJubJub {
         uint256 dtau = mulmod(D, tau, PRIME_Q);
 
         // x3 = (beta + gamma) / (1 + d*tau)
-        x3 = mulmod(
-            addmod(beta, gamma, PRIME_Q),
-            invmod(addmod(1, dtau, PRIME_Q), PRIME_Q),
-            PRIME_Q
-        );
+        x3 = mulmod(addmod(beta, gamma, PRIME_Q), invmod(addmod(1, dtau, PRIME_Q), PRIME_Q), PRIME_Q);
 
         // y3 = (delta + A*beta - A*gamma) / (1 - d*tau)
         // = (delta + A*(beta - gamma)) / (1 - d*tau)
@@ -117,11 +104,7 @@ library BabyJubJub {
      * @return rx X coordinate of the resulting point (scalar * P)
      * @return ry Y coordinate of the resulting point (scalar * P)
      */
-    function pointMul(
-        uint256 x,
-        uint256 y,
-        uint256 scalar
-    ) internal pure returns (uint256 rx, uint256 ry) {
+    function pointMul(uint256 x, uint256 y, uint256 scalar) internal pure returns (uint256 rx, uint256 ry) {
         // Return point at infinity for scalar = 0
         if (scalar == 0) {
             return (0, 1);
@@ -187,11 +170,7 @@ library BabyJubJub {
      * @param modulus The modulus to reduce by after each operation
      * @return result The result of (base^exponent) mod modulus
      */
-    function expmod(
-        uint256 base,
-        uint256 exponent,
-        uint256 modulus
-    ) internal pure returns (uint256) {
+    function expmod(uint256 base, uint256 exponent, uint256 modulus) internal pure returns (uint256) {
         uint256 result = 1;
         base = base % modulus;
         while (exponent > 0) {
@@ -220,11 +199,7 @@ library BabyJubJub {
         uint256 x2 = mulmod(x, x, PRIME_Q);
         uint256 y2 = mulmod(y, y, PRIME_Q);
         uint256 lhs = addmod(mulmod(A, x2, PRIME_Q), y2, PRIME_Q);
-        uint256 rhs = addmod(
-            1,
-            mulmod(mulmod(D, x2, PRIME_Q), y2, PRIME_Q),
-            PRIME_Q
-        );
+        uint256 rhs = addmod(1, mulmod(mulmod(D, x2, PRIME_Q), y2, PRIME_Q), PRIME_Q);
         return lhs == rhs;
     }
 }

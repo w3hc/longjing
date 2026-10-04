@@ -13,9 +13,13 @@ contract MockRefundVerifier {
      * @return bool True if the proof is valid (non-zero first element)
      */
     function verifyRefundProof(
-        uint[8] calldata proof,
-        uint[8] calldata /* publicSignals */
-    ) external pure returns (bool) {
+        uint256[8] calldata proof,
+        uint256[8] calldata /* publicSignals */
+    )
+        external
+        pure
+        returns (bool)
+    {
         // Simple mock: valid if first proof element is non-zero
         return proof[0] != 0;
     }
