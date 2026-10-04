@@ -14,7 +14,7 @@ import { loadTlsMaterial } from './tls/tee-tls';
 async function bootstrap() {
   const isProd = process.env.NODE_ENV === 'production';
 
-  // TLS terminates INSIDE the TEE (security audit C-3):
+  // TLS terminates INSIDE the TEE:
   // - dev: self-signed certs from ./secrets
   // - prod: key derived in-enclave via dstack KMS (or operator-provisioned
   //   enclave storage), failing closed if neither is available.

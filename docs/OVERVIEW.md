@@ -47,7 +47,7 @@ This implementation is faithful to the original ethresear.ch proposal with strat
 - **Production Infrastructure**: ETH/USD oracle, rate limiting, persistent storage
 - **Provider Abstraction**: See [PROVIDERS.md](docs/PROVIDERS.md)
 
-**Trust Assumptions**: For production deployment, the system requires: (1) onchain Merkle tree implemented, (2) server key rotation mechanism, (3) timelock on admin functions, (4) trusted setup ceremonies (development setup complete, production needs 50+ participants), and (5) security audits. See security considerations below.
+**Trust Assumptions**: For production deployment, the system requires: (1) onchain Merkle tree implemented, (2) server key rotation mechanism, (3) timelock on admin functions, (4) trusted setup ceremonies (development setup complete, production needs 50+ participants), and (5) independent review. See security considerations below.
 
 **Key Innovation**: Combines ZK-SNARKs (Groth16) for proving solvency with Rate-Limit Nullifiers for preventing double-spending, maintaining complete privacy through cryptographic unlinkability rather than policy.
 
@@ -541,9 +541,9 @@ This relies on economic incentives:
    - Full node storage in `treeNodes` mapping for correct proof generation
    - See [ZkApiCredits.sol:620-719](../contracts/src/ZkApiCredits.sol#L620-L719)
 
-5. **Security audit**
-   - Circuit security audit
-   - Contract security audit
+5. **Independent review**
+   - Circuit review
+   - Contract review
    - Trusted setup verification
 
 **Trust Assumptions**:
@@ -573,7 +573,7 @@ This relies on economic incentives:
   - Network switcher (Sepolia/Mainnet)
 - [ ] **Beta testing**
   - Real user integration testing
-  - Security audit (circuit + contract + backend)
+  - Independent review (circuit + contract + backend)
   - Performance tuning and monitoring
   - Documentation and tutorials
 

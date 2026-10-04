@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Julien Béranger and the W3HC
 
 /**
- * In-enclave TLS termination (security audit C-3)
+ * In-enclave TLS termination
  *
  * Production must terminate TLS *inside* the TEE, so that request bodies
  * (which may carry user secrets on the /zk-api/proofs/* endpoints) are never
@@ -169,7 +169,7 @@ export async function loadTlsMaterial(isProd: boolean): Promise<TlsMaterial> {
     'FATAL: Cannot start in production without in-enclave TLS termination. ' +
       'Provide key material via dstack (mount /var/run/dstack.sock or ' +
       '/var/run/tappd.sock) or TLS_KEY_PATH/TLS_CERT_PATH in enclave storage. ' +
-      'To explicitly accept an external TLS terminator (NOT recommended — see ' +
-      'security audit C-3), set ALLOW_EXTERNAL_TLS_TERMINATION=true.',
+      'To explicitly accept an external TLS terminator (NOT recommended), ' +
+      'set ALLOW_EXTERNAL_TLS_TERMINATION=true.',
   );
 }
