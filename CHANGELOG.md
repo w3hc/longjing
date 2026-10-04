@@ -15,3 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Attestation `report_data` is now `SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)`; the second half was previously zero.
+- Renamed the project from zk-api to Longjing ([#83](https://github.com/w3hc/zk-api/issues/83)): package `longjing`, Docker image `julienberanger/longjing`, routes under `/longjing/*`, NestJS module `LongjingModule` in `src/longjing/`, contract `LongjingCredits`, and SQLite file `longjing.db`.
+- The development refund-signer seed is now `longjing-refund-signer-dev-key`, with the matching public key in `DeployLongjingCredits.s.sol`; contracts deployed with the old dev key need redeploying.
+- `README.md` and `docs/OVERVIEW.md` now position Longjing as an implementation of the original RLN protocol plus a TEE gateway, and compare it with [ethereum/zkapi](https://github.com/ethereum/zkapi).
