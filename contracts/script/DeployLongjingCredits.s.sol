@@ -2,9 +2,9 @@
 pragma solidity 0.8.35;
 
 import {Script, console} from 'forge-std/Script.sol';
-import {ZkApiCredits} from '../src/ZkApiCredits.sol';
+import {LongjingCredits} from '../src/LongjingCredits.sol';
 
-contract DeployZkApiCredits is Script {
+contract DeployLongjingCredits is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envOr(
             'PRIVATE_KEY',
@@ -33,7 +33,7 @@ contract DeployZkApiCredits is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        ZkApiCredits zkApi = new ZkApiCredits(
+        LongjingCredits longjing = new LongjingCredits(
             serverAddress,
             minRlnStake,
             minPolicyStake,
@@ -41,16 +41,16 @@ contract DeployZkApiCredits is Script {
             serverPubKeyY
         );
 
-        console.log('ZkApiCredits deployed at:', address(zkApi));
+        console.log('LongjingCredits deployed at:', address(longjing));
         console.log('Server address:', serverAddress);
         console.log('Min RLN stake:', minRlnStake);
         console.log('Min Policy stake:', minPolicyStake);
 
         // Real Groth16 verifiers are deployed automatically in the constructor
         console.log('\nVerifiers deployed:');
-        console.log('Withdrawal verifier:', address(zkApi.withdrawalVerifier()));
-        console.log('Refund verifier:', address(zkApi.refundVerifier()));
-        console.log('Slashing verifier:', address(zkApi.slashingVerifier()));
+        console.log('Withdrawal verifier:', address(longjing.withdrawalVerifier()));
+        console.log('Refund verifier:', address(longjing.refundVerifier()));
+        console.log('Slashing verifier:', address(longjing.slashingVerifier()));
 
         console.log('\nUsing real Groth16 verifiers from api_credit_proof_test circuit');
         console.log('Circuit: circuits/api_credit_proof_test.circom');

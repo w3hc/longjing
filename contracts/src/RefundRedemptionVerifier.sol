@@ -215,7 +215,7 @@ contract RefundRedemptionVerifier {
          }
      }
 
-    /// @notice Wrapper function for ZkApiCredits contract compatibility
+    /// @notice Wrapper function for LongjingCredits contract compatibility
     function verifyRefundProof(
         uint256[8] calldata _proof,
         uint256[8] calldata _publicSignals

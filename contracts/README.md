@@ -1,10 +1,10 @@
-# ZK API Credits - Smart Contracts
+# Longjing - Smart Contracts
 
 Solidity smart contracts for privacy-preserving API credits system using Zero-Knowledge proofs and Rate-Limit Nullifiers (RLN).
 
 ## Overview
 
-The ZkApiCredits contract implements:
+The LongjingCredits contract implements:
 - **Anonymous deposits** with identity commitments (Poseidon hash)
 - **Dual staking** mechanism (RLN + Policy stakes)
 - **Merkle tree** anonymity set using Poseidon hashing
@@ -14,8 +14,8 @@ The ZkApiCredits contract implements:
 
 ## Contracts
 
-### ZkApiCredits.sol
-Main contract implementing the ZK API Credits protocol.
+### LongjingCredits.sol
+Main contract implementing the RLN-based usage-credits protocol.
 
 **Key Functions:**
 - `deposit(bytes32 idCommitment)` - Deposit ETH with anonymous identity
@@ -86,9 +86,9 @@ forge coverage
 **Test Results:**
 ```
 ✅ All 24 tests passing
-✅ 85.47% statement coverage on ZkApiCredits.sol
-✅ 86.96% function coverage on ZkApiCredits.sol
-✅ 50.00% branch coverage on ZkApiCredits.sol
+✅ 85.47% statement coverage on LongjingCredits.sol
+✅ 86.96% function coverage on LongjingCredits.sol
+✅ 50.00% branch coverage on LongjingCredits.sol
 ✅ Identity commitments use Poseidon hash
 ✅ Merkle tree uses Poseidon hash with full node storage
 ✅ Merkle proof generation verified for >2 leaves
@@ -121,7 +121,7 @@ The circuit uses `circomlib/Poseidon`, and the contract uses `poseidon-solidity`
 anvil
 
 # Terminal 2: Deploy contract
-forge script script/DeployZkApiCredits.s.sol:DeployZkApiCredits --rpc-url http://127.0.0.1:8545 --broadcast
+forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://127.0.0.1:8545 --broadcast
 ```
 
 ### Testnet
@@ -133,7 +133,7 @@ export SERVER_ADDRESS=0x...
 export RPC_URL=https://sepolia.infura.io/v3/...
 
 # Deploy
-forge script script/DeployZkApiCredits.s.sol:DeployZkApiCredits \
+forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits \
   --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY \
   --broadcast \
@@ -220,7 +220,7 @@ forge doc
 forge coverage
 
 # Deploy to local testnet
-forge script script/DeployZkApiCredits.s.sol:DeployZkApiCredits --rpc-url http://localhost:8545 --broadcast
+forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://localhost:8545 --broadcast
 
 # Interact with contract
 cast call <CONTRACT_ADDRESS> "merkleRoot()" --rpc-url http://localhost:8545
@@ -231,7 +231,7 @@ cast call <CONTRACT_ADDRESS> "merkleRoot()" --rpc-url http://localhost:8545
 ```
 contracts/
 ├── src/
-│   ├── ZkApiCredits.sol                    # Main contract
+│   ├── LongjingCredits.sol                    # Main contract
 │   ├── PoseidonHasher.sol                  # Poseidon hash wrapper
 │   ├── BabyJubJub.sol                      # EdDSA curve operations
 │   ├── WithdrawalVerifier.sol              # Withdrawal proof verifier (auto-generated)
@@ -239,13 +239,13 @@ contracts/
 │   ├── DoubleSpendSlashingVerifier.sol     # Slashing proof verifier (auto-generated)
 │   └── PolicyViolationVerifier.sol         # Policy proof verifier (auto-generated)
 ├── test/
-│   ├── ZkApiCredits.t.sol                  # Foundry tests (24 tests)
+│   ├── LongjingCredits.t.sol                  # Foundry tests (24 tests)
 │   ├── MockWithdrawalVerifier.sol          # Mock verifier for testing
 │   ├── MockRefundVerifier.sol              # Mock verifier for testing
 │   ├── MockSlashingVerifier.sol            # Mock verifier for testing
 │   └── MockPolicyVerifier.sol              # Mock verifier for testing
 ├── script/
-│   └── DeployZkApiCredits.s.sol           # Deployment script
+│   └── DeployLongjingCredits.s.sol           # Deployment script
 ├── lib/                                    # Foundry dependencies
 ├── remappings.txt                          # Import path mappings
 └── foundry.toml                            # Foundry configuration

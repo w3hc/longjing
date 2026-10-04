@@ -12,7 +12,7 @@ import {DoubleSpendSlashingVerifier} from './DoubleSpendSlashingVerifier.sol';
 import {PolicyViolationVerifier} from './PolicyViolationVerifier.sol';
 
 /**
- * @title ZkApiCredits
+ * @title LongjingCredits
  * @notice Privacy-preserving API credits system using Zero-Knowledge proofs and Rate-Limit Nullifiers
  * @dev Based on the Ethresear.ch proposal by Davide Crapis and Vitalik Buterin
  * https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104
@@ -28,7 +28,7 @@ import {PolicyViolationVerifier} from './PolicyViolationVerifier.sol';
  * All onchain hashing MUST use Poseidon to match the circuit's constraints.
  * Using Keccak256 would make proof verification impossible.
  */
-contract ZkApiCredits is ReentrancyGuard, Pausable, Ownable {
+contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     // ============ Structs ============
 
     struct Deposit {
@@ -190,7 +190,7 @@ contract ZkApiCredits is ReentrancyGuard, Pausable, Ownable {
     // ============ Core Functions ============
 
     /**
-     * @notice Deposit ETH to participate in the ZK API system
+     * @notice Deposit ETH to participate in the Longjing system
      * @param _idCommitment Hash of the user's secret key (anonymous identity)
      * @dev msg.value should be at least minRlnStake + minPolicyStake
      * @dev 50% goes to RLN stake (D), 50% to policy stake (S)

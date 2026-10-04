@@ -3,7 +3,7 @@ pragma solidity 0.8.35;
 
 /**
  * @title BabyJubJub
- * @author ZK-API Team
+ * @author Longjing Team
  * @notice Implements Baby Jubjub elliptic curve operations for EdDSA signature verification
  * @dev Based on ERC-2494 and iden3's circomlib implementation
  *

@@ -6,7 +6,7 @@ import {PoseidonT3} from 'poseidon-solidity/PoseidonT3.sol';
 
 /**
  * @title PoseidonHasher
- * @author ZK-API Team
+ * @author Longjing Team
  * @notice Wrapper library for Poseidon hash functions, ensuring ZK circuit compatibility
  * @dev Uses the poseidon-solidity library which provides optimized Poseidon implementations
  *      that exactly match circomlib's Poseidon circuits.
