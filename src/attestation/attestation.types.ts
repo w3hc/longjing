@@ -5,11 +5,7 @@
  */
 
 export type TeePlatform =
-  | 'phala'
-  | 'intel-tdx'
-  | 'amd-sev-snp'
-  | 'aws-nitro'
-  | 'mock';
+  'phala' | 'intel-tdx' | 'amd-sev-snp' | 'aws-nitro' | 'mock';
 
 /**
  * Attestation quote returned by all platforms

@@ -341,9 +341,11 @@ export class TeeKeyManagerService implements OnModuleInit {
       await fs.mkdir(dir, { recursive: true, mode: 0o700 });
     } catch (error) {
       // Directory might already exist
-      if (
-        !(error instanceof Error && 'code' in error && error.code === 'EEXIST')
-      ) {
+      if (!(
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'EEXIST'
+      )) {
         throw error;
       }
     }

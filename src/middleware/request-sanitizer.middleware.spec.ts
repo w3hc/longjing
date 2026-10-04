@@ -21,7 +21,7 @@ describe('RequestSanitizerMiddleware', () => {
         'sec-ch-ua': '"Chrome";v="120"',
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"macOS"',
-      } as Record<string, string>,
+      },
       ip: '192.168.1.1',
       ips: ['192.168.1.1'],
 
@@ -93,7 +93,7 @@ describe('RequestSanitizerMiddleware', () => {
       dnt: '1',
       'sec-fetch-site': 'same-origin',
       'sec-fetch-mode': 'navigate',
-    } as Record<string, string>;
+    };
 
     middleware.use(mockRequest as Request, mockResponse as Response, mockNext);
 

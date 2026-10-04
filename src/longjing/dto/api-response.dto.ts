@@ -24,13 +24,7 @@ export class UsageDto {
     ],
   })
   unitType:
-    | 'tokens'
-    | 'calls'
-    | 'bytes'
-    | 'seconds'
-    | 'images'
-    | 'credits'
-    | 'custom';
+    'tokens' | 'calls' | 'bytes' | 'seconds' | 'images' | 'credits' | 'custom';
 
   @ApiProperty({
     description:
