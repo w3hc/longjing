@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  BadRequestException,
   ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -17,6 +18,10 @@ import { SlashingService } from './slashing.service';
 import { SlashingProofService } from './slashing-proof.service';
 import { quantizeCost, quantizeUnits } from './utils/cost-quantization.util';
 import { padResponse } from './utils/response-padding.util';
+import {
+  parseFieldElement,
+  signalXMatchesPayload,
+} from './utils/payload-signal.util';
 
 // Example: Claude API Pricing (USD per million tokens)
 // This can be configured for any API service with similar pricing models
@@ -105,7 +110,12 @@ export class LongjingService {
       );
     }
 
-    // 2. Verify ZK proof with cryptographic verification and public inputs
+    // 2. Bind the signal to the payload: x must equal Hash(payload)
+    if (!signalXMatchesPayload(req.signal.x, req.payload)) {
+      throw new BadRequestException('Signal x does not match payload hash');
+    }
+
+    // 3. Verify ZK proof with cryptographic verification and public inputs
     // Do this BEFORE nullifier check to prevent timing leaks
     const valid = await this.proofVerifier.verify(req.proof, {
       merkleRoot: req.merkleRoot,
@@ -121,7 +131,7 @@ export class LongjingService {
       throw new UnauthorizedException('Invalid ZK proof');
     }
 
-    // 3. Atomically check nullifier and insert if new
+    // 4. Atomically check nullifier and insert if new
     // This prevents TOCTOU race conditions in concurrent scenarios
     const payloadHash = this.hashPayload(req.payload);
     const existingSignal = this.nullifierStore.checkAndSet(req.nullifier, {
@@ -133,7 +143,9 @@ export class LongjingService {
 
     if (existingSignal) {
       // Nullifier already used
-      if (existingSignal.x !== req.signal.x) {
+      if (
+        parseFieldElement(existingSignal.x) !== parseFieldElement(req.signal.x)
+      ) {
         // Double-spend detected! Two different signals with same nullifier
         this.logger.error(
           `Double-spend detected for nullifier ${req.nullifier}`,

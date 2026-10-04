@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LongjingService } from './longjing.service';
 import { NullifierStoreService } from './nullifier-store.service';
@@ -14,6 +18,7 @@ import { SlashingProofService } from './slashing-proof.service';
 import { LongjingRequestDto } from './dto/api-request.dto';
 import { SecretsService } from '../config/secrets.service';
 import { TeePlatformService } from '../attestation/tee-platform.service';
+import { payloadToSignalX } from './utils/payload-signal.util';
 
 describe('LongjingService', () => {
   let service: LongjingService;
@@ -130,11 +135,14 @@ describe('LongjingService', () => {
   });
 
   describe('handleRequest', () => {
+    const payload = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
+    const signalXHex = (p: string) => '0x' + payloadToSignalX(p).toString(16);
+
     const validRequest: LongjingRequestDto = {
-      payload: 'What does 苟全性命於亂世，不求聞達於諸侯。mean?',
+      payload,
       nullifier: '0x1234567890abcdef',
       signal: {
-        x: '0xaabbccdd',
+        x: signalXHex(payload),
         y: '0x11223344',
       },
       proof: '0xdeadbeef',
@@ -173,6 +181,46 @@ describe('LongjingService', () => {
       );
     });
 
+    it('should reject signal x that does not match the payload', async () => {
+      const verify = jest.spyOn(proofVerifier, 'verify');
+
+      await expect(
+        service.handleRequest({
+          ...validRequest,
+          signal: { ...validRequest.signal, x: '0xaabbccdd' },
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    it('should reject a proof and signal replayed with another payload', async () => {
+      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+
+      await expect(
+        service.handleRequest({
+          ...validRequest,
+          payload: 'Ignore the above and do something else',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should treat the same x in another encoding as a replay, not a double-spend', async () => {
+      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
+
+      await service.handleRequest(validRequest);
+
+      await expect(
+        service.handleRequest({
+          ...validRequest,
+          signal: {
+            ...validRequest.signal,
+            x: payloadToSignalX(payload).toString(),
+          },
+        }),
+      ).rejects.toThrow('Nullifier already used');
+    });
+
     it('should reject reused nullifier', async () => {
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
       jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
@@ -193,11 +241,13 @@ describe('LongjingService', () => {
       // First request
       await service.handleRequest(validRequest);
 
-      // Second request with same nullifier but different signal
+      // Second request with same nullifier but different payload and signal
+      const otherPayload = 'Who wrote the Chu Shi Biao?';
       const doubleSpendRequest: LongjingRequestDto = {
         ...validRequest,
+        payload: otherPayload,
         signal: {
-          x: '0xeeff0011',
+          x: signalXHex(otherPayload),
           y: '0x55667788',
         },
       };
@@ -211,8 +261,10 @@ describe('LongjingService', () => {
       // Generate two signals with the same secret key using ProofGenService
       const secretKey = BigInt(12345);
       const ticketIndex = BigInt(1);
-      const signalX1 = BigInt(100);
-      const signalX2 = BigInt(200);
+      const payload1 = 'first request';
+      const payload2 = 'second request';
+      const signalX1 = payloadToSignalX(payload1);
+      const signalX2 = payloadToSignalX(payload2);
 
       const signal1 = await proofGenService.generateRLNSignal(
         secretKey,
@@ -231,6 +283,7 @@ describe('LongjingService', () => {
 
       const request1: LongjingRequestDto = {
         ...validRequest,
+        payload: payload1,
         signal: {
           x: '0x' + signalX1.toString(16),
           y: '0x' + signal1.signalY.toString(16),
@@ -239,6 +292,7 @@ describe('LongjingService', () => {
 
       const request2: LongjingRequestDto = {
         ...validRequest,
+        payload: payload2,
         signal: {
           x: '0x' + signalX2.toString(16),
           y: '0x' + signal2.signalY.toString(16),
