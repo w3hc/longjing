@@ -15,6 +15,11 @@ This guide covers running Longjing locally on your machine without Docker, ideal
    pnpm install
    ```
 
+2. **Fetch the circuit artifacts** into `circuits/build/`, checked against the hashes in `circuits/artifacts.json`:
+   ```bash
+   pnpm circuits:fetch
+   ```
+
 ## Configuration
 
 ### 1. Environment Variables

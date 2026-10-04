@@ -21,7 +21,7 @@ Proves the right to make one API request. The server verifies every request with
 - Constraints: ~112K
 - Public inputs: `merkleRootExpected`, `maxCost`, `signalX`, `serverPublicKeyX`, `serverPublicKeyY` (the verifier fills the key in itself)
 - Outputs: `nullifier`, `signalY`, `idCommitment`, `merkleRoot`
-- Artifacts: `build/api_request_js/api_request.wasm`, `build/api_request.zkey`, `build/api_request_verification_key.json` (see [docs/ZK.md](../docs/ZK.md#circuit-artifacts) to regenerate)
+- Artifacts: `build/api_request_js/api_request.wasm`, `build/api_request.zkey`, `build/api_request_verification_key.json` (fetch with `pnpm circuits:fetch`, see [docs/ZK.md](../docs/ZK.md#circuit-artifacts) to regenerate)
 
 ### 2. **Withdrawal Circuit** ([withdrawal.circom](withdrawal.circom))
 
@@ -88,6 +88,8 @@ This script:
 3. Exports Solidity verifier contracts to `contracts/src/`
 
 ### Generated Artifacts
+
+`build/` is not tracked in Git. `pnpm circuits:fetch` downloads the witness generators and keys pinned in [artifacts.json](artifacts.json); compiling produces the full set below.
 
 After compilation, you'll find:
 

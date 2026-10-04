@@ -74,6 +74,7 @@ The most private deployment is the one where no third party — including this p
 
 ```
 pnpm install
+pnpm circuits:fetch
 forge install
 cp .env.template .env.local
 ```

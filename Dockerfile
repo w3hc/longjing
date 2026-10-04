@@ -14,6 +14,9 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
+# Fetch the pinned circuit artifacts
+RUN pnpm circuits:fetch
+
 # Build the application
 RUN pnpm build
 

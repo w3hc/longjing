@@ -566,7 +566,15 @@ See [OVERVIEW.md](./OVERVIEW.md#implementation-alignment-with-original-proposal)
 
 ## Circuit Artifacts
 
-The server verifies requests with `api_request`. Its artifacts are committed in `circuits/build/`:
+Circuit artifacts are not tracked in Git. They are published as assets of the [`circuits-v1` release](https://github.com/w3hc/longjing/releases/tag/circuits-v1), and [`circuits/artifacts.json`](../circuits/artifacts.json) pins each one by sha256. Fetch them into `circuits/build/` with:
+
+```bash
+pnpm circuits:fetch
+```
+
+The script skips files that already match, and fails if a download does not match its pinned hash. CI and the Docker build run it.
+
+The server verifies requests with `api_request`. Its artifacts:
 
 - `api_request_js/api_request.wasm` - Witness generator, for clients
 - `api_request.zkey` - Proving key, for clients
@@ -584,6 +592,8 @@ npx snarkjs groth16 setup build/api_request.r1cs ppot_0080_17.ptau build/api_req
 npx snarkjs zkey contribute build/api_request_0000.zkey build/api_request.zkey --name="Contribution" -e="$(openssl rand -hex 32)"
 npx snarkjs zkey export verificationkey build/api_request.zkey build/api_request_verification_key.json
 ```
+
+After regenerating, publish the changed files as assets of a new release, then update the release URL and hashes in `circuits/artifacts.json` (`shasum -a 256 <file>`).
 
 **Test Circuit:** `circuits/build/api_credit_proof_test.zkey` and `circuits/build/verification_key.json`, used outside production by default.
 
