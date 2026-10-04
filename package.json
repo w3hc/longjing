@@ -27,7 +27,7 @@
     "dance:full": "pnpm format && pnpm lint && pnpm test && pnpm test:e2e && pnpm build && (cd contracts && forge test) && pnpm outdated || true"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.80.0",
+    "@anthropic-ai/sdk": "^0.131.0",
     "@nestjs/common": "^12.1.2",
     "@nestjs/config": "^12.0.1",
     "@nestjs/core": "^12.1.2",
@@ -35,7 +35,7 @@
     "@nestjs/swagger": "^12.0.2",
     "@nestjs/throttler": "^6.7.1",
     "@phala/dstack-sdk": "^0.5.8",
-    "better-sqlite3": "12.8.0",
+    "better-sqlite3": "13.0.3",
     "circomlibjs": "^0.1.7",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -54,7 +54,7 @@
     "@nestjs/cli": "^12.0.8",
     "@nestjs/schematics": "^12.0.6",
     "@nestjs/testing": "^12.1.2",
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.6.4",
