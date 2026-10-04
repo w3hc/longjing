@@ -41,7 +41,7 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
 | **Double-spend response** | Anyone who recovers `k` slashes the RLN stake onchain | The server keeps every seen nullifier; a replayed old state is challenged during the escape-hatch window |
 | **Balance tracking** | Refund tickets (EdDSA) accumulate client-side; the request circuit proves the solvency formula over them | Private balance commitment inside a server-signed state (Schnorr); no ticket indices or refund history |
 | **Stakes and policy** | Separate RLN stake (claimable) and policy stake (burnable via a policy-violation proof) | No policy stake; a policy penalty is an optional bounded deduction from the private balance |
-| **Settlement** | Refunds redeemed onchain; withdrawal is a direct ZK proof with no server involvement | Net settlement in gwei when the note closes: instant mutual close with a server signature, or an escape hatch with a 24h challenge window; expired notes can be claimed by the server |
+| **Settlement** | Refunds redeemed onchain; withdrawal is a direct ZK proof with no server involvement; once a note's 365-day TTL has passed, the operator can claim what's left, and time spent paused doesn't count toward it | Net settlement in gwei when the note closes: instant mutual close with a server signature, or an escape hatch with a 24h challenge window; expired notes can be claimed by the server |
 | **Merkle tree** | 20 levels | 32 levels, note-bound commitments |
 
 ### Architecture
@@ -108,6 +108,7 @@ The smart contract manages the economic guarantees and serves as the source of t
 - `redeemRefund(...)`: Redeem server-signed refund ticket
 - `slashDoubleSpend(...)`: Submit proof of double-spending to claim RLN stake
 - `slashPolicy(...)`: Operator burns policy stake for ToS violations
+- `claimExpired(bytes32 identityCommitment)`: Operator claims what's left on a note once `noteExpiry()` has passed
 
 ### 2. Zero-Knowledge Circuit Layer
 
@@ -313,6 +314,8 @@ See [PROVIDERS.md](./PROVIDERS.md) for adding new providers.
    - The contract's `withdraw()` function ([LongjingCredits.sol:228-271](../contracts/src/LongjingCredits.sol#L228-L271)) verifies the proof onchain
    - Merkle proofs are available via public `getMerkleProof()` function (no server dependency)
    - Your funds are always in your control - the server cannot prevent withdrawals
+   - A note expires `NOTE_TTL` (365 days) after its deposit, after which the operator can claim it; until then, and until the operator actually claims it, you can still withdraw
+   - Pausing can't be used to wait out the TTL: `withdraw()` and `redeemRefund()` work while paused, the expiry clock stops while paused, and `claimExpired()` is blocked while paused
 
 **Cryptographic Unlinkability**: These properties survive regulatory pressure because the system is mathematically incapable of linking requests to users, even if compelled. TEE deployment ensures the operator can't read memory or tamper with the code.
 

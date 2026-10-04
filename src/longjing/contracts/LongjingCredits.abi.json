@@ -45,6 +45,19 @@
   },
   {
     "type": "function",
+    "name": "NOTE_TTL",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "TREE_DEPTH",
     "inputs": [],
     "outputs": [
@@ -64,6 +77,19 @@
         "name": "_target",
         "type": "uint8",
         "internalType": "enum LongjingCredits.Target"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "claimExpired",
+    "inputs": [
+      {
+        "name": "_idCommitment",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -328,6 +354,25 @@
   },
   {
     "type": "function",
+    "name": "noteExpiry",
+    "inputs": [
+      {
+        "name": "_idCommitment",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -355,6 +400,38 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pausedAt",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pausedTimeAtDeposit",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -654,6 +731,19 @@
   },
   {
     "type": "function",
+    "name": "totalPausedTime",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "transferOwnership",
     "inputs": [
       {
@@ -878,6 +968,31 @@
   },
   {
     "type": "event",
+    "name": "NoteExpiredClaimed",
+    "inputs": [
+      {
+        "name": "idCommitment",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "operator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OwnershipTransferred",
     "inputs": [
       {
@@ -1075,6 +1190,11 @@
   {
     "type": "error",
     "name": "NoPendingChange",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoteNotExpired",
     "inputs": []
   },
   {
