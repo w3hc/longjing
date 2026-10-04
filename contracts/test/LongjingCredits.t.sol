@@ -2,6 +2,7 @@
 pragma solidity 0.8.35;
 
 import {Test} from 'forge-std/Test.sol';
+import {Ownable} from '@openzeppelin/contracts/access/Ownable.sol';
 import {LongjingCredits} from '../src/LongjingCredits.sol';
 import {PoseidonHasher} from '../src/PoseidonHasher.sol';
 import {MockWithdrawalVerifier} from './MockWithdrawalVerifier.sol';
@@ -806,5 +807,156 @@ contract LongjingCreditsTest is Test {
         longjing.withdraw(idCommitment1, recipient, proof, publicSignals);
 
         assertEq(recipient.balance, 0.01 ether);
+    }
+
+    // ============ Timelock Tests ============
+
+    function test_ProposeChange_RevertsForNonOwner() public {
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user1));
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, user1);
+    }
+
+    function test_ProposeChange_RevertsOnZeroAddress() public {
+        vm.expectRevert(LongjingCredits.ZeroAddress.selector);
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, address(0));
+    }
+
+    function test_ProposeChange_StoresPendingChange() public {
+        address newServer = makeAddr('newServer');
+        uint256 eta = block.timestamp + longjing.ADMIN_DELAY();
+
+        vm.expectEmit(true, false, false, true);
+        emit LongjingCredits.ChangeProposed(LongjingCredits.Target.ServerAddress, newServer, eta);
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, newServer);
+
+        (address value, uint256 pendingEta) = longjing.pendingChanges(LongjingCredits.Target.ServerAddress);
+        assertEq(value, newServer);
+        assertEq(pendingEta, eta);
+        assertEq(longjing.serverAddress(), server);
+    }
+
+    function test_ExecuteChange_RevertsBeforeDelay() public {
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr('newServer'));
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY() - 1);
+
+        vm.expectRevert(LongjingCredits.TimelockNotExpired.selector);
+        longjing.executeChange(LongjingCredits.Target.ServerAddress);
+        assertEq(longjing.serverAddress(), server);
+    }
+
+    function test_ExecuteChange_RevertsWithoutProposal() public {
+        vm.expectRevert(LongjingCredits.NoPendingChange.selector);
+        longjing.executeChange(LongjingCredits.Target.WithdrawalVerifier);
+    }
+
+    function test_ExecuteChange_RevertsForNonOwner() public {
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr('newServer'));
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY());
+
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user1));
+        longjing.executeChange(LongjingCredits.Target.ServerAddress);
+    }
+
+    function test_ExecuteChange_ClearsPendingChange() public {
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr('newServer'));
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY());
+        longjing.executeChange(LongjingCredits.Target.ServerAddress);
+
+        vm.expectRevert(LongjingCredits.NoPendingChange.selector);
+        longjing.executeChange(LongjingCredits.Target.ServerAddress);
+    }
+
+    function test_ExecuteChange_SwapsVerifier() public {
+        MockWithdrawalVerifier newVerifier = new MockWithdrawalVerifier();
+        longjing.proposeChange(LongjingCredits.Target.WithdrawalVerifier, address(newVerifier));
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY());
+
+        vm.expectEmit(true, false, false, true);
+        emit LongjingCredits.ChangeExecuted(LongjingCredits.Target.WithdrawalVerifier, address(newVerifier));
+        longjing.executeChange(LongjingCredits.Target.WithdrawalVerifier);
+
+        assertEq(address(longjing.withdrawalVerifier()), address(newVerifier));
+    }
+
+    function test_ProposeChange_RestartsDelay() public {
+        address newServer = makeAddr('newServer');
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr('otherServer'));
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY() - 1);
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, newServer);
+        vm.warp(block.timestamp + 1);
+
+        vm.expectRevert(LongjingCredits.TimelockNotExpired.selector);
+        longjing.executeChange(LongjingCredits.Target.ServerAddress);
+    }
+
+    function test_CancelChange() public {
+        address newServer = makeAddr('newServer');
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, newServer);
+
+        vm.expectEmit(true, false, false, true);
+        emit LongjingCredits.ChangeCancelled(LongjingCredits.Target.ServerAddress, newServer);
+        longjing.cancelChange(LongjingCredits.Target.ServerAddress);
+
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY());
+        vm.expectRevert(LongjingCredits.NoPendingChange.selector);
+        longjing.executeChange(LongjingCredits.Target.ServerAddress);
+        assertEq(longjing.serverAddress(), server);
+    }
+
+    function test_CancelChange_RevertsWithoutProposal() public {
+        vm.expectRevert(LongjingCredits.NoPendingChange.selector);
+        longjing.cancelChange(LongjingCredits.Target.ServerAddress);
+    }
+
+    function test_Withdraw_WhilePausedAndChangePending() public {
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+
+        longjing.proposeChange(LongjingCredits.Target.WithdrawalVerifier, makeAddr('permissiveVerifier'));
+        longjing.pause();
+
+        address payable recipient = payable(makeAddr('recipient'));
+        uint256[7] memory publicSignals = [
+            0,
+            uint256(longjing.merkleRoot()),
+            uint256(uint160(address(recipient))),
+            0,
+            0,
+            uint256(idCommitment1),
+            uint256(longjing.merkleRoot())
+        ];
+
+        vm.prank(user1);
+        longjing.withdraw(idCommitment1, recipient, _generateMockProof(), publicSignals);
+
+        assertEq(recipient.balance, 0.01 ether);
+    }
+
+    function test_RedeemRefund_WhenPaused() public {
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
+        vm.deal(address(longjing), 1 ether);
+        longjing.pause();
+
+        bytes32 refundNullifier = keccak256('refund_nullifier');
+        uint256 refundAmount = 0.002 ether;
+        address payable recipient = payable(makeAddr('recipient'));
+        (bytes32 serverPubKeyX, bytes32 serverPubKeyY) = longjing.serverPublicKey();
+        uint256[8] memory publicSignals;
+        publicSignals[1] = refundAmount;
+        publicSignals[2] = uint256(serverPubKeyX);
+        publicSignals[3] = uint256(serverPubKeyY);
+        publicSignals[4] = uint256(uint160(address(recipient)));
+        publicSignals[5] = uint256(refundNullifier);
+        publicSignals[7] = uint256(idCommitment1);
+
+        vm.prank(user1);
+        longjing.redeemRefund(
+            idCommitment1, refundNullifier, refundAmount, recipient, _generateMockProof(), publicSignals
+        );
+
+        assertEq(recipient.balance, refundAmount);
     }
 }
