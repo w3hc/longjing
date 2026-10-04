@@ -129,6 +129,8 @@ npx snarkjs zkey export solidityverifier build/withdrawal.zkey ../contracts/src/
 }
 ```
 
+`numRefunds` must be at most `MAX_REFUNDS`, and every slot from `numRefunds` up must have a `refundValues` entry of `0`, or witness generation fails.
+
 ## Output Format
 
 ```json
