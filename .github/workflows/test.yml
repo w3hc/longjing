@@ -45,6 +45,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Fetch circuit artifacts
+        run: pnpm circuits:fetch
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
