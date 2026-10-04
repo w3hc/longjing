@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CI now runs `forge fmt --check`, the Prettier format check (`pnpm format:check`) and lint without `--fix` (`pnpm lint:check`), and a `proof` job that installs circom 2.2.2, compiles the circuits and generates and verifies real Groth16 proofs (`pnpm test:proof`). Contract checks moved to their own `contracts` job ([#91](https://github.com/w3hc/longjing/issues/91)).
 - Notes in `LongjingCredits` expire `NOTE_TTL` (365 days) after their deposit. Once `noteExpiry()` has passed, the operator can call `claimExpired()` to collect what's left on a note whose user disappeared; until then, the user can still withdraw. Time spent paused doesn't count toward the TTL, and `claimExpired()` is blocked while paused, so the owner can't pause to block exits and then sweep expired notes as in ethereum/zkapi ([#90](https://github.com/w3hc/longjing/issues/90)).
 - `ZK_CIRCUIT` selects the circuit the server verifies requests with: `api_request` (the default in production) or `api_credit_proof_test` (the default elsewhere) ([#88](https://github.com/w3hc/longjing/issues/88)).
 - `api_request` artifacts (witness generator, proving key, verification key), set up from the public Perpetual Powers of Tau plus a single local contribution; the Docker image now ships the verification key ([#88](https://github.com/w3hc/longjing/issues/88)).
@@ -26,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Formatted the contracts with `forge fmt` ([#91](https://github.com/w3hc/longjing/issues/91)).
 - Attestation `report_data` is now `SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)`; the second half was previously zero.
 - Renamed the project from zk-api to Longjing ([#83](https://github.com/w3hc/zk-api/issues/83)): package `longjing`, Docker image `julienberanger/longjing`, routes under `/longjing/*`, NestJS module `LongjingModule` in `src/longjing/`, contract `LongjingCredits`, and SQLite file `longjing.db`.
 - The development refund-signer seed is now `longjing-refund-signer-dev-key`, with the matching public key in `DeployLongjingCredits.s.sol`; contracts deployed with the old dev key need redeploying.

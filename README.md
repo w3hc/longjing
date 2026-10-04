@@ -92,6 +92,9 @@ pnpm test:e2e             # Terminal 2
 # Contract tests (Foundry)
 cd contracts && forge test -vv
 
+# Proof round-trip (the circuit suites need circom on PATH)
+pnpm test:proof
+
 # Quick quality checks (no e2e)
 pnpm dance                # format + lint + test + build + contracts
 
