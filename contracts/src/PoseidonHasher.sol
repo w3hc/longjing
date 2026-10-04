@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0
 pragma solidity 0.8.35;
 
-import {PoseidonT2} from 'poseidon-solidity/PoseidonT2.sol';
-import {PoseidonT3} from 'poseidon-solidity/PoseidonT3.sol';
+import {PoseidonT2} from "poseidon-solidity/PoseidonT2.sol";
+import {PoseidonT3} from "poseidon-solidity/PoseidonT3.sol";
 
 /**
  * @title PoseidonHasher
@@ -77,10 +77,7 @@ library PoseidonHasher {
      * @param right The second bytes32 value to hash
      * @return hash The Poseidon hash output as bytes32
      */
-    function hashBytes32(
-        bytes32 left,
-        bytes32 right
-    ) internal pure returns (bytes32) {
+    function hashBytes32(bytes32 left, bytes32 right) internal pure returns (bytes32) {
         return bytes32(hash(uint256(left), uint256(right)));
     }
 

@@ -63,16 +63,13 @@ jobs:
           npm run build-release
 
       - name: Run linter
-        run: npm run lint
+        run: pnpm lint:check
 
       - name: Run unit tests
-        run: npm test
+        run: pnpm test
 
       - name: Build application
         run: pnpm build
-
-      - name: Run Solidity contract tests
-        run: cd contracts && forge test
 
       - name: Start Anvil
         run: anvil &
@@ -82,4 +79,93 @@ jobs:
           timeout 30 bash -c 'until curl -s -X POST -H "Content-Type: application/json" --data '\''{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'\'' http://127.0.0.1:8545 > /dev/null; do sleep 1; done'
 
       - name: Run e2e tests
-        run: npm run test:e2e
+        run: pnpm test:e2e
+
+  format:
+    name: Check Formatting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Check formatting
+        run: pnpm format:check
+
+  contracts:
+    name: Contracts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install Forge dependencies
+        working-directory: contracts
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts
+          forge install foundry-rs/forge-std
+
+      - name: Check formatting
+        working-directory: contracts
+        run: forge fmt --check
+
+      - name: Run Solidity contract tests
+        working-directory: contracts
+        run: forge test
+
+  proof:
+    name: Proof Round-Trip
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install circom
+        run: |
+          curl -fsSL -o /usr/local/bin/circom https://github.com/iden3/circom/releases/download/v2.2.2/circom-linux-amd64
+          chmod +x /usr/local/bin/circom
+          circom --version
+
+      - name: Fetch circuit artifacts
+        run: pnpm circuits:fetch
+
+      - name: Compile circuits, generate and verify proofs
+        run: pnpm test:proof

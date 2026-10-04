@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: LGPL-3.0
 pragma solidity 0.8.35;
 
-import {Test} from 'forge-std/Test.sol';
-import {Ownable} from '@openzeppelin/contracts/access/Ownable.sol';
-import {Pausable} from '@openzeppelin/contracts/utils/Pausable.sol';
-import {LongjingCredits} from '../src/LongjingCredits.sol';
-import {PoseidonHasher} from '../src/PoseidonHasher.sol';
-import {MockWithdrawalVerifier} from './MockWithdrawalVerifier.sol';
-import {MockSlashingVerifier} from './MockSlashingVerifier.sol';
-import {MockRefundVerifier} from './MockRefundVerifier.sol';
-import {MockPolicyVerifier} from './MockPolicyVerifier.sol';
+import {Test} from "forge-std/Test.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {LongjingCredits} from "../src/LongjingCredits.sol";
+import {PoseidonHasher} from "../src/PoseidonHasher.sol";
+import {MockWithdrawalVerifier} from "./MockWithdrawalVerifier.sol";
+import {MockSlashingVerifier} from "./MockSlashingVerifier.sol";
+import {MockRefundVerifier} from "./MockRefundVerifier.sol";
+import {MockPolicyVerifier} from "./MockPolicyVerifier.sol";
 
 contract LongjingCreditsTest is Test {
     LongjingCredits public longjing;
@@ -26,8 +26,7 @@ contract LongjingCreditsTest is Test {
 
     uint256 public constant MIN_RLN_STAKE = 0.005 ether;
     uint256 public constant MIN_POLICY_STAKE = 0.005 ether;
-    uint256 public constant MIN_TOTAL_DEPOSIT =
-        MIN_RLN_STAKE + MIN_POLICY_STAKE;
+    uint256 public constant MIN_TOTAL_DEPOSIT = MIN_RLN_STAKE + MIN_POLICY_STAKE;
 
     // Test identity commitments (Hash of secret keys)
     bytes32 public idCommitment1;
@@ -35,50 +34,29 @@ contract LongjingCreditsTest is Test {
     bytes32 public secretKey1;
     bytes32 public secretKey2;
 
-    event DepositMade(
-        bytes32 indexed idCommitment,
-        uint256 rlnStake,
-        uint256 policyStake,
-        uint256 timestamp
-    );
+    event DepositMade(bytes32 indexed idCommitment, uint256 rlnStake, uint256 policyStake, uint256 timestamp);
 
-    event WithdrawalMade(
-        bytes32 indexed idCommitment,
-        uint256 amount,
-        address indexed recipient
-    );
+    event WithdrawalMade(bytes32 indexed idCommitment, uint256 amount, address indexed recipient);
 
     event DoubleSpendSlashed(
-        bytes32 indexed secretKey,
-        bytes32 indexed nullifier,
-        address indexed slasher,
-        uint256 reward
+        bytes32 indexed secretKey, bytes32 indexed nullifier, address indexed slasher, uint256 reward
     );
 
     event PolicyViolationSlashed(
-        bytes32 indexed nullifier,
-        bytes32 indexed idCommitment,
-        uint256 amountBurned,
-        bytes32 evidenceHash
+        bytes32 indexed nullifier, bytes32 indexed idCommitment, uint256 amountBurned, bytes32 evidenceHash
     );
 
     function setUp() public {
         owner = address(this);
-        server = makeAddr('server');
-        user1 = makeAddr('user1');
-        user2 = makeAddr('user2');
-        slasher = makeAddr('slasher');
+        server = makeAddr("server");
+        user1 = makeAddr("user1");
+        user2 = makeAddr("user2");
+        slasher = makeAddr("slasher");
 
         // Deploy contract with dummy server public key
         bytes32 serverPubKeyX = bytes32(uint256(1));
         bytes32 serverPubKeyY = bytes32(uint256(2));
-        longjing = new LongjingCredits(
-            server,
-            MIN_RLN_STAKE,
-            MIN_POLICY_STAKE,
-            serverPubKeyX,
-            serverPubKeyY
-        );
+        longjing = new LongjingCredits(server, MIN_RLN_STAKE, MIN_POLICY_STAKE, serverPubKeyX, serverPubKeyY);
 
         // Deploy mock verifiers for testing (production verifiers reject mock proofs)
         mockWithdrawalVerifier = new MockWithdrawalVerifier();
@@ -98,8 +76,8 @@ contract LongjingCreditsTest is Test {
         longjing.executeChange(LongjingCredits.Target.PolicyVerifier);
 
         // Generate test identity commitments using Poseidon (matching circuit)
-        secretKey1 = keccak256(abi.encodePacked('secret1'));
-        secretKey2 = keccak256(abi.encodePacked('secret2'));
+        secretKey1 = keccak256(abi.encodePacked("secret1"));
+        secretKey2 = keccak256(abi.encodePacked("secret2"));
         // Use Poseidon hash: idCommitment = Poseidon(secretKey)
         idCommitment1 = bytes32(PoseidonHasher.hash(uint256(secretKey1)));
         idCommitment2 = bytes32(PoseidonHasher.hash(uint256(secretKey2)));
@@ -118,12 +96,7 @@ contract LongjingCreditsTest is Test {
         vm.startPrank(user1);
 
         vm.expectEmit(true, false, false, true);
-        emit DepositMade(
-            idCommitment1,
-            depositAmount / 2,
-            depositAmount / 2,
-            block.timestamp
-        );
+        emit DepositMade(idCommitment1, depositAmount / 2, depositAmount / 2, block.timestamp);
 
         longjing.deposit{value: depositAmount}(idCommitment1);
         vm.stopPrank();
@@ -187,7 +160,7 @@ contract LongjingCreditsTest is Test {
         longjing.deposit{value: depositAmount}(idCommitment1);
 
         // User withdraws
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
         uint256 balanceBefore = recipient.balance;
 
         // Generate mock ZK proof (in production, this would be generated by the circuit)
@@ -224,13 +197,14 @@ contract LongjingCreditsTest is Test {
         longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         // Try to withdraw with invalid proof
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
         uint256[8] memory proof = _generateInvalidProof();
         uint256[7] memory publicSignals = [
             0, // signalX
             uint256(longjing.merkleRoot()), // merkleRootExpected
             uint256(uint160(address(recipient))), // recipient (front-running protection)
-            0, 0, // nullifier, signalY
+            0,
+            0, // nullifier, signalY
             uint256(idCommitment1), // idCommitment
             uint256(longjing.merkleRoot()) // merkleRoot
         ];
@@ -241,13 +215,14 @@ contract LongjingCreditsTest is Test {
     }
 
     function test_Withdraw_DepositNotFound() public {
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
         uint256[8] memory proof = _generateMockProof();
         uint256[7] memory publicSignals = [
             0, // signalX
             uint256(longjing.merkleRoot()), // merkleRootExpected
             uint256(uint160(address(recipient))), // recipient (front-running protection)
-            0, 0, // nullifier, signalY
+            0,
+            0, // nullifier, signalY
             uint256(idCommitment1), // idCommitment
             uint256(longjing.merkleRoot()) // merkleRoot
         ];
@@ -278,19 +253,10 @@ contract LongjingCreditsTest is Test {
         longjing.deposit{value: depositAmount}(idCommitment1);
 
         // Simulate double-spend detection with ZK proof
-        bytes32 nullifier = keccak256(abi.encodePacked('nullifier1'));
+        bytes32 nullifier = keccak256(abi.encodePacked("nullifier1"));
 
         // Mock ZK proof (in production, this would be a real Groth16 proof)
-        uint256[8] memory proof = [
-            uint256(1),
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8
-        ];
+        uint256[8] memory proof = [uint256(1), 2, 3, 4, 5, 6, 7, 8];
 
         // Public signals: [secretKeyClaimed (input), nullifierExpected (input), idCommitment (output), nullifier (output)]
         uint256[4] memory publicSignals = [
@@ -305,20 +271,9 @@ contract LongjingCreditsTest is Test {
         // Slasher reports double-spend
         vm.prank(slasher);
         vm.expectEmit(true, true, true, true);
-        emit DoubleSpendSlashed(
-            secretKey1,
-            nullifier,
-            slasher,
-            depositAmount / 2
-        );
+        emit DoubleSpendSlashed(secretKey1, nullifier, slasher, depositAmount / 2);
 
-        longjing.slashDoubleSpend(
-            secretKey1,
-            nullifier,
-            idCommitment1,
-            proof,
-            publicSignals
-        );
+        longjing.slashDoubleSpend(secretKey1, nullifier, idCommitment1, proof, publicSignals);
 
         // Verify slashing
         assertTrue(longjing.revealedSecretKeys(secretKey1));
@@ -336,53 +291,28 @@ contract LongjingCreditsTest is Test {
         longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         // First slash succeeds
-        bytes32 nullifier = keccak256(abi.encodePacked('nullifier1'));
+        bytes32 nullifier = keccak256(abi.encodePacked("nullifier1"));
 
         // Mock ZK proof
-        uint256[8] memory proof = [
-            uint256(1),
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8
-        ];
+        uint256[8] memory proof = [uint256(1), 2, 3, 4, 5, 6, 7, 8];
 
         // Public signals: [secretKeyClaimed (input), nullifierExpected (input), idCommitment (output), nullifier (output)]
-        uint256[4] memory publicSignals = [
-            uint256(secretKey1),
-            uint256(nullifier),
-            uint256(idCommitment1),
-            uint256(nullifier)
-        ];
+        uint256[4] memory publicSignals =
+            [uint256(secretKey1), uint256(nullifier), uint256(idCommitment1), uint256(nullifier)];
 
         vm.prank(slasher);
-        longjing.slashDoubleSpend(
-            secretKey1,
-            nullifier,
-            idCommitment1,
-            proof,
-            publicSignals
-        );
+        longjing.slashDoubleSpend(secretKey1, nullifier, idCommitment1, proof, publicSignals);
 
         // Second slash fails
         vm.prank(slasher);
         vm.expectRevert(LongjingCredits.AlreadySlashed.selector);
-        longjing.slashDoubleSpend(
-            secretKey1,
-            nullifier,
-            idCommitment1,
-            proof,
-            publicSignals
-        );
+        longjing.slashDoubleSpend(secretKey1, nullifier, idCommitment1, proof, publicSignals);
     }
 
     // ============ Admin Tests ============
 
     function test_SetServerAddress() public {
-        address newServer = makeAddr('newServer');
+        address newServer = makeAddr("newServer");
 
         longjing.proposeChange(LongjingCredits.Target.ServerAddress, newServer);
         vm.warp(block.timestamp + longjing.ADMIN_DELAY());
@@ -447,18 +377,18 @@ contract LongjingCreditsTest is Test {
     function test_MerkleProofGeneration_MultipleLeaves() public {
         // This test validates H-2 fix: Merkle proof generation must work for >2 leaves
         // Create 5 identity commitments
-        bytes32 id1 = bytes32(PoseidonHasher.hash(uint256(keccak256('user1'))));
-        bytes32 id2 = bytes32(PoseidonHasher.hash(uint256(keccak256('user2'))));
-        bytes32 id3 = bytes32(PoseidonHasher.hash(uint256(keccak256('user3'))));
-        bytes32 id4 = bytes32(PoseidonHasher.hash(uint256(keccak256('user4'))));
-        bytes32 id5 = bytes32(PoseidonHasher.hash(uint256(keccak256('user5'))));
+        bytes32 id1 = bytes32(PoseidonHasher.hash(uint256(keccak256("user1"))));
+        bytes32 id2 = bytes32(PoseidonHasher.hash(uint256(keccak256("user2"))));
+        bytes32 id3 = bytes32(PoseidonHasher.hash(uint256(keccak256("user3"))));
+        bytes32 id4 = bytes32(PoseidonHasher.hash(uint256(keccak256("user4"))));
+        bytes32 id5 = bytes32(PoseidonHasher.hash(uint256(keccak256("user5"))));
 
         // Create funded depositor addresses
-        address depositor1 = makeAddr('depositor1');
-        address depositor2 = makeAddr('depositor2');
-        address depositor3 = makeAddr('depositor3');
-        address depositor4 = makeAddr('depositor4');
-        address depositor5 = makeAddr('depositor5');
+        address depositor1 = makeAddr("depositor1");
+        address depositor2 = makeAddr("depositor2");
+        address depositor3 = makeAddr("depositor3");
+        address depositor4 = makeAddr("depositor4");
+        address depositor5 = makeAddr("depositor5");
 
         vm.deal(depositor1, 1 ether);
         vm.deal(depositor2, 1 ether);
@@ -525,8 +455,8 @@ contract LongjingCreditsTest is Test {
         uint256[8] memory proof;
         proof[0] = 1; // Non-zero to pass mock verifier
 
-        bytes32 nullifier = keccak256('test_nullifier');
-        bytes32 evidenceHash = keccak256('violation_evidence');
+        bytes32 nullifier = keccak256("test_nullifier");
+        bytes32 evidenceHash = keccak256("violation_evidence");
 
         // Public signals: [nullifierExpected (input), idCommitmentExpected (input), evidenceHash (output), nullifier (output), idCommitment (output)]
         uint256[5] memory publicSignals;
@@ -560,12 +490,12 @@ contract LongjingCreditsTest is Test {
         uint256[8] memory proof;
         proof[0] = 1;
 
-        bytes32 nullifier = keccak256('test_nullifier');
+        bytes32 nullifier = keccak256("test_nullifier");
 
         uint256[5] memory publicSignals;
         publicSignals[0] = uint256(nullifier);
         publicSignals[1] = uint256(idCommitment1);
-        publicSignals[2] = uint256(keccak256('evidence'));
+        publicSignals[2] = uint256(keccak256("evidence"));
         publicSignals[3] = uint256(nullifier);
         publicSignals[4] = uint256(idCommitment1);
 
@@ -582,12 +512,12 @@ contract LongjingCreditsTest is Test {
 
         uint256[8] memory proof; // All zeros - will fail mock verifier
 
-        bytes32 nullifier = keccak256('test_nullifier');
+        bytes32 nullifier = keccak256("test_nullifier");
 
         uint256[5] memory publicSignals;
         publicSignals[0] = uint256(nullifier);
         publicSignals[1] = uint256(idCommitment1);
-        publicSignals[2] = uint256(keccak256('evidence'));
+        publicSignals[2] = uint256(keccak256("evidence"));
         publicSignals[3] = uint256(nullifier);
         publicSignals[4] = uint256(idCommitment1);
 
@@ -611,9 +541,9 @@ contract LongjingCreditsTest is Test {
         vm.deal(address(longjing), 1 ether);
 
         // Create refund parameters
-        bytes32 refundNullifier = keccak256('refund_nullifier');
+        bytes32 refundNullifier = keccak256("refund_nullifier");
         uint256 refundAmount = 0.002 ether;
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
 
         // Mock ZK proof (non-zero to pass mock verifier)
         uint256[8] memory proof;
@@ -635,14 +565,7 @@ contract LongjingCreditsTest is Test {
 
         // Redeem refund
         vm.prank(user1);
-        longjing.redeemRefund(
-            idCommitment1,
-            refundNullifier,
-            refundAmount,
-            recipient,
-            proof,
-            publicSignals
-        );
+        longjing.redeemRefund(idCommitment1, refundNullifier, refundAmount, recipient, proof, publicSignals);
 
         // Verify refund was sent
         assertEq(recipient.balance, balanceBefore + refundAmount);
@@ -662,9 +585,9 @@ contract LongjingCreditsTest is Test {
         vm.deal(address(longjing), 1 ether);
 
         // Create refund parameters
-        bytes32 refundNullifier = keccak256('refund_nullifier');
+        bytes32 refundNullifier = keccak256("refund_nullifier");
         uint256 refundAmount = 0.002 ether;
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
 
         // Mock ZK proof
         uint256[8] memory proof;
@@ -683,26 +606,12 @@ contract LongjingCreditsTest is Test {
 
         // First redemption succeeds
         vm.prank(user1);
-        longjing.redeemRefund(
-            idCommitment1,
-            refundNullifier,
-            refundAmount,
-            recipient,
-            proof,
-            publicSignals
-        );
+        longjing.redeemRefund(idCommitment1, refundNullifier, refundAmount, recipient, proof, publicSignals);
 
         // Second redemption with same nullifier fails
         vm.prank(user1);
         vm.expectRevert(LongjingCredits.RefundAlreadyRedeemed.selector);
-        longjing.redeemRefund(
-            idCommitment1,
-            refundNullifier,
-            refundAmount,
-            recipient,
-            proof,
-            publicSignals
-        );
+        longjing.redeemRefund(idCommitment1, refundNullifier, refundAmount, recipient, proof, publicSignals);
     }
 
     function test_RedeemRefund_InvalidProof() public {
@@ -710,9 +619,9 @@ contract LongjingCreditsTest is Test {
         vm.prank(user1);
         longjing.deposit{value: 0.01 ether}(idCommitment1);
 
-        bytes32 refundNullifier = keccak256('refund_nullifier');
+        bytes32 refundNullifier = keccak256("refund_nullifier");
         uint256 refundAmount = 0.002 ether;
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
 
         // Invalid proof (all zeros)
         uint256[8] memory proof;
@@ -730,20 +639,13 @@ contract LongjingCreditsTest is Test {
 
         vm.prank(user1);
         vm.expectRevert(LongjingCredits.InvalidProof.selector);
-        longjing.redeemRefund(
-            idCommitment1,
-            refundNullifier,
-            refundAmount,
-            recipient,
-            proof,
-            publicSignals
-        );
+        longjing.redeemRefund(idCommitment1, refundNullifier, refundAmount, recipient, proof, publicSignals);
     }
 
     function test_RedeemRefund_DepositNotFound() public {
-        bytes32 refundNullifier = keccak256('refund_nullifier');
+        bytes32 refundNullifier = keccak256("refund_nullifier");
         uint256 refundAmount = 0.002 ether;
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
 
         uint256[8] memory proof;
         proof[0] = 1;
@@ -760,14 +662,7 @@ contract LongjingCreditsTest is Test {
         publicSignals[7] = uint256(idCommitment1); // idCommitment output
 
         vm.expectRevert(LongjingCredits.DepositNotFound.selector);
-        longjing.redeemRefund(
-            idCommitment1,
-            refundNullifier,
-            refundAmount,
-            recipient,
-            proof,
-            publicSignals
-        );
+        longjing.redeemRefund(idCommitment1, refundNullifier, refundAmount, recipient, proof, publicSignals);
     }
 
     // ============ Additional Admin Tests ============
@@ -791,7 +686,7 @@ contract LongjingCreditsTest is Test {
         // so it should work even if contract is paused
         longjing.pause();
 
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
         uint256[8] memory proof = _generateMockProof();
         uint256[7] memory publicSignals = [
             0,
@@ -824,7 +719,7 @@ contract LongjingCreditsTest is Test {
     }
 
     function test_ProposeChange_StoresPendingChange() public {
-        address newServer = makeAddr('newServer');
+        address newServer = makeAddr("newServer");
         uint256 eta = block.timestamp + longjing.ADMIN_DELAY();
 
         vm.expectEmit(true, false, false, true);
@@ -838,7 +733,7 @@ contract LongjingCreditsTest is Test {
     }
 
     function test_ExecuteChange_RevertsBeforeDelay() public {
-        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr('newServer'));
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr("newServer"));
         vm.warp(block.timestamp + longjing.ADMIN_DELAY() - 1);
 
         vm.expectRevert(LongjingCredits.TimelockNotExpired.selector);
@@ -852,7 +747,7 @@ contract LongjingCreditsTest is Test {
     }
 
     function test_ExecuteChange_RevertsForNonOwner() public {
-        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr('newServer'));
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr("newServer"));
         vm.warp(block.timestamp + longjing.ADMIN_DELAY());
 
         vm.prank(user1);
@@ -861,7 +756,7 @@ contract LongjingCreditsTest is Test {
     }
 
     function test_ExecuteChange_ClearsPendingChange() public {
-        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr('newServer'));
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr("newServer"));
         vm.warp(block.timestamp + longjing.ADMIN_DELAY());
         longjing.executeChange(LongjingCredits.Target.ServerAddress);
 
@@ -882,8 +777,8 @@ contract LongjingCreditsTest is Test {
     }
 
     function test_ProposeChange_RestartsDelay() public {
-        address newServer = makeAddr('newServer');
-        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr('otherServer'));
+        address newServer = makeAddr("newServer");
+        longjing.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr("otherServer"));
         vm.warp(block.timestamp + longjing.ADMIN_DELAY() - 1);
         longjing.proposeChange(LongjingCredits.Target.ServerAddress, newServer);
         vm.warp(block.timestamp + 1);
@@ -893,7 +788,7 @@ contract LongjingCreditsTest is Test {
     }
 
     function test_CancelChange() public {
-        address newServer = makeAddr('newServer');
+        address newServer = makeAddr("newServer");
         longjing.proposeChange(LongjingCredits.Target.ServerAddress, newServer);
 
         vm.expectEmit(true, false, false, true);
@@ -915,10 +810,10 @@ contract LongjingCreditsTest is Test {
         vm.prank(user1);
         longjing.deposit{value: 0.01 ether}(idCommitment1);
 
-        longjing.proposeChange(LongjingCredits.Target.WithdrawalVerifier, makeAddr('permissiveVerifier'));
+        longjing.proposeChange(LongjingCredits.Target.WithdrawalVerifier, makeAddr("permissiveVerifier"));
         longjing.pause();
 
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
         uint256[7] memory publicSignals = [
             0,
             uint256(longjing.merkleRoot()),
@@ -941,9 +836,9 @@ contract LongjingCreditsTest is Test {
         vm.deal(address(longjing), 1 ether);
         longjing.pause();
 
-        bytes32 refundNullifier = keccak256('refund_nullifier');
+        bytes32 refundNullifier = keccak256("refund_nullifier");
         uint256 refundAmount = 0.002 ether;
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
         (bytes32 serverPubKeyX, bytes32 serverPubKeyY) = longjing.serverPublicKey();
         uint256[8] memory publicSignals;
         publicSignals[1] = refundAmount;
@@ -1011,7 +906,7 @@ contract LongjingCreditsTest is Test {
         longjing.deposit{value: 0.01 ether}(idCommitment1);
         vm.warp(longjing.noteExpiry(idCommitment1));
 
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
         vm.prank(user1);
         longjing.withdraw(idCommitment1, recipient, _generateMockProof(), _withdrawalSignals(idCommitment1, recipient));
         assertEq(recipient.balance, 0.01 ether);
@@ -1066,16 +961,13 @@ contract LongjingCreditsTest is Test {
 
         // Exits stayed open throughout
         longjing.pause();
-        address payable recipient = payable(makeAddr('recipient'));
+        address payable recipient = payable(makeAddr("recipient"));
         vm.prank(user1);
         longjing.withdraw(idCommitment1, recipient, _generateMockProof(), _withdrawalSignals(idCommitment1, recipient));
         assertEq(recipient.balance, 0.01 ether);
     }
 
-    function _withdrawalSignals(
-        bytes32 _idCommitment,
-        address _recipient
-    ) internal view returns (uint256[7] memory) {
+    function _withdrawalSignals(bytes32 _idCommitment, address _recipient) internal view returns (uint256[7] memory) {
         return [
             0,
             uint256(longjing.merkleRoot()),
