@@ -4,42 +4,84 @@ pragma solidity 0.8.35;
 import {Script, console} from "forge-std/Script.sol";
 import {LongjingCredits} from "../src/LongjingCredits.sol";
 
+/// @notice Deploys LongjingCredits for a PROFILE, like the server.
+/// @dev PROFILE=local: Anvil only (chain 31337), with Anvil account #0 and the
+///      dev refund-signer key (sha256('longjing-refund-signer-dev-key')).
+///      PROFILE=prod: never chain 31337, and PRIVATE_KEY, SERVER_ADDRESS,
+///      SERVER_PUBKEY_X and SERVER_PUBKEY_Y are required. Placeholders are
+///      refused: the dev refund-signer key would let anyone sign refunds.
 contract DeployLongjingCredits is Script {
+    struct Config {
+        uint256 deployerPrivateKey;
+        address serverAddress;
+        bytes32 serverPubKeyX;
+        bytes32 serverPubKeyY;
+    }
+
+    uint256 constant ANVIL_CHAIN_ID = 31337;
+    uint256 constant ANVIL_PRIVATE_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+    address constant ANVIL_ADDRESS = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
+    bytes32 constant DEV_PUBKEY_X = 0x2de05716d2326de41468ba1ee14d34a5c74c348b112c1743798dd68ce7715115;
+    bytes32 constant DEV_PUBKEY_Y = 0x1150d8e55cc05caef9ddb06b484ad5f7fea37e315dc3d27b727f681982cccce1;
+
+    // Min stakes: 0.1 ETH for RLN, 0.1 ETH for policy (0.2 ETH total minimum deposit)
+    uint256 constant MIN_RLN_STAKE = 0.1 ether;
+    uint256 constant MIN_POLICY_STAKE = 0.1 ether;
+
     function run() external {
-        uint256 deployerPrivateKey =
-            vm.envOr("PRIVATE_KEY", uint256(0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80));
-        address serverAddress = vm.envOr("SERVER_ADDRESS", address(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266));
+        Config memory c = config();
 
-        // Min stakes: 0.1 ETH for RLN, 0.1 ETH for policy (0.2 ETH total minimum deposit)
-        uint256 minRlnStake = 0.1 ether;
-        uint256 minPolicyStake = 0.1 ether;
-
-        // Server EdDSA public key (derived from dev private key in refund-signer.service.ts)
-        // Private key: sha256('longjing-refund-signer-dev-key')
-        // Public key derived using circomlib EdDSA
-        bytes32 serverPubKeyX = bytes32(0x2de05716d2326de41468ba1ee14d34a5c74c348b112c1743798dd68ce7715115);
-        bytes32 serverPubKeyY = bytes32(0x1150d8e55cc05caef9ddb06b484ad5f7fea37e315dc3d27b727f681982cccce1);
-
-        vm.startBroadcast(deployerPrivateKey);
-
+        vm.startBroadcast(c.deployerPrivateKey);
         LongjingCredits longjing =
-            new LongjingCredits(serverAddress, minRlnStake, minPolicyStake, serverPubKeyX, serverPubKeyY);
+            new LongjingCredits(c.serverAddress, MIN_RLN_STAKE, MIN_POLICY_STAKE, c.serverPubKeyX, c.serverPubKeyY);
+        vm.stopBroadcast();
 
         console.log("LongjingCredits deployed at:", address(longjing));
-        console.log("Server address:", serverAddress);
-        console.log("Min RLN stake:", minRlnStake);
-        console.log("Min Policy stake:", minPolicyStake);
+        console.log("Server address:", c.serverAddress);
+        console.log("Min RLN stake:", MIN_RLN_STAKE);
+        console.log("Min Policy stake:", MIN_POLICY_STAKE);
 
-        // Real Groth16 verifiers are deployed automatically in the constructor
+        // Groth16 verifiers are deployed in the constructor
         console.log("\nVerifiers deployed:");
         console.log("Withdrawal verifier:", address(longjing.withdrawalVerifier()));
         console.log("Refund verifier:", address(longjing.refundVerifier()));
         console.log("Slashing verifier:", address(longjing.slashingVerifier()));
+    }
 
-        console.log("\nUsing real Groth16 verifiers from api_credit_proof_test circuit");
-        console.log("Circuit: circuits/api_credit_proof_test.circom");
-        console.log("Constraints: 1,349");
+    function config() public view returns (Config memory) {
+        string memory profile = vm.envOr("PROFILE", string(""));
+        Config memory fromEnv;
+        if (keccak256(bytes(profile)) == keccak256("prod")) {
+            fromEnv = Config(
+                vm.envUint("PRIVATE_KEY"),
+                vm.envAddress("SERVER_ADDRESS"),
+                vm.envBytes32("SERVER_PUBKEY_X"),
+                vm.envBytes32("SERVER_PUBKEY_Y")
+            );
+        }
+        return resolve(profile, block.chainid, fromEnv);
+    }
 
-        vm.stopBroadcast();
+    function resolve(string memory profile, uint256 chainId, Config memory fromEnv)
+        public
+        pure
+        returns (Config memory)
+    {
+        bytes32 p = keccak256(bytes(profile));
+
+        if (p == keccak256("local")) {
+            require(chainId == ANVIL_CHAIN_ID, "PROFILE=local deploys to Anvil only (chain 31337)");
+            return Config(ANVIL_PRIVATE_KEY, ANVIL_ADDRESS, DEV_PUBKEY_X, DEV_PUBKEY_Y);
+        }
+
+        require(p == keccak256("prod"), "PROFILE must be local or prod");
+        require(chainId != ANVIL_CHAIN_ID, "PROFILE=prod refuses chain 31337");
+        require(fromEnv.deployerPrivateKey != ANVIL_PRIVATE_KEY, "PROFILE=prod refuses the Anvil PRIVATE_KEY");
+        require(fromEnv.serverAddress != ANVIL_ADDRESS, "PROFILE=prod refuses the Anvil SERVER_ADDRESS");
+        require(
+            fromEnv.serverPubKeyX != DEV_PUBKEY_X || fromEnv.serverPubKeyY != DEV_PUBKEY_Y,
+            "PROFILE=prod refuses the dev refund-signer key"
+        );
+        return fromEnv;
     }
 }
