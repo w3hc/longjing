@@ -277,74 +277,20 @@ const plaintext = await mlkemDecrypt(
 
 ## TEE Integration
 
-### Key Generation (Server Startup)
+### Key Derivation (Server Startup)
 
-**Longjing now uses TEE-generated keys** for enhanced security. The ML-KEM key pair is generated inside the TEE, and the private key never leaves the secure enclave.
+The ML-KEM key pair is derived inside the enclave from the dstack KMS with the v1 `GetKey` API. It is never generated elsewhere, stored or passed through env, and every instance of the app derives the same key. See [KEY_DERIVATION.md](KEY_DERIVATION.md#ml-kem-1024).
 
-```typescript
-// src/attestation/tee-key-manager.service.ts
-async onModuleInit() {
-  this.mlkem = await createMlKem1024();
-
-  // Detect TEE environment
-  this.isInTee = await this.detectTeeEnvironment();
-
-  if (this.isInTee) {
-    // PRODUCTION: Generate keys INSIDE the TEE
-    await this.initializeTeeKeys();
-  } else {
-    // DEVELOPMENT: Fall back to environment variables
-    this.initializeNonTeeKeys();
-  }
-}
-
-private async initializeTeeKeys() {
-  // Check if sealed keys already exist
-  const keysExist = await this.checkSealedKeysExist();
-
-  if (keysExist) {
-    // Load existing sealed keys
-    await this.loadSealedKeys();
-  } else {
-    // Generate NEW keys inside the TEE
-    const [publicKey, privateKey] = this.mlkem.generateKeyPair();
-
-    this.publicKey = publicKey;
-    this.privateKey = privateKey;
-
-    // Seal private key using platform-specific mechanisms
-    const sealedPrivateKey = await this.sealPrivateKey(privateKey);
-    await fs.writeFile(SEALED_KEY_PATH, sealedPrivateKey);
-
-    // Save public key (plaintext is OK)
-    await fs.writeFile(PUBLIC_KEY_PATH, Buffer.from(publicKey));
-  }
-
-  // ✅ Private key NEVER leaves the TEE
-  // ✅ Service operator CANNOT access it
-  // ✅ Only TEE can decrypt messages
-}
+```text
+s        = GetKey("longjing/mlkem-1024/v1", "ed25519").key
+seed     = HKDF-SHA256(salt = "longjing", IKM = s,
+                       info = LP("longjing-mlkem-1024-seed-v1"), L = 64)
+(ek, dk) = mlkem.deriveKeyPair(seed)
 ```
 
-**Security Benefits:**
-- ✅ **Private key generated inside TEE** - Never exposed to service operator
-- ✅ **Key sealing** - Private key encrypted at rest using TEE-specific mechanisms
-- ✅ **Attestation binding** - Public key cryptographically bound to TEE quote via `report_data`
-- ✅ **Backward compatible** - Falls back to environment variables in non-TEE environments
+`TeeKeyManagerService` serves the public key and decapsulates through `KeyDerivationService`, so the secret key never leaves it.
 
-**Development Mode (Non-TEE):**
-```typescript
-private initializeNonTeeKeys() {
-  // Fall back to environment variables for local development
-  const publicKeyBase64 = this.configService.get<string>('ADMIN_MLKEM_PUBLIC_KEY');
-  const privateKeyBase64 = this.configService.get<string>('ADMIN_MLKEM_PRIVATE_KEY');
-
-  this.publicKey = Buffer.from(publicKeyBase64, 'base64');
-  this.privateKey = Buffer.from(privateKeyBase64, 'base64');
-
-  this.logger.warn('⚠️  Private key is accessible in non-TEE mode!');
-}
-```
+**Development mode:** without `/var/run/dstack.sock`, outside production, the keys fall back to `ADMIN_MLKEM_PUBLIC_KEY` / `ADMIN_MLKEM_PRIVATE_KEY`. Production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY` set.
 
 ### Attestation Response
 
@@ -419,7 +365,7 @@ ADMIN_MLKEM_PUBLIC_KEY=ZLVMNpXCmEp7vhcylKzGXcx8wVEcaQKI...
 ADMIN_MLKEM_PRIVATE_KEY=82eI7sQLvGEut7Z4RvaF+Ju60Esj/AW/...
 ```
 
-**IMPORTANT:** Keep the private key secret! In production TEE, this will be sealed in hardware.
+**IMPORTANT:** Keep the private key secret. It is for local development only: in production the key is derived inside the enclave, see [KEY_DERIVATION.md](KEY_DERIVATION.md).
 
 #### Step 2: Configure Environment
 

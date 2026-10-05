@@ -35,22 +35,17 @@ Before deploying to any TEE platform, ensure you have:
    cp .env.template .env
    # Edit .env with production values
    NODE_ENV=production
-
-   # Option 1: Use KMS (recommended for cloud TEE)
-   KMS_URL=https://your-kms.example.com/secrets
-
-   # Option 2: Use environment variables (Phala TEE or basic VPS)
-   OPERATOR_PRIVATE_KEY=0x1234567890abcdef...
-
-   # Option 3: Let SecretsService auto-load from TEE platform
-   # (Phala Cloud injects encrypted secrets automatically)
+   # No key material: keys are derived from the dstack KMS,
+   # see KEY_DERIVATION.md
    ```
 
 4. **TLS certificates ready**: In production, certificates should be generated inside the enclave to ensure the host never sees the private key.
 
 ## Secret Management
 
-The application supports multiple secret management strategies depending on your deployment:
+**Keys** (ML-KEM, refund signer, identity, TLS) are never secrets you manage: on dstack they are derived inside the enclave with `GetKey`, and production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env. See [KEY_DERIVATION.md](KEY_DERIVATION.md), including the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out for TEE platforms without dstack.
+
+The strategies below apply to the remaining secrets, such as `ANTHROPIC_API_KEY`.
 
 ### Strategy 1: KMS with TEE Attestation (Most Secure)
 
@@ -65,13 +60,13 @@ The application will:
 1. Generate TEE attestation report proving its identity
 2. Send attestation to KMS endpoint
 3. KMS verifies attestation and releases secrets
-4. `OPERATOR_PRIVATE_KEY` loaded into memory only
+4. Secrets loaded into memory only
 
 **KMS Implementation**: You need to provide a KMS service that:
 - Accepts POST requests with attestation reports
 - Verifies the attestation against expected measurements
 - Returns secrets only to verified enclaves
-- Example response: `{"OPERATOR_PRIVATE_KEY": "0x...", "ANTHROPIC_API_KEY": "sk-..."}`
+- Example response: `{"ANTHROPIC_API_KEY": "sk-..."}`
 
 ### Strategy 2: TEE Platform Secrets (Phala)
 
@@ -79,7 +74,6 @@ The application will:
 
 ```bash
 NODE_ENV=production
-OPERATOR_PRIVATE_KEY=0x...  # Encrypted and injected by Phala
 ANTHROPIC_API_KEY=sk-...     # Encrypted and injected by Phala
 ```
 
@@ -91,6 +85,7 @@ The platform encrypts secrets and injects them as environment variables. `Secret
 
 ```bash
 NODE_ENV=production
+ALLOW_KEYS_OUTSIDE_ENCLAVE=true
 OPERATOR_PRIVATE_KEY=0x...  # From .env or systemd service
 ```
 
@@ -789,8 +784,8 @@ The attestation quote cryptographically binds the **TEE-generated ML-KEM public 
 3. **TLS Endpoint Binding**: The TLS certificate the server presents is bound to the quote, proving the TLS session terminates **inside the attested enclave** (not at an external proxy)
 
 **How it works:**
-- On first startup in a TEE environment, Longjing generates a new ML-KEM-1024 key pair inside the secure enclave
-- The private key is sealed using platform-specific mechanisms and never leaves the TEE
+- At startup, Longjing derives its ML-KEM-1024 key pair inside the enclave from the dstack KMS (`GetKey`, see [KEY_DERIVATION.md](KEY_DERIVATION.md))
+- The private key is never stored and never leaves the TEE, and every instance of the app derives the same key
 - The TLS private key is derived in-enclave via the dstack KMS (or loaded from enclave-only storage)
 - Both are bound to the attestation quote via `report_data = SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)`
 - Clients verify this binding to ensure they're encrypting to a TEE-sealed private key **and** talking TLS directly to the enclave
@@ -798,7 +793,7 @@ The attestation quote cryptographically binds the **TEE-generated ML-KEM public 
 
 **Security comparison:**
 - ❌ **Old approach**: Keys in `ADMIN_MLKEM_PRIVATE_KEY` environment variable → Operator can access private key
-- ✅ **New approach**: Keys generated in TEE → Private key never known to anyone, cryptographically proven via attestation
+- ✅ **New approach**: Keys derived in TEE → Private key never known to anyone, cryptographically proven via attestation and the signed key manifest (`GET /attestation/manifest`)
 
 **Automated Verification:**
 
@@ -859,8 +854,8 @@ With `report_data` binding, this attack is cryptographically impossible.
 
 In production, Longjing terminates TLS **inside the enclave**. The TLS private key is obtained in one of two ways, and the server **fails closed** if neither is available:
 
-1. **dstack KMS (Phala/Dstack — default)**: the key is derived inside the CVM via `getTlsKey()` (`/var/run/dstack.sock` or legacy `/var/run/tappd.sock`). It exists only in enclave memory and never touches the host.
-2. **Operator-provisioned** (`TLS_KEY_PATH` / `TLS_CERT_PATH`): for non-dstack TEE platforms; the files must live in enclave-only storage.
+1. **dstack KMS (Phala/Dstack — default)**: the key is derived inside the CVM via `getTlsKey()` on `/var/run/dstack.sock`. It exists only in enclave memory and never touches the host.
+2. **Operator-provisioned** (`TLS_KEY_PATH` / `TLS_CERT_PATH`): for non-dstack TEE platforms, under the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out; the files must live in enclave-only storage.
 
 Setting `ALLOW_EXTERNAL_TLS_TERMINATION=true` restores plain HTTP behind an external TLS proxy. **Do not use this with real user secrets** — request bodies (including `secretKey` on `/longjing/proofs/*`) become visible in plaintext at the termination proxy, outside the TEE trust boundary.
 

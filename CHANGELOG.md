@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GET /attestation/manifest` serves an EIP-712 key manifest, signed by an enclave-derived identity key, that binds the app id, the ML-KEM public key, the refund signer's Baby Jubjub public key and the TLS certificate, with the `GetKey` signature chains. See [KEY_DERIVATION.md](docs/KEY_DERIVATION.md) ([#93](https://github.com/w3hc/longjing/issues/93)).
+
 ### Changed
 
+- The ML-KEM, refund signer, identity and TLS keys are derived inside the enclave with the dstack v1 `GetKey` API (dstack ≥ 0.6.0), through a small client for `/var/run/dstack.sock`. The refund signer key changes, so `LongjingCredits` must be redeployed with the `serverPublicKey` the manifest reports ([#93](https://github.com/w3hc/longjing/issues/93)).
 - `docker-compose.yml` pins the `v0.3.0` image, `ghcr.io/w3hc/longjing@sha256:d7beb7b690a6a2841530ceb26d18095005af1dd65fa34cc473971657bb096577`, in place of the placeholder ([#112](https://github.com/w3hc/longjing/issues/112)).
+
+### Removed
+
+- The `/sealed-storage` ML-KEM key file, the v0 `TappdClient` fallback and the `tappd.sock` mount ([#93](https://github.com/w3hc/longjing/issues/93)).
+
+### Security
+
+- Production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env, when dstack key derivation fails, or with `DSTACK_SIMULATOR_ENDPOINT` set. `docker-compose.yml` sets `NODE_ENV=production` as a literal and no longer passes `ADMIN_MLKEM_*` through, so the operator cannot inject keys or switch the checks off. The only opt-out, `ALLOW_KEYS_OUTSIDE_ENCLAVE=true`, must be a compose literal, so using it changes the attested hash ([#93](https://github.com/w3hc/longjing/issues/93)).
 
 ## [0.3.0] - 2026-10-04
 
