@@ -1,17 +1,25 @@
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'crypto';
 import { AttestationService } from './attestation.service';
 import { AttestationQuote } from './attestation.types';
 import { PhalaPlatform, tdxQuoteReportData } from './platforms/phala.platform';
+import { MockPlatform } from './platforms/mock.platform';
+import { buildReportData, encodeRefundSignerPublicKey } from './report-data';
 import { TeeKeyManagerService } from './tee-key-manager.service';
+import { KeyDerivationService } from '../keys/key-derivation.service';
 
 const MLKEM_PUBLIC_KEY = Buffer.alloc(1568, 7);
+const IDENTITY_PUBLIC_KEY = new Uint8Array([4, ...new Uint8Array(64).fill(2)]);
+const REFUND_SIGNER = { x: '0x' + '03'.repeat(32), y: '0x' + '04'.repeat(32) };
 
-const expectedReportData = () =>
-  Buffer.concat([
-    createHash('sha256').update(MLKEM_PUBLIC_KEY).digest(),
-    Buffer.alloc(32),
-  ]);
+const expectedReportData = (nonce?: Buffer) =>
+  buildReportData(
+    {
+      mlkemPublicKey: MLKEM_PUBLIC_KEY,
+      identityPublicKey: IDENTITY_PUBLIC_KEY,
+      refundSignerPublicKey: encodeRefundSignerPublicKey(REFUND_SIGNER),
+    },
+    nonce,
+  );
 
 const tdxQuote = (reportData: Buffer) => {
   const quote = Buffer.alloc(1024);
@@ -36,6 +44,10 @@ describe('AttestationService', () => {
       {
         getPublicKeyBytes: () => MLKEM_PUBLIC_KEY,
       } as unknown as TeeKeyManagerService,
+      {
+        getIdentityPublicKey: () => IDENTITY_PUBLIC_KEY,
+        getRefundSignerPublicKey: () => REFUND_SIGNER,
+      } as unknown as KeyDerivationService,
     );
 
   afterEach(() => {
@@ -168,6 +180,26 @@ describe('AttestationService', () => {
       await service.onApplicationBootstrap();
 
       expect(generateQuote).not.toHaveBeenCalled();
+    });
+
+    it('commits to every key and the nonce', async () => {
+      const generateQuote = jest.spyOn(MockPlatform.prototype, 'generateQuote');
+      const service = createService('mock');
+      await service.onModuleInit();
+      const nonce = Buffer.alloc(32, 0x7f);
+
+      await service.getAttestation(nonce);
+
+      expect(generateQuote).toHaveBeenCalledWith(expectedReportData(nonce));
+    });
+
+    it('rejects a nonce that is not 32 bytes', async () => {
+      const service = createService('mock');
+      await service.onModuleInit();
+
+      await expect(service.getAttestation(Buffer.alloc(16))).rejects.toThrow(
+        'Nonce must be 32 bytes',
+      );
     });
   });
 });
