@@ -5,7 +5,7 @@ import { BlockchainService } from './blockchain.service';
 // Smart contract ABI for slashing functions
 const SLASHING_ABI = [
   'function slashDoubleSpend(bytes32 _secretKey, bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[4] _publicSignals) external',
-  'function slashPolicyViolation(bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[3] _publicSignals) external',
+  'function slashPolicyViolation(bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[5] _publicSignals) external',
   'event DoubleSpendSlashed(bytes32 indexed secretKey, bytes32 indexed nullifier, address indexed slasher, uint256 reward)',
   'event PolicyViolationSlashed(bytes32 indexed nullifier, bytes32 indexed idCommitment, uint256 amountBurned, bytes32 evidenceHash)',
 ];
@@ -173,7 +173,7 @@ export class SlashingService {
    * @param nullifier The nullifier from the violating request
    * @param idCommitment The user's identity commitment
    * @param proof ZK proof components [pA, pB, pC]
-   * @param publicSignals Public inputs [nullifierExpected, idCommitmentExpected, evidenceHash]
+   * @param publicSignals Public signals in snarkjs order [evidenceHash, nullifier, idCommitment, nullifierExpected, idCommitmentExpected]
    * @returns Transaction hash if successful
    */
   async slashPolicyViolation(

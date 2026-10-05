@@ -100,6 +100,17 @@ Tests the complete user flow:
 - Verifies refund ticket structure
 - Does not yet check that the mock proof is rejected, nor redeem with a real proof: see [#139](https://github.com/w3hc/longjing/issues/139)
 
+The suites share one Anvil chain and deployer, so they run one at a time.
+
+### On-chain Proofs Test (`test/onchain-proofs.e2e-spec.ts`)
+
+Deploys the real contract and verifiers, and submits one real proof per circuit:
+- Withdrawal: proves `withdrawal.circom` against the on-chain Merkle root and withdraws the deposit to a fresh address
+- Refund: signs a ticket with the dev refund-signer key, redeems it with a `refund_redemption.circom` proof, and checks that a second redemption reverts with `RefundAlreadyRedeemed`
+- Double spend: proves `double_spend_slashing.circom` from two signals with the same nullifier, and checks that the slasher gets the RLN stake
+
+`policy_violation` has no zkey, so it has no real-proof test. [#133](https://github.com/w3hc/longjing/issues/133) removes it.
+
 ### Proof Generation Test (`test/proof-generation.e2e-spec.ts`)
 
 Tests ZK proof generation internals:

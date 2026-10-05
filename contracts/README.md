@@ -19,10 +19,12 @@ Main contract implementing the RLN-based usage-credits protocol.
 
 **Key Functions:**
 - `deposit(bytes32 idCommitment)` - Deposit ETH with anonymous identity
-- `withdraw(bytes32 idCommitment, address payable recipient, uint256[8] proof, uint256[6] publicSignals)` - Withdraw funds with ZK proof
+- `withdraw(bytes32 idCommitment, address payable recipient, uint256[8] proof, uint256[7] publicSignals)` - Withdraw funds with ZK proof
 - `slashDoubleSpend(bytes32 secretKey, bytes32 nullifier, bytes32 idCommitment, uint256[8] proof, uint256[4] publicSignals)` - Slash double-spenders and reward reporters
 - `slashPolicyViolation(bytes32 nullifier, bytes32 idCommitment, uint256[8] proof, uint256[5] publicSignals)` - Slash ToS violators (server only)
-- `redeemRefund(bytes32 idCommitment, bytes32 nullifier, uint256 refundValue, address payable recipient, uint256[8] proof, uint256[7] publicSignals)` - Redeem server-signed refund tickets
+- `redeemRefund(bytes32 idCommitment, bytes32 nullifier, uint256 refundValue, address payable recipient, uint256[8] proof, uint256[8] publicSignals)` - Redeem server-signed refund tickets
+
+`publicSignals` are passed in the order snarkjs emits them: the circuit's outputs first, then its public inputs, each group in declaration order. `pnpm check:verifiers` checks that each verifier contract embeds its circuit's current verification key.
 
 ### Supporting Contracts
 

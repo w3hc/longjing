@@ -159,8 +159,8 @@ export class LongjingController {
       throw new Error('Refund already redeemed');
     }
 
-    // Convert proof and publicSignals from hex strings to numbers/bigints
-    const proof = request.proof.map((p) => Number(BigInt(p)));
+    // Proof elements are 254-bit field elements, so they stay bigints
+    const proof = request.proof.map((p) => BigInt(p));
     const publicSignals = request.publicSignals.map((s) => BigInt(s));
 
     const txHash = await this.blockchainService.redeemRefund({

@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PROFILE=prod` requires `ETHEREUM_RPC_URLS` and `ZK_CONTRACT_ADDRESS`, and refuses `ANVIL_RPC_URL`, `ANVIL_PRIVATE_KEY`, `DSTACK_SIMULATOR_ENDPOINT` and placeholder values: the Anvil keys and addresses, Anvil's first deployment address and `example.*` URLs (LJ-09) ([#122](https://github.com/w3hc/longjing/issues/122)).
 - At startup, the server reads the RPC's `eth_chainId`: `PROFILE=local` refuses any chain but Anvil's 31337, `PROFILE=prod` refuses 31337 and an unreachable RPC ([#122](https://github.com/w3hc/longjing/issues/122)).
 - `DeployLongjingCredits.s.sol` tests in `contracts/test/DeployLongjingCredits.t.sol` ([#122](https://github.com/w3hc/longjing/issues/122)).
+- `pnpm check:verifiers` checks each pinned verification key against its zkey, and each Solidity verifier against that key, IC count included. CI runs it in the proof job (LJ-13) ([#128](https://github.com/w3hc/longjing/issues/128)).
+- `test/onchain-proofs.e2e-spec.ts` submits a real withdrawal, refund redemption and double-spend slashing proof to the real contract on Anvil, and checks that a refund can't be redeemed twice (LJ-05) ([#128](https://github.com/w3hc/longjing/issues/128)).
 
 ### Changed
 
@@ -22,11 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `DeployLongjingCredits.s.sol` reads `PROFILE`. `local` deploys to Anvil only with its defaults; `prod` requires `PRIVATE_KEY`, `SERVER_ADDRESS`, `SERVER_PUBKEY_X` and `SERVER_PUBKEY_Y`, and refuses chain 31337, the Anvil key and address and the dev refund-signer key (LJ-16) ([#122](https://github.com/w3hc/longjing/issues/122)).
 - `PROFILE=local` reads only `ANVIL_RPC_URL`, `PROFILE=prod` only `ETHEREUM_RPC_URLS`: neither falls back to the other ([#122](https://github.com/w3hc/longjing/issues/122)).
 - `docker-compose.yml` sets `PROFILE=prod` as a literal and passes `ETHEREUM_RPC_URLS` and `ZK_CONTRACT_ADDRESS`; `docker-compose.dev.yml` sets `PROFILE=local` ([#122](https://github.com/w3hc/longjing/issues/122)).
+- Circuit artifacts are fetched from the `circuits-v1.1` release: the same circuits and zkeys as `circuits-v1`, with the `refund_redemption`, `withdrawal` and `double_spend_slashing` verification keys re-exported from their zkeys (LJ-13) ([#128](https://github.com/w3hc/longjing/issues/128)).
+- `POST /longjing/redeem-refund` requires exactly 8 proof elements and 8 public signals (LJ-11) ([#128](https://github.com/w3hc/longjing/issues/128)).
+- E2E suites run one at a time, since they share one Anvil chain and deployer ([#128](https://github.com/w3hc/longjing/issues/128)).
 - `LongjingService` defaults to `claude-fable-5-1`, priced at $10 input and $50 output per million tokens, instead of Sonnet 4.6 ([#138](https://github.com/w3hc/longjing/issues/138)).
 
 ### Fixed
 
 - `BlockchainService` imports the `LongjingCredits` ABI as an array: the namespace import wrapped it in an object, so building the contract failed with `abi is not iterable` and contract interaction was always disabled ([#122](https://github.com/w3hc/longjing/issues/122)).
+- **Breaking:** `withdraw`, `redeemRefund`, `slashDoubleSpend` and `slashPolicyViolation` read public signals in the order snarkjs emits them, outputs first. They read inputs first before, so every genuine proof reverted (LJ-05) ([#128](https://github.com/w3hc/longjing/issues/128)).
+- `DoubleSpendSlashingVerifier` embeds the key of `double_spend_slashing_final.zkey`, and its assembly reads `calldata` arguments: it held an older setup's key and read `memory` arguments with `calldataload`, so it rejected every proof ([#128](https://github.com/w3hc/longjing/issues/128)).
+- The refund relay keeps proof elements as `bigint`: `Number()` lost their precision. `SLASHING_ABI` takes `uint256[5]` for `slashPolicyViolation`, as the contract does (LJ-11) ([#128](https://github.com/w3hc/longjing/issues/128)).
+- `generateDoubleSpendProof`, behind `POST /longjing/proofs/slashing`, proves with `double_spend_slashing` instead of the `api_credit_proof_test` circuit (LJ-11) ([#128](https://github.com/w3hc/longjing/issues/128)).
 - `LongjingService` model IDs use hyphens (`claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`): the dotted IDs made every real Claude API request fail with a 404 `not_found_error` ([#138](https://github.com/w3hc/longjing/issues/138)).
 
 ## [0.4.0] - 2026-10-05

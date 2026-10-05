@@ -194,5 +194,8 @@ jobs:
       - name: Fetch circuit artifacts
         run: pnpm circuits:fetch
 
+      - name: Check verification keys against zkeys and verifier contracts
+        run: pnpm check:verifiers
+
       - name: Compile circuits, generate and verify proofs
         run: pnpm test:proof

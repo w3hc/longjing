@@ -326,9 +326,20 @@ describe('Proof Generation Integration (e2e)', () => {
       expect(Array.isArray(proof)).toBe(true);
       expect(proof).toHaveLength(8);
 
-      // Verify public signals structure
-      expect(Array.isArray(publicSignals)).toBe(true);
-      expect(publicSignals).toHaveLength(5);
+      // snarkjs order: [idCommitment, nullifier, secretKeyClaimed, nullifierExpected]
+      const idCommitment =
+        await proofGenService.generateIdCommitment(secretKey);
+      const { nullifier } = await proofGenService.generateRLNSignal(
+        secretKey,
+        ticketIndex,
+        signalX1,
+      );
+      expect(publicSignals).toEqual([
+        idCommitment,
+        nullifier,
+        secretKey,
+        nullifier,
+      ]);
     });
   });
 

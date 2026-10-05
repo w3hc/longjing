@@ -183,29 +183,44 @@ Manages deposits, withdrawals, slashing, and the Merkle root.
 // Deposit ETH and join anonymity set
 function deposit(bytes32 idCommitment) external payable
 
-// Withdraw unused funds
-function withdraw(bytes32 idCommitment, address payable recipient, bytes32 secretKey) external
+// Withdraw the deposit with a withdrawal.circom proof
+// publicSignals: nullifier, signalY, idCommitment, merkleRoot, signalX, merkleRootExpected, recipient
+function withdraw(
+    bytes32 idCommitment,
+    address payable recipient,
+    uint256[8] calldata proof,
+    uint256[7] calldata publicSignals
+) external
 
-// Redeem refund tickets onchain with ZK proof (H-4 fix: now proof-based)
+// Redeem a refund ticket with a refund_redemption.circom proof
+// publicSignals: nullifier, signalY, idCommitment, signalX, refundValueClaimed, serverPublicKeyX, serverPublicKeyY, recipient
 function redeemRefund(
     bytes32 idCommitment,
     bytes32 nullifier,
     uint256 refundValue,
     address payable recipient,
     uint256[8] calldata proof,
-    uint256[7] calldata publicSignals
+    uint256[8] calldata publicSignals
 ) external
 
-// Slash double-spenders
+// Slash a double-spender with a double_spend_slashing.circom proof
+// publicSignals: idCommitment, nullifier, secretKeyClaimed, nullifierExpected
 function slashDoubleSpend(
     bytes32 secretKey,
     bytes32 nullifier,
-    Signal calldata signal1,
-    Signal calldata signal2
+    bytes32 idCommitment,
+    uint256[8] calldata proof,
+    uint256[4] calldata publicSignals
 ) external
 
-// Slash policy violators (server-only)
-function slashPolicyViolation(bytes32 nullifier, bytes32 idCommitment) external onlyOwner
+// Slash a policy violator (server only)
+// publicSignals: evidenceHash, nullifier, idCommitment, nullifierExpected, idCommitmentExpected
+function slashPolicyViolation(
+    bytes32 nullifier,
+    bytes32 idCommitment,
+    uint256[8] calldata proof,
+    uint256[5] calldata publicSignals
+) external
 
 // Check if nullifier has been used (double-spend or refund redemption)
 function isNullifierUsed(bytes32 nullifier) external view returns (bool)
@@ -525,13 +540,15 @@ See [OVERVIEW.md](./OVERVIEW.md#implementation-alignment-with-original-proposal)
 
 ## Circuit Artifacts
 
-Circuit artifacts are not tracked in Git. They are published as assets of the [`circuits-v1` release](https://github.com/w3hc/longjing/releases/tag/circuits-v1), and [`circuits/artifacts.json`](../circuits/artifacts.json) pins each one by sha256. Fetch them into `circuits/build/` with:
+Circuit artifacts are not tracked in Git. They are published as assets of the [`circuits-v1.1` release](https://github.com/w3hc/longjing/releases/tag/circuits-v1.1), and [`circuits/artifacts.json`](../circuits/artifacts.json) pins each one by sha256. Fetch them into `circuits/build/` with:
 
 ```bash
 pnpm circuits:fetch
 ```
 
 The script skips files that already match, and fails if a download does not match its pinned hash. CI and the Docker build run it.
+
+`pnpm check:verifiers` then checks that each pinned verification key matches its zkey, and that each Solidity verifier embeds that key. CI runs it too.
 
 The server verifies requests with `api_request`. Its artifacts:
 

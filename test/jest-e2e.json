@@ -8,5 +8,6 @@
   },
   "setupFilesAfterEnv": ["<rootDir>/../jest.setup.ts"],
   "testTimeout": 30000,
+  "maxWorkers": 1,
   "forceExit": true
 }
