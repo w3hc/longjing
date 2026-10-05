@@ -64,10 +64,10 @@ contract DoubleSpendSlashingVerifier {
     uint16 constant pLastMem = 896;
 
     function verifyProof(
-        uint256[2] memory _pA,
-        uint256[2][2] memory _pB,
-        uint256[2] memory _pC,
-        uint256[4] memory _pubSignals
+        uint256[2] calldata _pA,
+        uint256[2][2] calldata _pB,
+        uint256[2] calldata _pC,
+        uint256[4] calldata _pubSignals
     ) public view returns (bool) {
         assembly {
             function checkField(v) {
@@ -190,20 +190,17 @@ contract DoubleSpendSlashingVerifier {
     /// @param _proof Flat proof array [pA.x, pA.y, pB.x[0], pB.x[1], pB.y[0], pB.y[1], pC.x, pC.y]
     /// @param _publicSignals Public signals array (4 elements)
     /// @return True if the proof is valid
+    /// @dev Calls verifyProof externally, since its assembly reads calldata
     function verifySlashingProof(uint256[8] calldata _proof, uint256[4] calldata _publicSignals)
-        public
+        external
         view
         returns (bool)
     {
-        uint256[2] memory pA = [_proof[0], _proof[1]];
-        uint256[2][2] memory pB = [[_proof[2], _proof[3]], [_proof[4], _proof[5]]];
-        uint256[2] memory pC = [_proof[6], _proof[7]];
-
-        uint256[4] memory pubSignals;
-        for (uint256 i = 0; i < 4; i++) {
-            pubSignals[i] = _publicSignals[i];
-        }
-
-        return verifyProof(pA, pB, pC, pubSignals);
+        return this.verifyProof(
+            [_proof[0], _proof[1]],
+            [[_proof[2], _proof[3]], [_proof[4], _proof[5]]],
+            [_proof[6], _proof[7]],
+            _publicSignals
+        );
     }
 }
