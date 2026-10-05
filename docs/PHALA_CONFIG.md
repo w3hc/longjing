@@ -272,7 +272,7 @@ The application uses ML-KEM-1024 (NIST FIPS 203) for quantum-resistant encryptio
 - **Security level**: NIST Level 5 (256-bit classical security)
 - **Key sizes**: 1568 bytes (public), 3168 bytes (private)
 
-See [docs/ENCRYPTION.md](./ENCRYPTION.md) for more details.
+See [MLKEM.md](MLKEM.md) for more details.
 
 ### Attestation
 

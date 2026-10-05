@@ -177,7 +177,7 @@ The project now includes an automated trusted setup for development and testing:
 
 **Script:** `npm run setup:circuit`
 
-This automated script ([scripts/setup-trusted-setup.ts](../scripts/setup-trusted-setup.ts)):
+This automated script ([scripts/setup/setup-trusted-setup.ts](../scripts/setup/setup-trusted-setup.ts)):
 1. Compiles the test circuit
 2. Generates Powers of Tau (2^12 constraints)
 3. Performs single-party contribution

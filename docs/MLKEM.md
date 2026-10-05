@@ -125,7 +125,7 @@ const plaintext2 = await fetch('/secret/access/slot123', {
 | **Admin Access** | ✅ Private key sealed in TEE hardware |
 | **Code Tampering** | ✅ Attestation measurement verifies code integrity |
 | **Replay Attacks** | ✅ SIWE nonces prevent replay |
-| **Side-Channel** | ⚠️ TEE provides isolation (see [SIDE_CHANNEL_ATTACKS.md](SIDE_CHANNEL_ATTACKS.md)) |
+| **Side-Channel** | ⚠️ TEE provides isolation |
 
 ### Key Sizes
 
@@ -1092,10 +1092,8 @@ A: Generate new ML-KEM keypair, update attestation, re-encrypt all secrets. Old 
 
 ### Documentation
 
-- [Implementation Plan](MLKEM_IMPLEMENTATION_PLAN.md) - Development roadmap
-- [Testing Guide](MLKEM_TESTING_GUIDE.md) - Testing procedures
-- [Client Encryption](CLIENT_ENCRYPTION.md) - Client-side guide
-- [Side-Channel Attacks](SIDE_CHANNEL_ATTACKS.md) - Security considerations
+- [ATTESTATION.md](ATTESTATION.md) - Verifying the ML-KEM key bound in `report_data`
+- [KEY_DERIVATION.md](KEY_DERIVATION.md) - How the ML-KEM key is derived in the enclave
 
 ## Support
 

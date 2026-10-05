@@ -884,7 +884,7 @@ curl -k -X POST https://your-server:443/api/test \
 1. **Never share TLS private keys**: Generate certificates inside the TEE, never import from outside
 2. **Verify attestation before sending data**: Clients must verify attestation reports before transmitting sensitive information
 3. **Use secure KMS**: Implement attestation-based key release in your KMS
-4. **Monitor for side-channel attacks**: See [SIDE_CHANNEL_ATTACKS.md](SIDE_CHANNEL_ATTACKS.md) for mitigations
+4. **Monitor for side-channel attacks**: Keep TCB-level advisories for your platform in view
 5. **Regular security updates**: Keep TEE firmware and guest OS patched
 6. **Implement rate limiting**: Protect against DoS attacks (already configured in the app)
 7. **Log monitoring**: Review logs for unusual patterns while ensuring no sensitive data is logged
@@ -1085,7 +1085,6 @@ After successful deployment:
 
 For more information:
 - [README.md](../README.md) - General project information
-- [SIDE_CHANNEL_ATTACKS.md](SIDE_CHANNEL_ATTACKS.md) - Side-channel attack mitigations
 - Platform documentation:
   - [AMD SEV-SNP Documentation](https://www.amd.com/en/developer/sev.html)
   - [Intel TDX Documentation](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/overview.html)

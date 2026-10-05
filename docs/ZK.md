@@ -108,13 +108,13 @@ The ZK proof system now supports **cryptographically valid Groth16 SNARK verific
 
 **Files:**
 - Production circuit: [circuits/api_request.circom](../circuits/api_request.circom) (~112K constraints)
-- Test circuit: [circuits/api_credit_proof_test.circom](../circuits/api_credit_proof_test.circom) (~676 constraints)
+- Test circuit: `api_credit_proof_test` (~676 constraints), whose artifacts come from `pnpm circuits:fetch`
 
 ## ZK Circuit Design
 
 ### Test Circuit (Development)
 
-**File**: [circuits/api_credit_proof_test.circom](../circuits/api_credit_proof_test.circom)
+**Artifacts**: `circuits/build/api_credit_proof_test*`, fetched with `pnpm circuits:fetch`
 
 A simplified circuit for development and testing. The server uses it outside production unless `ZK_CIRCUIT` says otherwise. It checks no Merkle membership, solvency or refund signature, so production refuses it.
 

@@ -22,11 +22,9 @@ pnpm test:e2e             # Terminal 2
 # Contract tests
 cd contracts && forge test -vv
 
-# All quality checks (no e2e)
-pnpm dance
-
-# Full suite with e2e (requires Anvil)
-pnpm dance:full
+# Format and lint checks
+pnpm format:check
+pnpm lint:check
 ```
 
 ## Unit Tests

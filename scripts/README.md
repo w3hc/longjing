@@ -97,8 +97,9 @@ anvil
 # Run end-to-end tests
 pnpm test:e2e
 
-# Run all quality checks
-pnpm dance
+# Run format and lint checks
+pnpm format:check
+pnpm lint:check
 ```
 
 See [test/app.e2e-spec.ts](../test/app.e2e-spec.ts) for the main flow test.

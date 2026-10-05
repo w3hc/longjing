@@ -165,7 +165,7 @@ curl -k -X POST https://localhost:3000/longjing/request \
 
 3. **Cost Protection**: Set `maxCost` to protect against unexpected price changes
 
-4. **Rate Limiting**: Three layers of protection (see [Metadata Protection](METADATA_PROTECTION.md)):
+4. **Rate Limiting**: Three layers of protection (see [`src/guards/`](../src/guards/)):
    - **Request fingerprint**: 10 requests/minute per unique request content (privacy-preserving)
    - **Per-nullifier**: 3 requests/minute per user identity
    - **Metadata hiding**: Rate limit details concealed to prevent tracking
@@ -318,7 +318,7 @@ curl -k -X POST https://localhost:3000/longjing/estimate-cost \
 - Actual costs may vary based on real usage
 - No authentication required - this is a public estimation tool
 - ⚠️ **Note**: Rate limiting recommended for production deployments
-- **Pricing Configuration**: Provider pricing is hardcoded in provider implementations and auto-seeded to the database on registration. Pricing updates require code deployment. See [Provider Abstraction](PROVIDER_ABSTRACTION.md) for details.
+- **Pricing Configuration**: Provider pricing is hardcoded in provider implementations and auto-seeded to the database on registration. Pricing updates require code deployment. See [PROVIDERS.md](PROVIDERS.md) for details.
 
 ---
 
