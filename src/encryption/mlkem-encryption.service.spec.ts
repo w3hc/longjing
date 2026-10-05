@@ -5,6 +5,7 @@ import {
   MultiRecipientEncryptedPayload,
 } from './mlkem-encryption.service';
 import { TeeKeyManagerService } from '../attestation/tee-key-manager.service';
+import { KeyDerivationService } from '../keys/key-derivation.service';
 import { createMlKem1024 } from 'mlkem';
 import * as crypto from 'crypto';
 
@@ -26,6 +27,10 @@ describe('MlKemEncryptionService', () => {
       providers: [
         MlKemEncryptionService,
         TeeKeyManagerService,
+        {
+          provide: KeyDerivationService,
+          useValue: { getMlKemPublicKey: () => null },
+        },
         {
           provide: ConfigService,
           useValue: {
@@ -66,6 +71,10 @@ describe('MlKemEncryptionService', () => {
           MlKemEncryptionService,
           TeeKeyManagerService,
           {
+            provide: KeyDerivationService,
+            useValue: { getMlKemPublicKey: () => null },
+          },
+          {
             provide: ConfigService,
             useValue: {
               get: jest.fn(() => null),
@@ -92,6 +101,10 @@ describe('MlKemEncryptionService', () => {
         providers: [
           MlKemEncryptionService,
           TeeKeyManagerService,
+          {
+            provide: KeyDerivationService,
+            useValue: { getMlKemPublicKey: () => null },
+          },
           {
             provide: ConfigService,
             useValue: {
@@ -126,6 +139,10 @@ describe('MlKemEncryptionService', () => {
         providers: [
           MlKemEncryptionService,
           TeeKeyManagerService,
+          {
+            provide: KeyDerivationService,
+            useValue: { getMlKemPublicKey: () => null },
+          },
           {
             provide: ConfigService,
             useValue: {
@@ -325,6 +342,10 @@ describe('MlKemEncryptionService', () => {
           MlKemEncryptionService,
           TeeKeyManagerService,
           {
+            provide: KeyDerivationService,
+            useValue: { getMlKemPublicKey: () => null },
+          },
+          {
             provide: ConfigService,
             useValue: {
               get: jest.fn(() => null),
@@ -359,6 +380,10 @@ describe('MlKemEncryptionService', () => {
           MlKemEncryptionService,
           TeeKeyManagerService,
           {
+            provide: KeyDerivationService,
+            useValue: { getMlKemPublicKey: () => null },
+          },
+          {
             provide: ConfigService,
             useValue: {
               get: jest.fn(() => null),
@@ -387,6 +412,10 @@ describe('MlKemEncryptionService', () => {
         providers: [
           MlKemEncryptionService,
           TeeKeyManagerService,
+          {
+            provide: KeyDerivationService,
+            useValue: { getMlKemPublicKey: () => null },
+          },
           {
             provide: ConfigService,
             useValue: {

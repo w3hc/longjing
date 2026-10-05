@@ -6,11 +6,13 @@
  */
 
 import { Module } from '@nestjs/common';
+import { KeysModule } from '../keys/keys.module';
 import { AttestationController } from './attestation.controller';
 import { AttestationService } from './attestation.service';
 import { TeeKeyManagerService } from './tee-key-manager.service';
 
 @Module({
+  imports: [KeysModule],
   controllers: [AttestationController],
   providers: [AttestationService, TeeKeyManagerService],
   exports: [AttestationService, TeeKeyManagerService],
