@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 
+import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProofVerifierService } from './proof-verifier.service';
 import { BlockchainService } from './blockchain.service';
@@ -152,7 +153,7 @@ describe('ProofVerifierService', () => {
     it('should return false if merkle root does not match', async () => {
       blockchainService.isAvailable.mockReturnValue(true);
       blockchainService.getMerkleRoot.mockResolvedValue(
-        '0xdifferent0000000000000000000000000000000000000000000000000000000',
+        '0x1234567890123456789012345678901234567890123456789012345678901235',
       );
       blockchainService.isNullifierSlashed.mockResolvedValue(false);
 
@@ -161,7 +162,24 @@ describe('ProofVerifierService', () => {
       expect(result).toBe(false);
     });
 
-    it('should continue verification if blockchain check fails', async () => {
+    it('accepts a decimal root equal to the onchain hex root', async () => {
+      blockchainService.isAvailable.mockReturnValue(true);
+      blockchainService.getMerkleRoot.mockResolvedValue(
+        mockPublicInputs.merkleRoot,
+      );
+      blockchainService.isNullifierSlashed.mockResolvedValue(false);
+      snarkjsProofService.isAvailable.mockReturnValue(true);
+      snarkjsProofService.verifyProof.mockResolvedValue(true);
+
+      const result = await service.verify(mockProof, {
+        ...mockPublicInputs,
+        merkleRoot: BigInt(mockPublicInputs.merkleRoot).toString(),
+      });
+
+      expect(result).toBe(true);
+    });
+
+    it('should continue verification if blockchain check fails outside prod', async () => {
       blockchainService.isAvailable.mockReturnValue(true);
       blockchainService.getMerkleRoot.mockRejectedValue(
         new Error('Network error'),
@@ -293,12 +311,62 @@ describe('ProofVerifierService', () => {
 
     it('should allow verification in production when snarkjs is available', async () => {
       process.env.PROFILE = 'prod';
+      blockchainService.isAvailable.mockReturnValue(true);
+      blockchainService.getMerkleRoot.mockResolvedValue(
+        mockPublicInputs.merkleRoot,
+      );
+      blockchainService.isNullifierSlashed.mockResolvedValue(false);
       snarkjsProofService.isAvailable.mockReturnValue(true);
       snarkjsProofService.verifyProof.mockResolvedValue(true);
 
       const result = await service.verify(mockProof, mockPublicInputs);
 
       expect(result).toBe(true);
+    });
+
+    describe('onchain state unavailable', () => {
+      beforeEach(() => {
+        process.env.PROFILE = 'prod';
+        snarkjsProofService.isAvailable.mockReturnValue(true);
+        snarkjsProofService.verifyProof.mockResolvedValue(true);
+      });
+
+      it('rejects with 503 when the blockchain service is unavailable', async () => {
+        blockchainService.isAvailable.mockReturnValue(false);
+
+        await expect(
+          service.verify(mockProof, mockPublicInputs),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+        expect(snarkjsProofService.verifyProof).not.toHaveBeenCalled();
+      });
+
+      it('rejects with 503 when the root cannot be read', async () => {
+        blockchainService.isAvailable.mockReturnValue(true);
+        blockchainService.getMerkleRoot.mockRejectedValue(
+          new Error('Network error'),
+        );
+        blockchainService.isNullifierSlashed.mockResolvedValue(false);
+
+        await expect(
+          service.verify(mockProof, mockPublicInputs),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+        expect(snarkjsProofService.verifyProof).not.toHaveBeenCalled();
+      });
+
+      it('rejects with 503 when the slashed status cannot be read', async () => {
+        blockchainService.isAvailable.mockReturnValue(true);
+        blockchainService.getMerkleRoot.mockResolvedValue(
+          mockPublicInputs.merkleRoot,
+        );
+        blockchainService.isNullifierSlashed.mockRejectedValue(
+          new Error('Network error'),
+        );
+
+        await expect(
+          service.verify(mockProof, mockPublicInputs),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+        expect(snarkjsProofService.verifyProof).not.toHaveBeenCalled();
+      });
     });
 
     it('should throw error even in dev mode when snarkjs not available', async () => {

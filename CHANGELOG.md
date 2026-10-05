@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The refund relay keeps proof elements as `bigint`: `Number()` lost their precision. `SLASHING_ABI` takes `uint256[5]` for `slashPolicyViolation`, as the contract does (LJ-11) ([#128](https://github.com/w3hc/longjing/issues/128)).
 - `generateDoubleSpendProof`, behind `POST /longjing/proofs/slashing`, proves with `double_spend_slashing` instead of the `api_credit_proof_test` circuit (LJ-11) ([#128](https://github.com/w3hc/longjing/issues/128)).
 - `LongjingService` model IDs use hyphens (`claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`): the dotted IDs made every real Claude API request fail with a 404 `not_found_error` ([#138](https://github.com/w3hc/longjing/issues/138)).
+- With `PROFILE=prod`, `POST /longjing/request` returns 503 when the onchain Merkle root or slashed status can't be read: both checks were silently skipped, so a client could prove membership in a tree of its own. Roots are compared by value, so a decimal root matches the onchain hex (LJ-09) ([#123](https://github.com/w3hc/longjing/issues/123)).
 
 ## [0.4.0] - 2026-10-05
 

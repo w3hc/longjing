@@ -1,12 +1,26 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { BlockchainService } from './blockchain.service';
 import { ProofGenService } from './proof-gen.service';
 import { RefundSignerService } from './refund-signer.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 import { isProd } from '../config/profile';
+
+/** Compares two roots by value, so hex and decimal encodings match. */
+function sameFieldElement(a: string, b: string): boolean {
+  if (!a?.trim() || !b?.trim()) return false;
+  try {
+    return BigInt(a) === BigInt(b);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Service for verifying ZK-SNARK proofs using Groth16
@@ -132,36 +146,22 @@ export class ProofVerifierService {
 
     this.logger.debug('Proof structure validated');
 
-    // 2. Verify against blockchain state if available
-    if (this.blockchainService.isAvailable()) {
-      try {
-        const onChainMerkleRoot = await this.blockchainService.getMerkleRoot();
-
-        // Check if nullifier has been slashed
-        const isSlashed = await this.blockchainService.isNullifierSlashed(
-          publicInputs.nullifier,
+    // 2. Verify against blockchain state
+    const chain = await this.readChainState(publicInputs.nullifier);
+    if (chain) {
+      if (chain.isSlashed) {
+        this.logger.warn(
+          `Nullifier ${publicInputs.nullifier} has been slashed`,
         );
+        return false;
+      }
 
-        if (isSlashed) {
-          this.logger.warn(
-            `Nullifier ${publicInputs.nullifier} has been slashed`,
-          );
-          return false;
-        }
-
-        // Verify Merkle root matches onchain root
-        if (onChainMerkleRoot !== publicInputs.merkleRoot) {
-          this.logger.warn('Merkle root mismatch with onchain state', {
-            expected: onChainMerkleRoot,
-            provided: publicInputs.merkleRoot,
-          });
-          return false;
-        }
-
-        this.logger.debug('Blockchain state verified successfully');
-      } catch (error) {
-        this.logger.warn('Failed to verify against blockchain state', error);
-        // Continue with verification in dev mode
+      if (!sameFieldElement(chain.merkleRoot, publicInputs.merkleRoot)) {
+        this.logger.warn('Merkle root mismatch with onchain state', {
+          expected: chain.merkleRoot,
+          provided: publicInputs.merkleRoot,
+        });
+        return false;
       }
     }
 
@@ -275,6 +275,36 @@ export class ProofVerifierService {
       this.failedVerifications++;
       this.logger.error('Failed to verify proof', error);
       throw error; // Fail closed - don't return false, propagate the error
+    }
+  }
+
+  /**
+   * Reads the onchain root and slashed status. In prod this fails closed:
+   * the root comes from the request, so skipping the check would let a
+   * client prove membership in a tree of its own. Elsewhere it returns null
+   * and the checks are skipped.
+   */
+  private async readChainState(
+    nullifier: string,
+  ): Promise<{ merkleRoot: string; isSlashed: boolean } | null> {
+    try {
+      if (!this.blockchainService.isAvailable()) {
+        throw new Error('Blockchain service not initialized');
+      }
+      const [merkleRoot, isSlashed] = await Promise.all([
+        this.blockchainService.getMerkleRoot(),
+        this.blockchainService.isNullifierSlashed(nullifier),
+      ]);
+      return { merkleRoot, isSlashed };
+    } catch (error) {
+      if (isProd()) {
+        this.logger.error('Failed to read onchain state', error);
+        throw new ServiceUnavailableException(
+          'Cannot verify the Merkle root against the chain',
+        );
+      }
+      this.logger.warn('Onchain state unavailable, skipping checks', error);
+      return null;
     }
   }
 }
