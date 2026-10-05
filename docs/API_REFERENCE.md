@@ -358,9 +358,13 @@ curl -k https://localhost:3000/longjing/server-pubkey
 
 ### GET /attestation
 
-Returns a TEE attestation quote with the ML-KEM public key cryptographically bound via `report_data`. This prevents man-in-the-middle attacks where an attacker could substitute their own encryption key.
+Returns a TEE attestation quote whose `report_data` commits to every public key the service uses (ML-KEM, identity, refund signer) and to the in-enclave TLS certificate, followed by the client's nonce. This prevents key substitution and replays. See [ATTESTATION.md](ATTESTATION.md#report_data).
 
 **Authentication:** None (public endpoint)
+
+**Query:**
+
+- `nonce` (optional): 32 random bytes as 64 hex characters, with or without `0x`, bound in `report_data[32..64]`. A malformed nonce gets a 400.
 
 **Response:**
 
@@ -368,9 +372,17 @@ Returns a TEE attestation quote with the ML-KEM public key cryptographically bou
 {
   platform: 'phala' | 'intel-tdx' | 'amd-sev-snp' | 'aws-nitro' | 'mock';
   quote: string;              // Base64-encoded attestation quote
-  reportData: string;         // Hex-encoded SHA-256(mlkem_pubkey) || 0x00...00 (64 bytes)
+  reportData: string;         // Hex-encoded key commitment || nonce (64 bytes)
   measurement: string;        // Hex-encoded TEE measurement (MRTD/PCR0/etc.)
+  eventLog?: string;          // dstack event log (JSON array), to replay RTMR0–3
   timestamp: string;          // ISO 8601 timestamp
+  nonce: string | null;       // 0x-hex nonce bound in report_data, or null
+  keys: {
+    mlkemPublicKey: string;                          // Base64 ML-KEM-1024 key
+    identityPublicKey: string | null;                // 0x-hex secp256k1 key
+    refundSignerPublicKey: { x: string; y: string } | null; // Baby Jubjub
+    tlsCertificate: string | null;                   // Base64 DER
+  };
   instructions: string;       // Platform-specific verification instructions
 }
 ```
@@ -381,28 +393,36 @@ Returns a TEE attestation quote with the ML-KEM public key cryptographically bou
 {
   "platform": "phala",
   "quote": "AgABACsAIAAAAAA...base64...==",
-  "reportData": "a1b2c3d4e5f67890abcdef...0000000000000000000000000000000000000000000000000000000000000000",
+  "reportData": "a1b2c3d4e5f67890abcdef...7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
   "measurement": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "eventLog": "[{\"imr\":0,\"event_type\":...,\"digest\":\"...\"}, ...]",
   "timestamp": "2026-04-18T12:00:00.000Z",
+  "nonce": "0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+  "keys": {
+    "mlkemPublicKey": "AgABACsAIAAA...base64...==",
+    "identityPublicKey": "0x04...",
+    "refundSignerPublicKey": { "x": "0x...", "y": "0x..." },
+    "tlsCertificate": "MIIB...base64...=="
+  },
   "instructions": "Verify this quote using Phala verification service..."
 }
 ```
 
 **Security:** Clients MUST verify:
 1. `platform` is not 'mock' (real TEE required)
-2. `reportData` = `SHA-256(mlkem_public_key)` + zero padding
-3. Platform-specific quote signature (see [ATTESTATION.md](ATTESTATION.md))
-4. `timestamp` is recent (within 5 minutes)
+2. `reportData` and the quote's `report_data` equal the value rebuilt from `keys` and their own nonce
+3. `keys.tlsCertificate` is the certificate of their TLS session
+4. `eventLog` replays to RTMR0–3 of the quote
+5. Platform-specific quote signature (see [ATTESTATION.md](ATTESTATION.md#verification))
 
 **Verification Script:**
 
 ```bash
-# Automated verification
-pnpm test:attestation https://your-server/attestation
+# Automated verification, with a fresh nonce
+pnpm verify:attestation https://your-server/attestation
 
-# Or manually verify report_data binding
-curl https://your-server/attestation > attestation.json
-curl https://your-server/mlkem/pubkey > pubkey.json
+# Or fetch with your own nonce and verify it manually
+curl "https://your-server/attestation?nonce=$(openssl rand -hex 32)" > attestation.json
 # See docs/ATTESTATION.md for full verification guide
 ```
 
@@ -438,7 +458,7 @@ Returns the server's ML-KEM-1024 public key for quantum-resistant encryption.
 
 **Usage:**
 1. Fetch `/attestation` and verify it (see above)
-2. Verify `attestation.reportData` matches `SHA-256(this_public_key)`
+2. Verify this key equals `attestation.keys.mlkemPublicKey`, which `report_data` commits to
 3. Only then use this public key for encryption
 
 **Documentation:**

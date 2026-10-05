@@ -100,13 +100,13 @@ struct KeyManifest {
 
 `GET /attestation/manifest` returns the manifest and its signature, the EIP-712 domain and types, the full ML-KEM public key, the identity address and public key, the refund signer public key, and the `GetKey` signature chains of the identity and refund signer keys. It answers 503 when the keys were not derived from dstack, which happens only in development.
 
-The `report_data` layout is unchanged, `SHA-256(ek) || SHA-256(tls_leaf_cert_der)`.
+`report_data` commits to the same keys as the manifest, the ML-KEM, identity and refund signer public keys and the TLS certificate, followed by the client's nonce. See [ATTESTATION.md](./ATTESTATION.md#report_data).
 
 ## Verification
 
-1. **Attestation**: fetch `GET /attestation`, verify the TDX quote, and check that `report_data` commits to the ML-KEM public key and to the certificate of your TLS session.
-2. **Code**: replay the event log into RTMR3 and read `compose_hash` and `app_id`. Check that `compose_hash` belongs to a published Longjing release, see [DOCKER.md](./DOCKER.md#releases).
-3. **Manifest**: fetch `GET /attestation/manifest`, recover the EIP-712 signer and check that it is the identity address, that `appId` is the one from step 2, and that `mlkemPublicKeyHash` and `tlsCertificateHash` match step 1.
+1. **Attestation**: fetch `GET /attestation?nonce=<32 random bytes, hex>`, verify the TDX quote, and check that `report_data` commits to the returned keys, to the certificate of your TLS session and to your nonce, see [ATTESTATION.md](./ATTESTATION.md#verification).
+2. **Code**: replay the returned `eventLog` into RTMR0–3, check it matches the quote, and read `compose-hash` and `app-id` from RTMR3. Check that `compose_hash` belongs to a published Longjing release, see [DOCKER.md](./DOCKER.md#releases).
+3. **Manifest**: fetch `GET /attestation/manifest`, recover the EIP-712 signer and check that it is the identity address, that `appId` is the one from step 2, and that `mlkemPublicKeyHash`, `refundSignerX`, `refundSignerY` and `tlsCertificateHash` match the keys of step 1.
 4. **Signature chains**: check that the identity and refund signer chains lead to the KMS root anchored in the `DstackKms` contract.
 5. **Contract**: check that `LongjingCredits.serverPublicKey` equals `(refundSignerX, refundSignerY)`.
 

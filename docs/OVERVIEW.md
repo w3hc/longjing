@@ -13,7 +13,7 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
 
 ### What Longjing adds
 
-- **TEE gateway**: Intel TDX with in-enclave TLS termination; attestation `report_data` binds both the ML-KEM public key and the TLS certificate, so a client can verify the endpoint before sending secrets ([ATTESTATION.md](./ATTESTATION.md), [TEE_SETUP.md](./TEE_SETUP.md)).
+- **TEE gateway**: Intel TDX with in-enclave TLS termination; attestation `report_data` binds the ML-KEM, identity and refund signer public keys, the TLS certificate and a client nonce, so a client can verify the endpoint before sending secrets ([ATTESTATION.md](./ATTESTATION.md), [TEE_SETUP.md](./TEE_SETUP.md)).
 - **Generic provider layer**: dynamic provider registration, per-provider pricing and pre-request cost estimation; Claude is the reference provider ([PROVIDERS.md](./PROVIDERS.md)).
 - **Metadata hardening**: `MetadataSanitizerInterceptor`, `TimingProtectionInterceptor`, response padding, cost quantization and ML-KEM encryption.
 - **ZK-first contracts**: withdrawal, refund redemption and slashing are all verified with Groth16 proofs, so the secret key is never revealed onchain and gas costs stay constant.

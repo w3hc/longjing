@@ -89,7 +89,7 @@ This commitment is stored in the Merkle tree anonymity set onchain, allowing use
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**In-TEE TLS termination:** in production, the HTTPS hop above ends inside the enclave. The TLS private key is derived in-enclave (dstack KMS) and the served certificate is bound into the attestation `report_data` (bytes 32-63), so clients can prove their TLS session ends inside the attested enclave, not at a gateway. Any proxy in front must run in TLS-passthrough mode. See [TEE_SETUP.md](TEE_SETUP.md#3-verify-tls-termination-inside-tee).
+**In-TEE TLS termination:** in production, the HTTPS hop above ends inside the enclave. The TLS private key is derived in-enclave (dstack KMS) and the served certificate is bound into the attestation `report_data`, so clients can prove their TLS session ends inside the attested enclave, not at a gateway. Any proxy in front must run in TLS-passthrough mode. See [TEE_SETUP.md](TEE_SETUP.md#3-verify-tls-termination-inside-tee).
 
 ## Implementation Status
 

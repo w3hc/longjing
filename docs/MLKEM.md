@@ -294,24 +294,7 @@ seed     = HKDF-SHA256(salt = "longjing", IKM = s,
 
 ### Attestation Response
 
-The attestation now includes the TEE-generated public key bound via `report_data`:
-
-```typescript
-// src/attestation/attestation.service.ts
-async getAttestation(): Promise<AttestationQuote> {
-  // Get TEE-generated public key
-  const mlkemPublicKey = this.keyManager.getPublicKeyBytes();
-
-  // Bind it to attestation via report_data
-  const reportData = this.buildReportData(mlkemPublicKey);
-
-  // Generate quote with hardware signature
-  return this.platform.generateQuote(reportData);
-}
-
-// Clients verify: attestation.reportData === SHA-256(mlkemPublicKey)
-// This proves the corresponding private key is sealed in the TEE
-```
+`GET /attestation` returns the TEE-derived public key under `keys.mlkemPublicKey`, and the quote's `report_data` commits to it along with the other service keys and the client's nonce. Clients rebuild `report_data` from the returned keys before encrypting to this key, see [ATTESTATION.md](ATTESTATION.md#verification).
 
 ### Phala Network Deployment
 
