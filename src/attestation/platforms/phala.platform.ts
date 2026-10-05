@@ -80,6 +80,7 @@ export class PhalaPlatform implements ITeePlatform {
         quote: quoteBuffer.toString('base64'),
         reportData: reportData.toString('hex'),
         measurement,
+        eventLog: result.event_log,
         timestamp: new Date().toISOString(),
         raw: result,
       };
