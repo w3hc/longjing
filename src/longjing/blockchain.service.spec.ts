@@ -265,4 +265,104 @@ describe('BlockchainService', () => {
       expect(isMember).toBe(false);
     });
   });
+
+  describe('Startup profile', () => {
+    const LOCAL = {
+      ANVIL_RPC_URL: 'http://127.0.0.1:8545',
+      ZK_CONTRACT_ADDRESS: '0x1234567890123456789012345678901234567890',
+    };
+    const PROD = {
+      ETHEREUM_RPC_URLS: 'https://eth.drpc.org',
+      ZK_CONTRACT_ADDRESS: '0x1234567890123456789012345678901234567890',
+    };
+
+    function startup(profile: string, values: Record<string, string>) {
+      process.env.PROFILE = profile;
+      const config = { get: (key: string) => values[key] } as ConfigService;
+      const blockchain = new BlockchainService(config, merkleTreeService);
+      (blockchain as any).logger = { log: jest.fn(), warn: jest.fn() };
+      return blockchain.onModuleInit();
+    }
+
+    function chainId(hex: string) {
+      return jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValue(
+          Response.json({ jsonrpc: '2.0', id: 1, result: hex }),
+        );
+    }
+
+    afterEach(() => {
+      process.env.PROFILE = 'local';
+      jest.restoreAllMocks();
+    });
+
+    it('starts without blockchain config in local', async () => {
+      await expect(startup('local', {})).resolves.toBeUndefined();
+    });
+
+    it.each(['ETHEREUM_RPC_URLS', 'ZK_CONTRACT_ADDRESS'])(
+      'refuses to start in prod without %s',
+      async (name) => {
+        await expect(startup('prod', { ...PROD, [name]: '' })).rejects.toThrow(
+          'PROFILE=prod requires',
+        );
+      },
+    );
+
+    it('refuses a non-Anvil chain in local', async () => {
+      chainId('0x1');
+
+      await expect(startup('local', LOCAL)).rejects.toThrow(
+        'PROFILE=local runs on Anvil only',
+      );
+    });
+
+    it('refuses Anvil in prod', async () => {
+      chainId('0x7a69');
+
+      await expect(startup('prod', PROD)).rejects.toThrow(
+        'PROFILE=prod refuses chain 31337',
+      );
+    });
+
+    it('disables the contract when the RPC is unreachable in local', async () => {
+      jest
+        .spyOn(global, 'fetch')
+        .mockRejectedValue(new TypeError('fetch failed'));
+
+      await expect(startup('local', LOCAL)).resolves.toBeUndefined();
+    });
+
+    it('refuses to start when the RPC is unreachable in prod', async () => {
+      jest
+        .spyOn(global, 'fetch')
+        .mockRejectedValue(new TypeError('fetch failed'));
+
+      await expect(startup('prod', PROD)).rejects.toThrow(
+        'Cannot start in production: RPC unreachable',
+      );
+    });
+
+    it('never reads ANVIL_PRIVATE_KEY in prod', async () => {
+      chainId('0x1');
+      // A closed port, so ethers fails fast instead of reaching the network
+      const values: Record<string, string> = {
+        ...PROD,
+        ETHEREUM_RPC_URLS: 'http://127.0.0.1:1',
+      };
+      const get = jest.fn((key: string) => values[key]);
+      process.env.PROFILE = 'prod';
+      const blockchain = new BlockchainService(
+        { get } as unknown as ConfigService,
+        merkleTreeService,
+      );
+      (blockchain as any).logger = { log: jest.fn(), warn: jest.fn() };
+
+      await blockchain.onModuleInit().catch(() => undefined);
+
+      expect(get).not.toHaveBeenCalledWith('ANVIL_PRIVATE_KEY');
+      expect(get).not.toHaveBeenCalledWith('ANVIL_RPC_URL');
+    });
+  });
 });

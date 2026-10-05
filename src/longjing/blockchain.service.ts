@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 import * as LongjingCreditsABI from './contracts/LongjingCredits.abi.json';
 import { MerkleTreeService } from './merkle-tree.service';
+import { isProd } from '../config/profile';
+import { assertChainMatchesProfile, fetchChainId, selectRpcUrl } from './chain';
 
 /**
  * Service for interacting with the LongjingCredits smart contract
@@ -20,51 +22,55 @@ export class BlockchainService implements OnModuleInit {
     private readonly merkleTree: MerkleTreeService,
   ) {}
 
-  /**
-   * Get RPC URL from environment configuration.
-   * In production, randomly selects from ETHEREUM_RPC_URLS if available.
-   * Falls back to ANVIL_RPC_URL for local development.
-   */
-  private getRpcUrl(): string | undefined {
-    const ethereumRpcUrls = this.configService.get<string>('ETHEREUM_RPC_URLS');
-
-    if (ethereumRpcUrls) {
-      const urls = ethereumRpcUrls
-        .split(',')
-        .map((url) => url.trim())
-        .filter((url) => url.length > 0);
-      if (urls.length > 0) {
-        const selectedUrl = urls[Math.floor(Math.random() * urls.length)];
-        return selectedUrl;
-      }
-    }
-
-    return this.configService.get<string>('ANVIL_RPC_URL');
-  }
-
   async onModuleInit() {
-    const rpcUrl = this.getRpcUrl();
+    const prod = isProd();
+    const rpcUrl = selectRpcUrl(this.configService);
     const contractAddress = this.configService.get<string>(
       'ZK_CONTRACT_ADDRESS',
     );
-    const privateKey = this.configService.get<string>('ANVIL_PRIVATE_KEY');
 
     if (!rpcUrl || !contractAddress) {
+      if (prod) {
+        throw new Error(
+          'PROFILE=prod requires ETHEREUM_RPC_URLS and ZK_CONTRACT_ADDRESS',
+        );
+      }
       this.logger.warn(
         'Blockchain configuration not found. Contract interaction will be disabled.',
       );
       return;
     }
 
+    let chainId: bigint;
     try {
-      this.logger.log(`Connecting to RPC: ${rpcUrl}`);
-      this.provider = new ethers.JsonRpcProvider(rpcUrl);
+      chainId = await fetchChainId(rpcUrl);
+    } catch (error) {
+      if (prod) {
+        throw new Error('Cannot start in production: RPC unreachable', {
+          cause: error,
+        });
+      }
+      this.logger.warn(
+        `RPC unreachable at ${rpcUrl}. Contract interaction will be disabled.`,
+      );
+      return;
+    }
+    assertChainMatchesProfile(chainId);
+
+    try {
+      this.logger.log(`Connecting to RPC: ${rpcUrl} (chain ${chainId})`);
+      this.provider = new ethers.JsonRpcProvider(rpcUrl, chainId, {
+        staticNetwork: true,
+      });
       this.contract = new ethers.Contract(
         contractAddress,
         LongjingCreditsABI,
         this.provider,
       );
 
+      const privateKey = prod
+        ? undefined
+        : this.configService.get<string>('ANVIL_PRIVATE_KEY');
       if (privateKey) {
         this.wallet = new ethers.Wallet(privateKey, this.provider);
         this.contract = this.contract.connect(this.wallet) as ethers.Contract;
@@ -82,6 +88,11 @@ export class BlockchainService implements OnModuleInit {
       // Start listening for new deposits
       this.startEventMonitoring();
     } catch (error) {
+      if (prod) {
+        throw new Error('Cannot start in production: blockchain unavailable', {
+          cause: error,
+        });
+      }
       this.logger.error('Failed to connect to blockchain', error);
     }
   }
