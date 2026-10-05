@@ -247,7 +247,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
      * @param _idCommitment The user's identity commitment
      * @param _recipient Address to receive the withdrawn funds
      * @param _proof ZK proof components [pA, pB, pC] in Groth16 format
-     * @param _publicSignals Public inputs [signalX, merkleRootExpected, recipient, nullifier, signalY, idCommitment, merkleRoot]
+     * @param _publicSignals Public signals in snarkjs order [nullifier, signalY, idCommitment, merkleRoot, signalX, merkleRootExpected, recipient]
      * @dev Verifies a ZK proof that the caller knows the secret key without revealing it
      * @dev The recipient is bound into the proof to prevent front-running attacks ()
      */
@@ -261,7 +261,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         if (!userDeposit.active) revert DepositNotFound();
 
         // Verify ZK proof of ownership
-        // Public signals: [signalX (input), merkleRootExpected (input), recipient (input), nullifier (output), signalY (output), idCommitment (output), merkleRoot (output)]
+        // Public signals, outputs first as snarkjs emits them: [nullifier, signalY, idCommitment, merkleRoot, signalX, merkleRootExpected, recipient]
         // The proof verifies that:
         // 1. Prover knows secretKey such that Poseidon(secretKey) = idCommitment
         // 2. idCommitment is in the Merkle tree with root = merkleRoot
@@ -272,12 +272,12 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         }
 
         // Verify public signals match expected values
-        // _publicSignals[2] is the recipient input - CRITICAL: prevents front-running
-        require(_publicSignals[2] == uint256(uint160(address(_recipient))), "recipient mismatch");
-        // _publicSignals[5] is the idCommitment output
-        require(_publicSignals[5] == uint256(_idCommitment), "idCommitment mismatch");
-        // _publicSignals[6] is the merkleRoot output
-        require(_publicSignals[6] == uint256(merkleRoot), "merkleRoot mismatch");
+        // _publicSignals[6] is the recipient input - CRITICAL: prevents front-running
+        require(_publicSignals[6] == uint256(uint160(address(_recipient))), "recipient mismatch");
+        // _publicSignals[2] is the idCommitment output
+        require(_publicSignals[2] == uint256(_idCommitment), "idCommitment mismatch");
+        // _publicSignals[3] is the merkleRoot output
+        require(_publicSignals[3] == uint256(merkleRoot), "merkleRoot mismatch");
 
         uint256 totalAmount = userDeposit.rlnStake + userDeposit.policyStake;
 
@@ -299,7 +299,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
      * @param _nullifier The nullifier from the double-spend
      * @param _idCommitment The user's identity commitment
      * @param _proof ZK proof components [pA, pB, pC] in Groth16 format
-     * @param _publicSignals Public inputs [idCommitment, secretKey, nullifier, externalNullifier]
+     * @param _publicSignals Public signals in snarkjs order [idCommitment, nullifier, secretKeyClaimed, nullifierExpected]
      * @dev Verifies a ZK proof that validates the secret key extraction from two RLN signals
      * @dev The circuit proves:
      *      1. Two RLN signals with the same nullifier but different x values exist
@@ -321,7 +321,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         if (!userDeposit.active) revert DepositNotFound();
 
         // Verify ZK proof of double-spend slashing
-        // Public signals: [idCommitment, secretKey, nullifier, externalNullifier]
+        // Public signals, outputs first as snarkjs emits them: [idCommitment, nullifier, secretKeyClaimed, nullifierExpected]
         // The proof verifies:
         // 1. Two RLN signals exist with the same nullifier but different x values
         // 2. Secret key was correctly extracted using RLN math: k = (y1*x2 - y2*x1) / (x2 - x1)
@@ -332,11 +332,10 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         }
 
         // Verify public signals match expected values
-        // Public signals: [secretKeyClaimed (input), nullifierExpected (input), idCommitment (output), nullifier (output)]
-        require(_publicSignals[0] == uint256(_secretKey), "secretKey mismatch");
-        require(_publicSignals[1] == uint256(_nullifier), "nullifier (expected) mismatch");
-        require(_publicSignals[2] == uint256(_idCommitment), "idCommitment mismatch");
-        require(_publicSignals[3] == uint256(_nullifier), "nullifier (output) mismatch");
+        require(_publicSignals[0] == uint256(_idCommitment), "idCommitment mismatch");
+        require(_publicSignals[1] == uint256(_nullifier), "nullifier (output) mismatch");
+        require(_publicSignals[2] == uint256(_secretKey), "secretKey mismatch");
+        require(_publicSignals[3] == uint256(_nullifier), "nullifier (expected) mismatch");
 
         // Verify the secret key matches the idCommitment
         bytes32 computedCommitment = bytes32(PoseidonHasher.hash(uint256(_secretKey)));
@@ -362,7 +361,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
      * @param _nullifier The nullifier from the violating request
      * @param _idCommitment The user's identity commitment
      * @param _proof ZK proof components [pA, pB, pC] in Groth16 format
-     * @param _publicSignals Public inputs [nullifierExpected, idCommitmentExpected]
+     * @param _publicSignals Public signals in snarkjs order [evidenceHash, nullifier, idCommitment, nullifierExpected, idCommitmentExpected]
      * @dev Policy stake is BURNED (not transferred to server) to prevent false accusations
      * @dev The circuit proves:
      *      1. The nullifier was derived from a valid RLN share
@@ -382,7 +381,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         if (slashedNullifiers[_nullifier]) revert AlreadySlashed();
 
         // Verify ZK proof of policy violation
-        // Public signals: [nullifierExpected (input), idCommitmentExpected (input), evidenceHash (output), nullifier (output), idCommitment (output)]
+        // Public signals, outputs first as snarkjs emits them: [evidenceHash, nullifier, idCommitment, nullifierExpected, idCommitmentExpected]
         // The proof verifies:
         // 1. The server knows the RLN signal from the actual request
         // 2. The evidence hash binds the nullifier to the violation content
@@ -392,13 +391,13 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         }
 
         // Verify public signals match expected values
-        // _publicSignals[0] is nullifierExpected (input)
-        require(_publicSignals[0] == uint256(_nullifier), "nullifier mismatch");
-        // _publicSignals[1] is idCommitmentExpected (input)
-        require(_publicSignals[1] == uint256(_idCommitment), "idCommitment mismatch");
+        // _publicSignals[3] is nullifierExpected (input)
+        require(_publicSignals[3] == uint256(_nullifier), "nullifier mismatch");
+        // _publicSignals[4] is idCommitmentExpected (input)
+        require(_publicSignals[4] == uint256(_idCommitment), "idCommitment mismatch");
 
         // Extract evidence hash from public signals (output from circuit)
-        bytes32 evidenceHash = bytes32(_publicSignals[2]);
+        bytes32 evidenceHash = bytes32(_publicSignals[0]);
 
         slashedNullifiers[_nullifier] = true;
         uint256 amountToBurn = userDeposit.policyStake;
@@ -418,7 +417,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
      * @param _refundValue Total refund amount in wei
      * @param _recipient Address to receive the refund
      * @param _proof ZK proof components [pA, pB, pC] in Groth16 format
-     * @param _publicSignals Public inputs [signalX, refundValueClaimed, serverPublicKeyX, serverPublicKeyY, recipient, nullifier, signalY, idCommitment]
+     * @param _publicSignals Public signals in snarkjs order [nullifier, signalY, idCommitment, signalX, refundValueClaimed, serverPublicKeyX, serverPublicKeyY, recipient]
      * @dev Verifies a ZK proof that validates EdDSA signatures on refund tickets
      * @dev The circuit proves:
      *      1. User has valid refund tickets signed by the server
@@ -444,7 +443,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         if (slashedNullifiers[_nullifier]) revert AlreadySlashed();
 
         // Verify ZK proof of valid refund redemption
-        // Public signals: [signalX (input), refundValueClaimed (input), serverPublicKeyX (input), serverPublicKeyY (input), recipient (input), nullifier (output), signalY (output), idCommitment (output)]
+        // Public signals, outputs first as snarkjs emits them: [nullifier, signalY, idCommitment, signalX, refundValueClaimed, serverPublicKeyX, serverPublicKeyY, recipient]
         // The proof verifies:
         // 1. User has valid refund ticket with EdDSA signature from server
         // 2. Signature is cryptographically valid (verified in circuit)
@@ -457,18 +456,18 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         }
 
         // Verify public signals match expected values
-        // _publicSignals[1] is the refundValueClaimed input
-        require(_publicSignals[1] == _refundValue, "refundValue mismatch");
-        // _publicSignals[2] is the serverPublicKeyX input - CRITICAL: prevents forged refunds ()
-        require(_publicSignals[2] == uint256(serverPublicKey.x), "serverPublicKeyX mismatch");
-        // _publicSignals[3] is the serverPublicKeyY input - CRITICAL: prevents forged refunds ()
-        require(_publicSignals[3] == uint256(serverPublicKey.y), "serverPublicKeyY mismatch");
-        // _publicSignals[4] is the recipient input - CRITICAL: prevents front-running
-        require(_publicSignals[4] == uint256(uint160(address(_recipient))), "recipient mismatch");
-        // _publicSignals[5] is the nullifier output
-        require(_publicSignals[5] == uint256(_nullifier), "nullifier mismatch");
-        // _publicSignals[7] is the idCommitment output
-        require(_publicSignals[7] == uint256(_idCommitment), "idCommitment mismatch");
+        // _publicSignals[4] is the refundValueClaimed input
+        require(_publicSignals[4] == _refundValue, "refundValue mismatch");
+        // _publicSignals[5] is the serverPublicKeyX input - CRITICAL: prevents forged refunds ()
+        require(_publicSignals[5] == uint256(serverPublicKey.x), "serverPublicKeyX mismatch");
+        // _publicSignals[6] is the serverPublicKeyY input - CRITICAL: prevents forged refunds ()
+        require(_publicSignals[6] == uint256(serverPublicKey.y), "serverPublicKeyY mismatch");
+        // _publicSignals[7] is the recipient input - CRITICAL: prevents front-running
+        require(_publicSignals[7] == uint256(uint160(address(_recipient))), "recipient mismatch");
+        // _publicSignals[0] is the nullifier output
+        require(_publicSignals[0] == uint256(_nullifier), "nullifier mismatch");
+        // _publicSignals[2] is the idCommitment output
+        require(_publicSignals[2] == uint256(_idCommitment), "idCommitment mismatch");
 
         // Mark refund as redeemed
         redeemedRefunds[_nullifier] = true;
