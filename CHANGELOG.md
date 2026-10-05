@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- README badges for CI, NestJS, TypeScript, Solidity, Circom, pnpm, Node.js and the license ([#120](https://github.com/w3hc/longjing/issues/120)).
+
+### Changed
+
+- `docs/audits/` is gitignored, so audit reports stay local until they are ready to publish ([#120](https://github.com/w3hc/longjing/issues/120)).
+
 ## [0.4.0] - 2026-10-05
 
 ### Added
