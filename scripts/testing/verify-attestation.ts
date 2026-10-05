@@ -7,21 +7,22 @@
  * Supports: Phala Network, Intel TDX, AMD SEV-SNP, AWS Nitro
  *
  * Usage:
- *   pnpm test:attestation
- *   pnpm test:attestation <attestation-url>
- *   pnpm test:attestation https://your-longjing.phala.network/attestation
+ *   pnpm verify:attestation
+ *   pnpm verify:attestation <attestation-url>
+ *   pnpm verify:attestation https://your-longjing.phala.network/attestation
  *
  * Or with local JSON file:
- *   pnpm test:attestation attestation.json
+ *   pnpm verify:attestation attestation.json
  *
  * What it verifies:
  *   1. Platform detection (not 'mock')
- *   2. report_data binding to ML-KEM public key (SHA-256 match, bytes 0-31)
- *   3. report_data binding to the served TLS certificate (SHA-256 match,
- *      bytes 32-63) — proves TLS terminates inside the attested enclave
- *   4. Quote structure validity
- *   5. Measurement extraction
- *   6. Quote freshness (timestamp)
+ *   2. report_data commits to the returned ML-KEM, identity and refund
+ *      signer keys, the TLS certificate and a fresh random nonce
+ *   3. The served TLS certificate is the bound one — proves TLS terminates
+ *      inside the attested enclave
+ *   4. The event log replays to the quote's RTMR0–3
+ *   5. The key manifest signs the same keys
+ *   6. Quote structure validity and measurement extraction
  *
  * What it does NOT verify (requires platform-specific verification):
  *   - Full cryptographic signature verification
@@ -34,15 +35,11 @@
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import * as tls from 'tls';
+import { BoundAttestation } from '../../src/attestation/attestation.types';
+import { verifyKeyBinding } from '../../src/attestation/key-binding';
+import { SignedKeyManifest } from '../../src/keys/key-derivation.service';
 
-interface AttestationQuote {
-  platform: 'phala' | 'intel-tdx' | 'amd-sev-snp' | 'aws-nitro' | 'mock';
-  quote: string;
-  reportData: string;
-  measurement: string;
-  timestamp: string;
-  instructions?: string;
-}
+type AttestationQuote = BoundAttestation & { instructions?: string };
 
 // Intel TDX Quote v4 Structure (simplified)
 // Full spec: https://download.01.org/intel-sgx/latest/dcap-latest/linux/docs/Intel_TDX_DCAP_Quoting_Library_API.pdf
@@ -125,35 +122,30 @@ async function fetchAttestation(source: string): Promise<AttestationQuote> {
 }
 
 /**
- * Fetch ML-KEM public key from server
+ * Fetch the key manifest signed by the enclave identity key
  */
-async function fetchMlKemPublicKey(baseUrl: string): Promise<Buffer> {
-  const url = new URL('/mlkem/pubkey', baseUrl).toString();
-  log(`Fetching ML-KEM public key from: ${url}`, 'blue');
+async function fetchKeyManifest(
+  baseUrl: string,
+): Promise<SignedKeyManifest | undefined> {
+  const url = new URL('/attestation/manifest', baseUrl).toString();
+  log(`Fetching key manifest from: ${url}`, 'blue');
 
   try {
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-
-    const data = await response.json();
-    if (!data.publicKey) {
-      throw new Error('No publicKey field in response');
-    }
-
-    return Buffer.from(data.publicKey, 'base64');
+    return (await response.json()) as SignedKeyManifest;
   } catch (error) {
-    warning(`Could not fetch ML-KEM public key: ${error instanceof Error ? error.message : String(error)}`);
-    warning('Skipping report_data verification');
-    return Buffer.alloc(0);
+    warning(`Could not fetch key manifest: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
   }
 }
 
 /**
  * Fetch the DER-encoded TLS leaf certificate the server actually presents.
  * Certificate validity is NOT checked here — the certificate is instead
- * pinned against the attestation quote's report_data (bytes 32-63).
+ * pinned against the certificate the attestation binds.
  */
 function fetchServedTlsCertificate(baseUrl: string): Promise<Buffer | null> {
   const url = new URL(baseUrl);
@@ -192,76 +184,41 @@ function fetchServedTlsCertificate(baseUrl: string): Promise<Buffer | null> {
 }
 
 /**
- * Verify report_data binding:
- *   bytes 0-31:  SHA-256(mlkem_public_key)
- *   bytes 32-63: SHA-256(tls_leaf_cert_der) — zero when the server does not
- *                terminate TLS itself (external proxy; weaker guarantee)
+ * Verify that report_data commits to the returned keys and the nonce, that
+ * the quote and the event log agree with it, and that the key manifest
+ * signs the same keys
  */
-function verifyReportDataBinding(
-  reportData: string,
-  mlkemPublicKey: Buffer,
-  servedTlsCertDer: Buffer | null,
+function verifyBinding(
+  attestation: AttestationQuote,
+  nonce: Buffer | undefined,
+  servedCertificate: Buffer | undefined,
+  keyManifest: SignedKeyManifest | undefined,
 ): boolean {
-  if (mlkemPublicKey.length === 0) {
-    warning('No ML-KEM public key available, skipping report_data verification');
+  log(`\n🔑 Key Binding Verification:`, 'blue');
+  info(`  Nonce: ${nonce ? '0x' + nonce.toString('hex') : 'none'}`);
+
+  const failures = verifyKeyBinding(attestation, {
+    nonce,
+    servedCertificate,
+    keyManifest,
+  });
+  if (failures.length > 0) {
+    failures.forEach((failure) => error(failure));
     return false;
   }
 
-  log(`\n🔑 Report Data Binding Verification:`, 'blue');
-  info(`  ML-KEM public key size: ${mlkemPublicKey.length} bytes`);
-
-  const actual = Buffer.from(reportData, 'hex');
-  const actualMlkemHalf = actual.subarray(0, 32).toString('hex');
-  const actualTlsHalf = actual.subarray(32, 64).toString('hex');
-
-  // Bytes 0-31: SHA-256(mlkem_public_key)
-  const expectedMlkemHalf = crypto
-    .createHash('sha256')
-    .update(mlkemPublicKey)
-    .digest('hex');
-
-  info(`  Expected ML-KEM half (bytes 0-31):  ${expectedMlkemHalf}`);
-  info(`  Actual ML-KEM half (bytes 0-31):    ${actualMlkemHalf}`);
-
-  if (actualMlkemHalf.toLowerCase() !== expectedMlkemHalf.toLowerCase()) {
-    error('❌ report_data does NOT match SHA-256(ML-KEM public key)');
-    error('   The quote is NOT bound to the advertised encryption key');
-    error('   DO NOT trust this server!');
-    return false;
+  success('report_data commits to the returned keys and the nonce');
+  if (!attestation.keys.tlsCertificate) {
+    warning('No TLS certificate is bound: TLS terminates OUTSIDE the TEE');
+  } else if (servedCertificate) {
+    success('TLS terminates inside the attested enclave');
   }
-  success('✅ report_data matches SHA-256(ML-KEM public key)');
-  success('   The attestation quote is cryptographically bound to the encryption key');
-
-  // Bytes 32-63: SHA-256(tls_leaf_cert_der)
-  if (actualTlsHalf === '0'.repeat(64)) {
-    warning('report_data TLS half is zero — the server is NOT binding its TLS certificate');
-    warning('TLS likely terminates OUTSIDE the TEE (external proxy)');
-    warning('Request bodies may be visible in plaintext at the TLS terminator');
-    return true; // ML-KEM binding still valid; caller decides on trust
+  if (attestation.eventLog !== undefined) {
+    success('The event log replays to RTMR0–3');
   }
-
-  if (!servedTlsCertDer) {
-    warning('Could not fetch served TLS certificate; skipping TLS binding check');
-    return true;
+  if (keyManifest) {
+    success('The key manifest signs the same keys');
   }
-
-  const expectedTlsHalf = crypto
-    .createHash('sha256')
-    .update(servedTlsCertDer)
-    .digest('hex');
-
-  info(`  Expected TLS half (bytes 32-63):    ${expectedTlsHalf}`);
-  info(`  Actual TLS half (bytes 32-63):      ${actualTlsHalf}`);
-
-  if (actualTlsHalf.toLowerCase() !== expectedTlsHalf.toLowerCase()) {
-    error('❌ report_data does NOT match the served TLS certificate');
-    error('   The TLS endpoint you connected to is NOT the attested enclave');
-    error('   (possible MITM or TLS termination outside the TEE)');
-    error('   DO NOT trust this server!');
-    return false;
-  }
-  success('✅ report_data matches SHA-256(served TLS certificate)');
-  success('   TLS terminates inside the attested enclave');
   return true;
 }
 
@@ -420,7 +377,16 @@ async function verifyAttestation(source: string) {
   log('═══════════════════════════════════\n', 'cyan');
 
   try {
-    // 1. Fetch attestation
+    // 1. Fetch attestation, with a fresh nonce when fetching from a server
+    const isUrl = source.startsWith('http://') || source.startsWith('https://');
+    const nonce = crypto.randomBytes(32);
+    let baseUrl: string | undefined;
+    if (isUrl) {
+      const url = new URL(source);
+      baseUrl = url.origin;
+      url.searchParams.set('nonce', nonce.toString('hex'));
+      source = url.toString();
+    }
     const attestation = await fetchAttestation(source);
 
     // 2. Check platform
@@ -436,28 +402,30 @@ async function verifyAttestation(source: string) {
 
     success(`Platform: ${attestation.platform}`);
 
-    // 3. Verify report_data binding to ML-KEM public key + served TLS cert
-    let mlkemPublicKey: Buffer = Buffer.alloc(0);
-    if (source.startsWith('http://') || source.startsWith('https://')) {
-      const baseUrl = new URL(source).origin;
-      mlkemPublicKey = await fetchMlKemPublicKey(baseUrl);
-      const servedTlsCertDer = await fetchServedTlsCertificate(baseUrl);
-      const reportDataValid = verifyReportDataBinding(
-        attestation.reportData,
-        mlkemPublicKey,
-        servedTlsCertDer,
-      );
-      if (!reportDataValid && mlkemPublicKey.length > 0) {
-        error('\n❌ CRITICAL: report_data verification FAILED');
-        error('The attestation quote is NOT bound to the ML-KEM public key');
-        error('and/or the served TLS certificate');
-        error('This could indicate a man-in-the-middle attack or misconfiguration');
-        error('DO NOT trust this server!');
-        process.exit(1);
-      }
-    } else {
-      info('\n⚠️  Skipping report_data verification (local file mode)');
-      info('   To verify report_data binding, use a URL instead of a local file');
+    // 3. Verify report_data binds the keys, the nonce, the TLS certificate
+    // and the event log
+    const keyManifest = isUrl ? await fetchKeyManifest(baseUrl!) : undefined;
+    const servedCertificate = isUrl
+      ? ((await fetchServedTlsCertificate(baseUrl!)) ?? undefined)
+      : undefined;
+    if (!isUrl) {
+      warning('Local file mode: the nonce in the file cannot prove freshness');
+    }
+    const bindingValid = verifyBinding(
+      attestation,
+      isUrl
+        ? nonce
+        : attestation.nonce
+          ? Buffer.from(attestation.nonce.slice(2), 'hex')
+          : undefined,
+      servedCertificate,
+      keyManifest,
+    );
+    if (!bindingValid) {
+      error('\n❌ CRITICAL: key binding verification FAILED');
+      error('This could indicate a man-in-the-middle attack or misconfiguration');
+      error('DO NOT trust this server!');
+      process.exit(1);
     }
 
     // 4. Decode quote (platform-specific)
@@ -469,7 +437,7 @@ async function verifyAttestation(source: string) {
       await verifyNitroQuote(attestation);
     }
 
-    // 5. Verify timestamp
+    // 5. Verify timestamp (the nonce is what proves freshness)
     verifyTimestamp(attestation.timestamp);
 
     // 6. Summary
@@ -478,9 +446,7 @@ async function verifyAttestation(source: string) {
     log(`═══════════════════════════════════\n`, 'cyan');
 
     success(`Platform: ${attestation.platform} ✓`);
-    if (mlkemPublicKey.length > 0) {
-      success('report_data binding: Valid ✓');
-    }
+    success('Key binding: Valid ✓');
     success('Quote structure: Valid ✓');
     success('Timestamp: Fresh ✓');
 
@@ -681,7 +647,8 @@ async function verifyTdxQuote(attestation: AttestationQuote) {
     info('   Add this to your client application:');
     info('   ```typescript');
     info('   async function verifyServerBeforeSendingSecrets(serverUrl: string) {');
-    info('     const attestation = await fetch(`${serverUrl}/attestation`)');
+    info('     const nonce = crypto.randomBytes(32).toString("hex");');
+    info('     const attestation = await fetch(`${serverUrl}/attestation?nonce=${nonce}`)');
     info('       .then(r => r.json());');
     info('');
     info('     // Step 1: Check platform');
@@ -773,7 +740,7 @@ if (args.length === 0) {
   // Default to localhost if no argument provided
   const defaultUrl = 'http://localhost:3000/attestation';
   log(`No URL provided, using default: ${defaultUrl}`, 'yellow');
-  log('Usage: pnpm test:attestation [url-or-file]\n', 'cyan');
+  log('Usage: pnpm verify:attestation [url-or-file]\n', 'cyan');
   verifyAttestation(defaultUrl);
 } else {
   const source = args[0];
