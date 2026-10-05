@@ -4,7 +4,7 @@ This document explains how to use the SIWE authentication system in Longjing.
 
 ## Overview
 
-Longjing implements a minimalistic SIWE authentication system using **NestJS Guards** that allows users to authenticate using their Ethereum wallet. The system uses:
+Longjing implements a minimalistic SIWE authentication system using **NestJS Guards** that allows users to authenticate using their Ethereum wallet. No endpoint is guarded yet: `POST /auth/nonce` is served, and `SiweGuard` is ready for any endpoint that adds `@UseGuards(SiweGuard)`. `POST /hello` below shows how such an endpoint behaves; it is not served. The system uses:
 
 - **Guard-based authentication** - NestJS Guards validate SIWE signatures on protected endpoints
 - **Header-based credentials** - SIWE message and signature sent via HTTP headers
@@ -39,9 +39,9 @@ curl -k -X POST https://localhost:3000/auth/nonce
 
 Protected endpoints require SIWE authentication via HTTP headers. The `SiweGuard` automatically validates credentials.
 
-**Example: Protected Hello Endpoint**
+**Example: a guarded endpoint**
 
-**Endpoint:** `POST /hello`
+**Endpoint:** `POST /hello` (illustrative, not served by Longjing)
 
 **Request:**
 ```bash

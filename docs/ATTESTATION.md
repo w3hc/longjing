@@ -394,16 +394,15 @@ def verify_server_attestation(server_url: str) -> dict:
 ❌ **DON'T: Skip key binding verification**
 ```typescript
 // WRONG - vulnerable to MITM
-const pubkey = await fetch(`${url}/mlkem/pubkey`);
-encrypt(data, pubkey);  // ❌ No attestation check
+const { keys } = await (await fetch(`${url}/attestation`)).json();
+encrypt(data, keys.mlkemPublicKey);  // ❌ No attestation check
 ```
 
 ✅ **DO: Verify the key binding**
 ```typescript
 // CORRECT
-await verifyAttestation(url);  // ✅ Checks report_data and the nonce
-const pubkey = await fetch(`${url}/mlkem/pubkey`);
-encrypt(data, pubkey);
+const keys = await verifyAttestation(url);  // ✅ Checks report_data and the nonce
+encrypt(data, keys.mlkemPublicKey);
 ```
 
 ❌ **DON'T: Trust old quotes**

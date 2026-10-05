@@ -22,12 +22,9 @@ import {
 } from './dto/cost-estimate.dto';
 import { ProofGenService } from './proof-gen.service';
 import {
-  GenerateWithdrawalProofDto,
-  GenerateRefundProofDto,
   GenerateSlashingProofDto,
   ProofResponseDto,
 } from './dto/proof-generation.dto';
-import { RefundSignerService } from './refund-signer.service';
 
 @ApiTags('App')
 @Controller('longjing')
@@ -38,7 +35,6 @@ export class LongjingController {
     private readonly nullifierStore: NullifierStoreService,
     private readonly costEstimationService: CostEstimationService,
     private readonly proofGenService: ProofGenService,
-    private readonly refundSignerService: RefundSignerService,
   ) {}
 
   @Post('request')
@@ -189,128 +185,6 @@ export class LongjingController {
       success: true,
       transactionHash: txHash,
       message: `Refund of ${request.value} wei redeemed successfully`,
-    };
-  }
-
-  @Post('proofs/withdrawal')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Generate ZK proof for withdrawal',
-    description:
-      'Generate a Groth16 zero-knowledge proof for withdrawing funds. ' +
-      'The proof demonstrates knowledge of the secret key without revealing it.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Withdrawal proof generated successfully',
-    type: ProofResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid input parameters',
-  })
-  async generateWithdrawalProof(
-    @Body() body: GenerateWithdrawalProofDto,
-  ): Promise<ProofResponseDto> {
-    const secretKey = BigInt(body.secretKey);
-    const ticketIndex = BigInt(body.ticketIndex);
-    const signalX = BigInt(body.signalX);
-
-    const { proof, publicSignals } =
-      await this.proofGenService.generateWithdrawalProof({
-        secretKey,
-        ticketIndex,
-        signalX,
-      });
-
-    const idCommitment =
-      await this.proofGenService.generateIdCommitment(secretKey);
-    const { nullifier } = await this.proofGenService.generateRLNSignal(
-      secretKey,
-      ticketIndex,
-      signalX,
-    );
-
-    return {
-      proof: proof.map((p) => '0x' + BigInt(p).toString(16)),
-      publicSignals: publicSignals.map((s) => '0x' + BigInt(s).toString(16)),
-      metadata: {
-        idCommitment: '0x' + idCommitment.toString(16),
-        nullifier: '0x' + nullifier.toString(16),
-        timestamp: Date.now(),
-      },
-    };
-  }
-
-  @Post('proofs/refund')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Generate ZK proof for refund redemption',
-    description:
-      'Generate a Groth16 zero-knowledge proof for redeeming refund tickets. ' +
-      'The proof verifies EdDSA signatures without revealing signature details.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Refund proof generated successfully',
-    type: ProofResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid input parameters',
-  })
-  async generateRefundProof(
-    @Body() body: GenerateRefundProofDto,
-  ): Promise<ProofResponseDto> {
-    const secretKey = BigInt(body.secretKey);
-    const ticketIndex = BigInt(body.ticketIndex);
-    const signalX = BigInt(body.signalX);
-    const recipient = body.recipient; // recipient binding
-
-    // Calculate identity commitment and nullifier
-    const idCommitment =
-      await this.proofGenService.generateIdCommitment(secretKey);
-    const { nullifier } = await this.proofGenService.generateRLNSignal(
-      secretKey,
-      ticketIndex,
-      signalX,
-    );
-
-    // Generate mock refund ticket for testing/development
-    const refundValue = BigInt(1000000); // 1M wei mock refund
-    const refundTimestamp = Math.floor(Date.now() / 1000);
-
-    const refundTicket = await this.refundSignerService.signRefund({
-      idCommitment: '0x' + idCommitment.toString(16),
-      nullifier: '0x' + nullifier.toString(16),
-      value: refundValue.toString(),
-      timestamp: refundTimestamp,
-    });
-
-    // Get server's public key
-    const serverPublicKey = await this.refundSignerService.getPublicKey();
-
-    // Generate proof with the signed refund ticket
-    const { proof, publicSignals } =
-      await this.proofGenService.generateRefundRedemptionProof({
-        secretKey,
-        ticketIndex,
-        signalX,
-        refundValue,
-        refundTimestamp,
-        refundSignature: refundTicket.signature,
-        serverPublicKey,
-        recipient, // bind recipient to proof
-      });
-
-    return {
-      proof: proof.map((p) => '0x' + BigInt(p).toString(16)),
-      publicSignals: publicSignals.map((s) => '0x' + BigInt(s).toString(16)),
-      metadata: {
-        idCommitment: '0x' + idCommitment.toString(16),
-        nullifier: '0x' + nullifier.toString(16),
-        timestamp: Date.now(),
-      },
     };
   }
 

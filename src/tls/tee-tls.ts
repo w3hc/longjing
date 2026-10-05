@@ -5,8 +5,8 @@
  * In-enclave TLS termination
  *
  * Production must terminate TLS *inside* the TEE, so that request bodies
- * (which may carry user secrets on the /longjing/proofs/* endpoints) are never
- * visible in plaintext at an external TLS-termination proxy.
+ * (such as the prompts sent to /longjing/request) are never visible in
+ * plaintext at an external TLS-termination proxy.
  *
  * Key material resolution order in production:
  *   1. TLS_KEY_PATH / TLS_CERT_PATH — operator-provisioned files that must
@@ -145,9 +145,9 @@ export async function loadTlsMaterial(isProd: boolean): Promise<TlsMaterial> {
   if (process.env.ALLOW_EXTERNAL_TLS_TERMINATION === 'true') {
     logger.warn(
       '⚠️  ALLOW_EXTERNAL_TLS_TERMINATION=true — serving plain HTTP behind an ' +
-        'external TLS terminator. Request bodies (including secretKey on ' +
-        '/longjing/proofs/*) are visible in plaintext at the termination proxy, ' +
-        'OUTSIDE the TEE trust boundary. Do not use with real user secrets.',
+        'external TLS terminator. Request bodies, including the prompts sent to ' +
+        '/longjing/request, are visible in plaintext at the termination proxy, ' +
+        'OUTSIDE the TEE trust boundary. Do not use with real user data.',
     );
     return { httpsOptions: undefined, source: 'external-proxy' };
   }

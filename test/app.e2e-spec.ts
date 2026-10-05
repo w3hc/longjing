@@ -235,7 +235,7 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
       }
 
       // Mock proof and public signals for testing
-      // In production, this would use real ZK proofs from /proofs/refund endpoint
+      // In production, the client generates a real refund redemption proof
       const mockProof = '[1,2,3,4,5,6,7,8]';
       const publicSignals = `[0,${value},${nullifier},0,${idCommitment}]`;
 
@@ -270,9 +270,7 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
         console.log(
           '\n⚠️  Refund redemption with mock proof failed (expected)',
         );
-        console.log(
-          '   Contract requires real ZK proof from /proofs/refund endpoint',
-        );
+        console.log('   Contract requires a real refund redemption proof');
         console.log('   This validates that the security is properly enforced');
         console.log(
           '\n✓ Main flow verified: Deposit → Service → Refund ticket',

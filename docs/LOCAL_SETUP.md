@@ -176,21 +176,13 @@ Run end-to-end tests:
 pnpm test:e2e
 ```
 
-### Full Quality Check
-
-Run all checks (format, lint, test, build):
+### Quality Checks
 
 ```bash
-pnpm dance
+pnpm format:check
+pnpm lint:check
+pnpm build
 ```
-
-This runs:
-1. Format check and auto-fix
-2. Linting with auto-fix
-3. Unit tests
-4. E2E tests
-5. Production build
-6. Outdated dependency check
 
 ## Project Structure
 

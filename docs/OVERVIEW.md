@@ -146,7 +146,7 @@ The system uses four specialized ZK circuits (Groth16) for different operations:
    - Prevents arbitrary policy stake burning (C-4 security fix)
    - Verifier: [PolicyViolationVerifier.sol](../contracts/src/PolicyViolationVerifier.sol)
 
-**Test Circuit**: [`circuits/api_credit_proof_test.circom`](../circuits/api_credit_proof_test.circom) (development only; production refuses to start with it)
+**Test Circuit**: `api_credit_proof_test`, whose artifacts come from `pnpm circuits:fetch` (development only; production refuses to start with it)
 
 The ZK circuits prove critical properties in zero-knowledge:
 
@@ -178,7 +178,7 @@ The ZK circuits prove critical properties in zero-knowledge:
 - Refund redemption: `refund_redemption_final.zkey` (5.6MB proving key)
 - Double-spend slashing: `double_spend_slashing_final.zkey` (613KB proving key)
 - Production requires multi-party ceremony (50+ participants)
-- Setup script: [run-trusted-setup.sh](../scripts/run-trusted-setup.sh)
+- Setup script: [run-trusted-setup.sh](../scripts/setup/run-trusted-setup.sh)
 
 See [ZK.md](./ZK.md) for detailed circuit documentation and [TRUSTED_SETUP_CEREMONY.md](./TRUSTED_SETUP_CEREMONY.md) for ceremony details.
 
@@ -536,7 +536,7 @@ This relies on economic incentives:
    - Powers of Tau ceremony (2^15 = 32,768 constraints)
    - Phase 2 setup for all three circuits
    - Proving keys: `withdrawal_final.zkey`, `refund_redemption_final.zkey`, `double_spend_slashing_final.zkey`
-   - Setup script: `scripts/run-trusted-setup.sh`
+   - Setup script: `scripts/setup/run-trusted-setup.sh`
    - Production requires multi-party ceremony (50+ participants)
 
 3. **Contract integration**

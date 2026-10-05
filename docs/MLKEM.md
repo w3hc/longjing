@@ -1,6 +1,6 @@
 # ML-KEM Quantum-Resistant Encryption
 
-> **Note:** ML-KEM encryption/decryption utilities are available in the codebase (`src/encryption/mlkem-encryption.service.ts`) but the API endpoints are currently not exposed. SIWE authentication (`src/auth/siwe.service.ts`, `src/auth/siwe.guard.ts`) is also available for protecting future endpoints. This documentation is maintained for reference and future use.
+> **Note:** ML-KEM encryption/decryption utilities are available in the codebase (`src/encryption/mlkem-encryption.service.ts`) but the encryption endpoints are currently not exposed. The ML-KEM public key is served in `keys.mlkemPublicKey` of `GET /attestation`, bound in `report_data`. SIWE authentication (`src/auth/siwe.service.ts`, `src/auth/siwe.guard.ts`) is also available for protecting future endpoints. This documentation is maintained for reference and future use.
 
 ## Overview
 
@@ -125,7 +125,7 @@ const plaintext2 = await fetch('/secret/access/slot123', {
 | **Admin Access** | ✅ Private key sealed in TEE hardware |
 | **Code Tampering** | ✅ Attestation measurement verifies code integrity |
 | **Replay Attacks** | ✅ SIWE nonces prevent replay |
-| **Side-Channel** | ⚠️ TEE provides isolation (see [SIDE_CHANNEL_ATTACKS.md](SIDE_CHANNEL_ATTACKS.md)) |
+| **Side-Channel** | ⚠️ TEE provides isolation |
 
 ### Key Sizes
 
@@ -900,7 +900,7 @@ The complete production flow on Phala:
 
 **Cause:** Client encrypted with wrong public key or corrupted payload
 
-**Solution:** Verify client is using `mlkemPublicKey` from `/secret/attestation`
+**Solution:** Verify client is using `keys.mlkemPublicKey` from `GET /attestation`
 
 #### "Server public key not found in recipients list"
 
@@ -1092,10 +1092,8 @@ A: Generate new ML-KEM keypair, update attestation, re-encrypt all secrets. Old 
 
 ### Documentation
 
-- [Implementation Plan](MLKEM_IMPLEMENTATION_PLAN.md) - Development roadmap
-- [Testing Guide](MLKEM_TESTING_GUIDE.md) - Testing procedures
-- [Client Encryption](CLIENT_ENCRYPTION.md) - Client-side guide
-- [Side-Channel Attacks](SIDE_CHANNEL_ATTACKS.md) - Security considerations
+- [ATTESTATION.md](ATTESTATION.md) - Verifying the ML-KEM key bound in `report_data`
+- [KEY_DERIVATION.md](KEY_DERIVATION.md) - How the ML-KEM key is derived in the enclave
 
 ## Support
 

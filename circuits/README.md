@@ -67,7 +67,7 @@ Proves that a user double-spent a ticket, allowing anyone to extract and verify 
 - Public inputs: `secretKeyClaimed`, `nullifierExpected`
 - Outputs: `idCommitment`, `nullifier`
 
-### Test Circuit ([api_credit_proof_test.circom](api_credit_proof_test.circom))
+### Test Circuit (`api_credit_proof_test`)
 
 Simplified test circuit used during development. The server refuses to start with it in production.
 

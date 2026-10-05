@@ -23,6 +23,12 @@ https://your-domain.com  (production)
     - [POST /longjing/estimate-cost](#post-longjingestimate-cost)
     - [POST /longjing/redeem-refund](#post-longjingredeem-refund)
     - [GET /longjing/server-pubkey](#get-longjingserver-pubkey)
+    - [POST /longjing/proofs/slashing](#post-longjingproofsslashing)
+  - [TEE Attestation Endpoints](#tee-attestation-endpoints)
+    - [GET /attestation](#get-attestation)
+    - [GET /attestation/manifest](#get-attestationmanifest)
+  - [Authentication Endpoints](#authentication-endpoints)
+    - [POST /auth/nonce](#post-authnonce)
   - [Available for Future Implementation](#available-for-future-implementation)
   - [Health Check Endpoints](#health-check-endpoints)
     - [GET /health](#get-health)
@@ -72,6 +78,7 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
   initialDeposit: string;       // Initial deposit amount (in wei)
   ticketIndex: string;          // Ticket index for this request
   idCommitment: string;         // Identity commitment (Hash of secret key)
+  idCommitmentExpected: string; // Expected identity commitment (circuit public input)
   model?: string;               // Example: claude-opus-4.6, claude-sonnet-4.6, claude-haiku-4.5 (default: sonnet)
 }
 ```
@@ -165,7 +172,7 @@ curl -k -X POST https://localhost:3000/longjing/request \
 
 3. **Cost Protection**: Set `maxCost` to protect against unexpected price changes
 
-4. **Rate Limiting**: Three layers of protection (see [Metadata Protection](METADATA_PROTECTION.md)):
+4. **Rate Limiting**: Three layers of protection (see [`src/guards/`](../src/guards/)):
    - **Request fingerprint**: 10 requests/minute per unique request content (privacy-preserving)
    - **Per-nullifier**: 3 requests/minute per user identity
    - **Metadata hiding**: Rate limit details concealed to prevent tracking
@@ -176,9 +183,9 @@ curl -k -X POST https://localhost:3000/longjing/request \
 
 ### POST /longjing/redeem-refund
 
-Redeem a signed refund ticket onchain.
+Submit a refund redemption proof onchain. The client generates the proof from its refund ticket and secret key (see [5. Redeem Refund Tickets](#5-redeem-refund-tickets)); the secret key never reaches the server.
 
-**Authentication:** None (refund ticket signature authenticates)
+**Authentication:** None (the proof authenticates)
 
 **Request Body:**
 
@@ -187,13 +194,9 @@ Redeem a signed refund ticket onchain.
   idCommitment: string;         // User's identity commitment
   nullifier: string;            // Nullifier from the API request
   value: string;                // Refund amount in wei
-  timestamp: number;            // Timestamp from refund ticket
-  signature: {
-    R8x: string;                // EdDSA signature components
-    R8y: string;
-    S: string;
-  };
-  recipient: string;            // Ethereum address to receive refund
+  recipient: string;            // Ethereum address bound in the proof
+  proof: string[];              // Groth16 proof, 8 hex strings
+  publicSignals: string[];      // Public signals, 8 hex strings
 }
 ```
 
@@ -209,9 +212,8 @@ Redeem a signed refund ticket onchain.
 
 **Status Codes:**
 - `200 OK` - Refund redeemed successfully
-- `400 Bad Request` - Invalid refund ticket or signature
-- `403 Forbidden` - Refund already redeemed or nullifier slashed
-- `503 Service Unavailable` - Blockchain service not available
+- `400 Bad Request` - Missing or malformed fields
+- `500 Internal Server Error` - Refund already redeemed, proof rejected onchain, or blockchain service not available
 
 **Example:**
 
@@ -221,15 +223,11 @@ curl -k -X POST https://localhost:3000/longjing/redeem-refund \
   -H "Content-Type: application/json" \
   -d '{
     "idCommitment": "0xabcd...",
-    "nullifier": "12345678901234567890123456789012",
+    "nullifier": "0x1234...",
     "value": "250000000000000",
-    "timestamp": 1710857400,
-    "signature": {
-      "R8x": "0x1234...",
-      "R8y": "0x5678...",
-      "S": "0x9abc..."
-    },
-    "recipient": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+    "recipient": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    "proof": ["0x...", "0x...", "0x...", "0x...", "0x...", "0x...", "0x...", "0x..."],
+    "publicSignals": ["0x...", "0x...", "0x...", "0x...", "0x...", "0x...", "0x...", "0x..."]
   }'
 
 # Response
@@ -243,7 +241,7 @@ curl -k -X POST https://localhost:3000/longjing/redeem-refund \
 **Important Notes:**
 
 - Refund tickets can only be redeemed once
-- The smart contract verifies the EdDSA signature onchain
+- The smart contract verifies the Groth16 proof, which checks the EdDSA signature in-circuit and binds the recipient
 - If the nullifier was slashed for double-spending, redemption will fail
 - Redemption requires onchain gas fees (paid by caller)
 
@@ -318,7 +316,7 @@ curl -k -X POST https://localhost:3000/longjing/estimate-cost \
 - Actual costs may vary based on real usage
 - No authentication required - this is a public estimation tool
 - ⚠️ **Note**: Rate limiting recommended for production deployments
-- **Pricing Configuration**: Provider pricing is hardcoded in provider implementations and auto-seeded to the database on registration. Pricing updates require code deployment. See [Provider Abstraction](PROVIDER_ABSTRACTION.md) for details.
+- **Pricing Configuration**: Provider pricing is hardcoded in provider implementations and auto-seeded to the database on registration. Pricing updates require code deployment. See [PROVIDERS.md](PROVIDERS.md) for details.
 
 ---
 
@@ -351,6 +349,42 @@ curl -k https://localhost:3000/longjing/server-pubkey
 ```
 
 **Use Case:** Clients can verify refund ticket signatures off-chain before attempting to redeem onchain.
+
+---
+
+### POST /longjing/proofs/slashing
+
+Generate the Groth16 proof that slashes a double-spender. The secret key it takes is the one recovered from two RLN signals sharing a nullifier, which anyone can compute from public data, so sending it reveals nothing new.
+
+Longjing has no endpoint that proves withdrawals or refund redemptions: they need the user's own secret key, so the client proves them itself (see [Client Implementation Guide](#client-implementation-guide)).
+
+**Authentication:** None
+
+**Request Body:**
+
+```typescript
+{
+  secretKey: string;    // Recovered secret key (hex)
+  ticketIndex: string;  // Ticket index both signals share (hex)
+  signal1: { x: string; y: string };
+  signal2: { x: string; y: string };  // Different x than signal1
+}
+```
+
+**Response:**
+
+```typescript
+{
+  proof: string[];          // 8 hex strings, for slashDoubleSpend
+  publicSignals: string[];  // hex strings
+  metadata: {
+    idCommitment: string;
+    nullifier: string;
+    secretKey: string;
+    timestamp: number;
+  };
+}
+```
 
 ---
 
@@ -432,37 +466,38 @@ curl "https://your-server/attestation?nonce=$(openssl rand -hex 32)" > attestati
 
 ---
 
-### GET /mlkem/pubkey
+### GET /attestation/manifest
 
-Returns the server's ML-KEM-1024 public key for quantum-resistant encryption.
+Returns the EIP-712 key manifest, signed by the enclave-derived identity key, that binds the app id, the ML-KEM public key, the refund signer's Baby Jubjub public key and the TLS certificate, with the `GetKey` signature chains.
 
 **Authentication:** None (public endpoint)
 
-**Response:**
+The ML-KEM public key has no endpoint of its own: read it from `keys.mlkemPublicKey` in `GET /attestation`, after checking that `report_data` commits to it.
+
+**Documentation:**
+- [docs/KEY_DERIVATION.md](KEY_DERIVATION.md) - Key derivation and the manifest
+- [docs/MLKEM.md](MLKEM.md) - ML-KEM encryption guide
+
+---
+
+## Authentication Endpoints
+
+### POST /auth/nonce
+
+Returns a single-use nonce for a Sign-In with Ethereum message. It expires after 5 minutes. No endpoint requires SIWE yet; `SiweGuard` in `src/auth/` is ready for the ones that will.
+
+**Response (201):**
 
 ```typescript
 {
-  publicKey: string;  // Base64-encoded ML-KEM-1024 public key (1568 bytes)
-  algorithm: 'ML-KEM-1024';
+  nonce: string;
+  issuedAt: string;   // ISO 8601
+  expiresAt: string;  // ISO 8601
 }
 ```
-
-**Example Response:**
-
-```json
-{
-  "publicKey": "AgABACsAIAAA...base64...==",
-  "algorithm": "ML-KEM-1024"
-}
-```
-
-**Usage:**
-1. Fetch `/attestation` and verify it (see above)
-2. Verify this key equals `attestation.keys.mlkemPublicKey`, which `report_data` commits to
-3. Only then use this public key for encryption
 
 **Documentation:**
-- [docs/MLKEM.md](MLKEM.md) - ML-KEM encryption guide
+- [docs/SIWE.md](SIWE.md) - SIWE guide
 
 ---
 
@@ -471,7 +506,6 @@ Returns the server's ML-KEM-1024 public key for quantum-resistant encryption.
 The following endpoints have been removed from the API but their underlying utilities remain in the codebase:
 
 - **ML-KEM Encrypted Storage Endpoints** (`/secret/store`, `/secret/access`) - The `MlKemEncryptionService` is still available in `src/encryption/` for future implementation
-- **Authentication Endpoint** (`POST /auth/nonce`) - The SIWE authentication service and guard are still available in `src/auth/` for future implementation
 
 These can be re-enabled by creating new controllers that use the existing services.
 
@@ -654,7 +688,8 @@ All endpoints return consistent error responses:
 ### Prerequisites
 
 ```bash
-npm install circomlibjs snarkjs ethers
+pnpm add circomlibjs snarkjs ethers
+pnpm circuits:fetch   # circuit artifacts, in a Longjing checkout
 ```
 
 ### 1. Generate Identity
@@ -698,56 +733,62 @@ console.log('Deposit successful!');
 
 ### 3. Generate ZK Proof
 
+Production verifies requests with the `api_request` circuit. Everything below runs on the client.
+
 ```typescript
 import { groth16 } from 'snarkjs';
+import { createHash } from 'crypto';
+
+const MAX_REFUNDS = 10;
+const pad = (xs: string[]) => [...xs, ...Array(MAX_REFUNDS - xs.length).fill('0')];
 
 async function generateProof(
   secretKey: bigint,
-  merkleProof: any,
-  refundTickets: any[],
-  ticketIndex: number,
+  ticketIndex: bigint,
+  merkleProof: { root: string; pathElements: string[]; pathIndices: number[] },
+  refundTickets: RefundTicket[],   // previous refund tickets, at most 10
+  initialDeposit: bigint,
   maxCost: bigint,
+  serverPublicKey: { x: string; y: string },  // refundSigner from GET /attestation/manifest
   payload: string
 ) {
   const poseidon = await buildPoseidon();
   const F = poseidon.F;
 
-  // Compute RLN values
-  const a = poseidon([secretKey, ticketIndex]);
-  const nullifier = poseidon([a]);
-  const x = BigInt('0x' + createHash('sha256').update(payload, 'utf8').digest('hex')) % F.p;
-  const y = F.add(secretKey, F.mul(a, x));
+  // x is bound to the payload
+  const signalX = BigInt('0x' + createHash('sha256').update(payload, 'utf8').digest('hex')) % F.p;
 
-  // Circuit inputs
-  const inputs = {
-    secretKey: secretKey.toString(),
-    pathElements: merkleProof.pathElements,
-    pathIndices: merkleProof.pathIndices,
-    refundValues: refundTickets.map(t => t.value),
-    refundSignatures: refundTickets.map(t => [t.signature.R8x, t.signature.R8y, t.signature.S]),
-    ticketIndex: ticketIndex,
-    merkleRoot: merkleProof.root,
-    maxCost: maxCost.toString(),
-    initialDeposit: INITIAL_DEPOSIT.toString(),
-    signalX: F.toString(x),
-    serverPubKeyX: SERVER_PUBKEY_X,
-    serverPubKeyY: SERVER_PUBKEY_Y
-  };
-
-  // Generate proof
   const { proof, publicSignals } = await groth16.fullProve(
-    inputs,
-    'circuits/api_credit_proof.wasm',
-    'circuits/api_credit_proof.zkey'
+    {
+      secretKey: secretKey.toString(),
+      ticketIndex: ticketIndex.toString(),
+      initialDeposit: initialDeposit.toString(),
+      merklePathElements: merkleProof.pathElements,
+      merklePathIndices: merkleProof.pathIndices,
+      numRefunds: refundTickets.length,
+      refundValues: pad(refundTickets.map(t => t.value)),
+      refundTimestamps: pad(refundTickets.map(t => String(t.timestamp))),
+      refundSignaturesR8x: pad(refundTickets.map(t => BigInt(t.signature.R8x).toString())),
+      refundSignaturesR8y: pad(refundTickets.map(t => BigInt(t.signature.R8y).toString())),
+      refundSignaturesS: pad(refundTickets.map(t => BigInt(t.signature.S).toString())),
+      refundNullifiers: pad(refundTickets.map(t => BigInt(t.nullifier).toString())),
+      merkleRootExpected: merkleProof.root,
+      maxCost: maxCost.toString(),
+      signalX: signalX.toString(),
+      serverPublicKeyX: BigInt(serverPublicKey.x).toString(),
+      serverPublicKeyY: BigInt(serverPublicKey.y).toString(),
+    },
+    'circuits/build/api_request_js/api_request.wasm',
+    'circuits/build/api_request.zkey'
   );
 
+  // Outputs come first: [nullifier, signalY, idCommitment, merkleRoot, ...]
+  const [nullifier, signalY, idCommitment] = publicSignals;
   return {
     proof: JSON.stringify(proof),
-    nullifier: F.toString(nullifier),
-    signal: {
-      x: F.toString(x),
-      y: F.toString(y)
-    }
+    nullifier,
+    signal: { x: signalX.toString(), y: signalY },
+    idCommitment,
   };
 }
 ```
@@ -755,24 +796,33 @@ async function generateProof(
 ### 4. Make API Request
 
 ```typescript
-const { proof, nullifier, signal } = await generateProof(
+const payload = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
+const maxCost = ethers.parseEther('0.001');
+const { proof, nullifier, signal, idCommitment } = await generateProof(
   secretKey,
+  ticketIndex,
   merkleProof,
   refundTickets,
-  ticketIndex,
-  ethers.parseEther('0.001'),
-  'What does 苟全性命於亂世，不求聞達於諸侯。mean?'
+  initialDeposit,
+  maxCost,
+  serverPublicKey,
+  payload
 );
 
 const response = await fetch('https://api.longjing.example/longjing/request', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    payload: 'What does 苟全性命於亂世，不求聞達於諸侯。mean?',
+    payload,
     proof,
     nullifier,
     signal,
-    maxCost: ethers.parseEther('0.001').toString(),
+    maxCost: maxCost.toString(),
+    merkleRoot: merkleProof.root,
+    initialDeposit: initialDeposit.toString(),
+    ticketIndex: ticketIndex.toString(),
+    idCommitment,
+    idCommitmentExpected: idCommitment,
     model: 'claude-sonnet-4.6'
   })
 });
@@ -788,26 +838,29 @@ ticketIndex++;
 
 ### 5. Redeem Refund Tickets
 
-```typescript
-// Redeem accumulated refunds
-for (const ticket of refundTickets) {
-  const response = await fetch('https://api.longjing.example/longjing/redeem-refund', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      idCommitment: idCommitment.toString(),
-      nullifier: ticket.nullifier,
-      value: ticket.value,
-      timestamp: ticket.timestamp,
-      signature: ticket.signature,
-      recipient: YOUR_ETHEREUM_ADDRESS
-    })
-  });
+Each refund ticket is redeemed with a `refund_redemption` proof, generated on the client. `pnpm prove refund` does it from a JSON file holding the secret key, the ticket index, the request payload, the recipient, the refund ticket and the server public key (see [scripts/client/prove.ts](../scripts/client/prove.ts)):
 
-  const result = await response.json();
-  console.log('Refund redeemed:', result.transactionHash);
-}
+```bash
+pnpm prove refund refund-input.json > refund-proof.json
 ```
+
+Then submit it:
+
+```typescript
+const { proof, publicSignals, idCommitment, nullifier, value, recipient } =
+  JSON.parse(fs.readFileSync('refund-proof.json', 'utf8'));
+
+const response = await fetch('https://api.longjing.example/longjing/redeem-refund', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ idCommitment, nullifier, value, recipient, proof, publicSignals })
+});
+
+const result = await response.json();
+console.log('Refund redeemed:', result.transactionHash);
+```
+
+Withdrawal proofs are not covered yet: see [#119](https://github.com/w3hc/longjing/issues/119).
 
 ---
 

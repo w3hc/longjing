@@ -829,13 +829,13 @@ In production, Longjing terminates TLS **inside the enclave**. The TLS private k
 1. **dstack KMS (Phala/Dstack — default)**: the key is derived inside the CVM via `getTlsKey()` on `/var/run/dstack.sock`. It exists only in enclave memory and never touches the host.
 2. **Operator-provisioned** (`TLS_KEY_PATH` / `TLS_CERT_PATH`): under the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out; the files must live in enclave-only storage. Production still requires dstack for attestation.
 
-Setting `ALLOW_EXTERNAL_TLS_TERMINATION=true` restores plain HTTP behind an external TLS proxy. **Do not use this with real user secrets** — request bodies (including `secretKey` on `/longjing/proofs/*`) become visible in plaintext at the termination proxy, outside the TEE trust boundary.
+Setting `ALLOW_EXTERNAL_TLS_TERMINATION=true` restores plain HTTP behind an external TLS proxy. **Do not use this with real user data** — request bodies, including the prompts sent to `/longjing/request`, become visible in plaintext at the termination proxy, outside the TEE trust boundary.
 
 **Phala/dstack gateway configuration:** the gateway must run in **TLS-passthrough mode** so it forwards raw TLS to the enclave instead of terminating it. Use the `s`-suffixed port in the gateway domain:
 
 ```
 https://<app-id>-3000s.<gateway-base-domain>     ← TLS passthrough (correct)
-https://<app-id>-3000.<gateway-base-domain>      ← gateway terminates TLS (do NOT use for /proofs/*)
+https://<app-id>-3000.<gateway-base-domain>      ← gateway terminates TLS (do NOT use)
 ```
 
 **Verification:**
@@ -869,9 +869,9 @@ curl -k https://your-server:443/health/live
 ```bash
 # Check application logs - should NOT contain sensitive data
 # Test by sending a request with sensitive data
-curl -k -X POST https://your-server:443/api/test \
+curl -k -X POST https://your-server:443/longjing/estimate-cost \
   -H "Content-Type: application/json" \
-  -d '{"secret": "my-password-123", "data": "sensitive info"}'
+  -d '{"provider": "claude", "estimatedUnits": 1000, "metadata": {"note": "my-password-123 sensitive info"}}'
 
 # Check logs - should NOT show "my-password-123" or "sensitive info"
 # Only sanitized entries like: "Request received" without actual data
@@ -884,7 +884,7 @@ curl -k -X POST https://your-server:443/api/test \
 1. **Never share TLS private keys**: Generate certificates inside the TEE, never import from outside
 2. **Verify attestation before sending data**: Clients must verify attestation reports before transmitting sensitive information
 3. **Use secure KMS**: Implement attestation-based key release in your KMS
-4. **Monitor for side-channel attacks**: See [SIDE_CHANNEL_ATTACKS.md](SIDE_CHANNEL_ATTACKS.md) for mitigations
+4. **Monitor for side-channel attacks**: Keep TCB-level advisories for your platform in view
 5. **Regular security updates**: Keep TEE firmware and guest OS patched
 6. **Implement rate limiting**: Protect against DoS attacks (already configured in the app)
 7. **Log monitoring**: Review logs for unusual patterns while ensuring no sensitive data is logged
@@ -1085,7 +1085,6 @@ After successful deployment:
 
 For more information:
 - [README.md](../README.md) - General project information
-- [SIDE_CHANNEL_ATTACKS.md](SIDE_CHANNEL_ATTACKS.md) - Side-channel attack mitigations
 - Platform documentation:
   - [AMD SEV-SNP Documentation](https://www.amd.com/en/developer/sev.html)
   - [Intel TDX Documentation](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/overview.html)
