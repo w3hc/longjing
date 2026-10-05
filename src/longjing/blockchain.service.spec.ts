@@ -333,6 +333,30 @@ describe('BlockchainService', () => {
       );
     });
 
+    it('builds the contract once the chain matches', async () => {
+      chainId('0x7a69');
+      // A closed port: the merkleRoot read fails after the contract is built
+      process.env.PROFILE = 'local';
+      const values: Record<string, string> = {
+        ...LOCAL,
+        ANVIL_RPC_URL: 'http://127.0.0.1:1',
+      };
+      const blockchain = new BlockchainService(
+        { get: (key: string) => values[key] } as unknown as ConfigService,
+        merkleTreeService,
+        {} as KeyDerivationService,
+      );
+      (blockchain as any).logger = {
+        log: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
+
+      await blockchain.onModuleInit();
+
+      expect(blockchain.getContractAddress()).toBe(LOCAL.ZK_CONTRACT_ADDRESS);
+    });
+
     it('disables the contract when the RPC is unreachable in local', async () => {
       jest
         .spyOn(global, 'fetch')

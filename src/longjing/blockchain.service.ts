@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
-import * as LongjingCreditsABI from './contracts/LongjingCredits.abi.json';
+import LongjingCreditsABI from './contracts/LongjingCredits.abi.json';
 import { MerkleTreeService } from './merkle-tree.service';
 import { isProd } from '../config/profile';
 import { KeyDerivationService } from '../keys/key-derivation.service';
