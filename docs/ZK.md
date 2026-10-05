@@ -430,7 +430,7 @@ Assuming ETH = $2,000:
 1. **Secret Key Protection**: Users must never reveal their secret key `k`
 2. **Signal Randomness**: Each `signalX` must be cryptographically random
 3. **Nullifier Uniqueness**: Each ticket index can only be used once
-4. **Merkle Proof Freshness**: Clients must use current onchain Merkle root
+4. **Merkle Proof Freshness**: Clients must use the current onchain Merkle root. In production, the server rejects a request with 503 when it can't read that root or the nullifier's slashed status
 5. **Proof Replay**: Nullifiers are tracked onchain to prevent replay attacks
 6. **Server Accountability**: Policy stake is burned (not claimed) to prevent profit from false bans
 
