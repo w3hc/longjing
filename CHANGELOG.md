@@ -22,10 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `DeployLongjingCredits.s.sol` reads `PROFILE`. `local` deploys to Anvil only with its defaults; `prod` requires `PRIVATE_KEY`, `SERVER_ADDRESS`, `SERVER_PUBKEY_X` and `SERVER_PUBKEY_Y`, and refuses chain 31337, the Anvil key and address and the dev refund-signer key (LJ-16) ([#122](https://github.com/w3hc/longjing/issues/122)).
 - `PROFILE=local` reads only `ANVIL_RPC_URL`, `PROFILE=prod` only `ETHEREUM_RPC_URLS`: neither falls back to the other ([#122](https://github.com/w3hc/longjing/issues/122)).
 - `docker-compose.yml` sets `PROFILE=prod` as a literal and passes `ETHEREUM_RPC_URLS` and `ZK_CONTRACT_ADDRESS`; `docker-compose.dev.yml` sets `PROFILE=local` ([#122](https://github.com/w3hc/longjing/issues/122)).
+- `LongjingService` defaults to `claude-fable-5-1`, priced at $10 input and $50 output per million tokens, instead of Sonnet 4.6 ([#138](https://github.com/w3hc/longjing/issues/138)).
 
 ### Fixed
 
 - `BlockchainService` imports the `LongjingCredits` ABI as an array: the namespace import wrapped it in an object, so building the contract failed with `abi is not iterable` and contract interaction was always disabled ([#122](https://github.com/w3hc/longjing/issues/122)).
+- `LongjingService` model IDs use hyphens (`claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`): the dotted IDs made every real Claude API request fail with a 404 `not_found_error` ([#138](https://github.com/w3hc/longjing/issues/138)).
 
 ## [0.4.0] - 2026-10-05
 

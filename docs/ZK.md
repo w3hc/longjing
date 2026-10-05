@@ -372,13 +372,14 @@ const output = F.toObject(result);
 
 ## Cost Calculation
 
-### Claude API Pricing (March 2026)
+### Claude API Pricing (October 2026)
 
 | Model | Input ($/M tokens) | Output ($/M tokens) |
 |-------|-------------------|---------------------|
-| claude-opus-4.6 | $5 | $25 |
-| claude-sonnet-4.6 | $3 | $15 |
-| claude-haiku-4.5 | $1 | $5 |
+| claude-fable-5-1 | $10 | $50 |
+| claude-opus-4-6 | $5 | $25 |
+| claude-sonnet-4-6 | $3 | $15 |
+| claude-haiku-4-5 | $1 | $5 |
 
 ### ETH Conversion
 
