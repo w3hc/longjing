@@ -10,6 +10,22 @@ import * as fs from 'fs';
 import { ITeePlatform } from './platform.interface';
 import { AttestationQuote } from '../attestation.types';
 
+// TDX quote v4: 48-byte header, then the TD report body, whose report_data
+// is 64 bytes at offset 520
+const TDX_REPORT_DATA_OFFSET = 48 + 520;
+const TDX_REPORT_DATA_LENGTH = 64;
+
+/**
+ * Reads the report_data a TDX quote attests to.
+ */
+export function tdxQuoteReportData(quote: Buffer): Buffer {
+  const end = TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH;
+  if (quote.length < end) {
+    throw new Error(`TDX quote too short: ${quote.length} bytes`);
+  }
+  return quote.subarray(TDX_REPORT_DATA_OFFSET, end);
+}
+
 @Injectable()
 export class PhalaPlatform implements ITeePlatform {
   readonly name = 'phala' as const;
