@@ -120,16 +120,22 @@ The circuit uses `circomlib/Poseidon`, and the contract uses `poseidon-solidity`
 # Terminal 1: Start local node
 anvil
 
-# Terminal 2: Deploy contract
-forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://127.0.0.1:8545 --broadcast
+# Terminal 2: Deploy contract with Anvil account #0 and the dev refund-signer key
+PROFILE=local forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://127.0.0.1:8545 --broadcast
 ```
 
-### Testnet
+`PROFILE=local` deploys to chain 31337 only.
+
+### Testnet and mainnet
 
 ```bash
-# Set environment variables
+# Set environment variables, all required
+export PROFILE=prod
 export PRIVATE_KEY=0x...
 export SERVER_ADDRESS=0x...
+# The enclave's refund signer, refundSigner.x / .y from GET /attestation/manifest
+export SERVER_PUBKEY_X=0x...
+export SERVER_PUBKEY_Y=0x...
 export RPC_URL=https://sepolia.infura.io/v3/...
 
 # Deploy
@@ -220,7 +226,7 @@ forge doc
 forge coverage
 
 # Deploy to local testnet
-forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://localhost:8545 --broadcast
+PROFILE=local forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://localhost:8545 --broadcast
 
 # Interact with contract
 cast call <CONTRACT_ADDRESS> "merkleRoot()" --rpc-url http://localhost:8545

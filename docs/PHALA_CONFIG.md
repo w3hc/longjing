@@ -61,8 +61,11 @@ services:
     volumes:
       - /var/run/dstack.sock:/var/run/dstack.sock  # Key derivation, TLS key and quotes
     environment:
-      - NODE_ENV=production  # Literal, so the compose hash commits to it
+      - PROFILE=prod  # Literals, so the compose hash commits to them
+      - NODE_ENV=production
       - KMS_URL=${KMS_URL}
+      - ETHEREUM_RPC_URLS=${ETHEREUM_RPC_URLS}
+      - ZK_CONTRACT_ADDRESS=${ZK_CONTRACT_ADDRESS}
     restart: unless-stopped
 ```
 
@@ -75,17 +78,15 @@ services:
 Create a local file with your production secrets (used during deployment):
 
 ```bash
-NODE_ENV=production
 KMS_URL=http://localhost:8001/prpc/PhactoryAPI.GetRuntimeInfo
 
-# Blockchain Configuration
+# Blockchain Configuration, both required with PROFILE=prod
 ZK_CONTRACT_ADDRESS=<your-contract-address>
 # Comma-separated list of Ethereum mainnet RPC URLs (API will randomly pick one)
 ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,https://rpc.mevblocker.io/noreverts,https://rpc.mevblocker.io/fast,https://rpc.mevblocker.io,https://rpc.flashbots.net/fast,https://rpc.flashbots.net,https://mainnet.gateway.tenderly.co,https://ethereum-rpc.publicnode.com
-ANVIL_PRIVATE_KEY=<your-private-key-for-slashing-txs>
 ```
 
-Leave out `ADMIN_MLKEM_*` and `OPERATOR_PRIVATE_KEY`: the keys are derived inside the enclave, and production refuses to start with them in env.
+`PROFILE` and `NODE_ENV` come from the compose file as literals. Leave out `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY`, `ANVIL_RPC_URL` and `ANVIL_PRIVATE_KEY`: the keys are derived inside the enclave, and `PROFILE=prod` refuses to start with them in env. Contract transactions, slashing included, are signed by the enclave's identity key, so fund its address (`GET /attestation/manifest`) for gas. Placeholder values, such as Anvil addresses or `example.com` URLs, are refused too, see [LOCAL_SETUP.md](LOCAL_SETUP.md#profiles).
 
 **Important**: Add `.env.prod` to [.gitignore](../.gitignore) to prevent committing secrets.
 

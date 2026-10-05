@@ -74,6 +74,11 @@ Comprehensive integration tests that verify the complete flow from deposit to re
 pnpm test:e2e
 ```
 
+The tests run with `PROFILE=local` and deploy their own contract with it, so they need nothing from your shell:
+
+- `ZK_CONTRACT_ADDRESS`, `ANVIL_RPC_URL`, `ANVIL_PRIVATE_KEY` and `ETHEREUM_RPC_URLS` are cleared before the app starts, so a sourced `.env.local` cannot point it at another contract.
+- `ANTHROPIC_API_KEY` is kept: without it the service answers with mock responses, as in CI; with it, requests go to the Claude API. Until [#138](https://github.com/w3hc/longjing/issues/138) is fixed, real requests fail with a 500, so run `env -u ANTHROPIC_API_KEY pnpm test:e2e`.
+
 ### Main Flow Test (`test/app.e2e-spec.ts`)
 
 Tests the complete user flow:
@@ -91,9 +96,9 @@ Tests the complete user flow:
 - Gets refund ticket with EdDSA signature
 
 **Step 3: Alice gets refund**
-- Attempts to redeem refund onchain
-- Validates security (mock proofs rejected)
+- Attempts to redeem refund onchain with a mock proof
 - Verifies refund ticket structure
+- Does not yet check that the mock proof is rejected, nor redeem with a real proof: see [#139](https://github.com/w3hc/longjing/issues/139)
 
 ### Proof Generation Test (`test/proof-generation.e2e-spec.ts`)
 
@@ -177,7 +182,7 @@ All tests must pass before merging PRs.
 - ✅ Real blockchain interaction (via Anvil)
 - ✅ Contract deployment and verification
 - ✅ ZK proof generation and API integration
-- ✅ Security enforcement (mock proof rejection)
+- ⏳ Mock refund proof rejection and real refund redemption ([#139](https://github.com/w3hc/longjing/issues/139))
 
 ### Contract Tests Validate:
 - ✅ Smart contract state transitions
@@ -277,7 +282,7 @@ The proof generation test includes performance benchmarks:
 ### Security Testing
 
 Key security validations:
-- Mock proofs are rejected (verified in e2e tests)
+- Mock proofs are rejected (contract tests; e2e coverage tracked in [#139](https://github.com/w3hc/longjing/issues/139))
 - Nullifier uniqueness enforced
 - Double-spend attempts detected
 - Invalid proof structures rejected

@@ -10,10 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - README badges for CI, NestJS, TypeScript, Solidity, Circom, pnpm, Node.js and the license ([#120](https://github.com/w3hc/longjing/issues/120)).
+- **Breaking:** a required `PROFILE` env var, `local` or `prod`, replaces `NODE_ENV` for every security gate. The server refuses to start without it, and `NODE_ENV=production` requires `PROFILE=prod`. See [LOCAL_SETUP.md](docs/LOCAL_SETUP.md#profiles) ([#122](https://github.com/w3hc/longjing/issues/122)).
+- `PROFILE=prod` requires `ETHEREUM_RPC_URLS` and `ZK_CONTRACT_ADDRESS`, and refuses `ANVIL_RPC_URL`, `ANVIL_PRIVATE_KEY`, `DSTACK_SIMULATOR_ENDPOINT` and placeholder values: the Anvil keys and addresses, Anvil's first deployment address and `example.*` URLs (LJ-09) ([#122](https://github.com/w3hc/longjing/issues/122)).
+- At startup, the server reads the RPC's `eth_chainId`: `PROFILE=local` refuses any chain but Anvil's 31337, `PROFILE=prod` refuses 31337 and an unreachable RPC ([#122](https://github.com/w3hc/longjing/issues/122)).
+- `DeployLongjingCredits.s.sol` tests in `contracts/test/DeployLongjingCredits.t.sol` ([#122](https://github.com/w3hc/longjing/issues/122)).
 
 ### Changed
 
 - `docs/audits/` is gitignored, so audit reports stay local until they are ready to publish ([#120](https://github.com/w3hc/longjing/issues/120)).
+- **Breaking:** with `PROFILE=prod`, contract transactions, slashing included, are signed by the enclave-derived identity key instead of `ANVIL_PRIVATE_KEY`, so the identity address needs ETH for gas. Slashing now shares the RPC and signer of `BlockchainService` ([#122](https://github.com/w3hc/longjing/issues/122)).
+- **Breaking:** `DeployLongjingCredits.s.sol` reads `PROFILE`. `local` deploys to Anvil only with its defaults; `prod` requires `PRIVATE_KEY`, `SERVER_ADDRESS`, `SERVER_PUBKEY_X` and `SERVER_PUBKEY_Y`, and refuses chain 31337, the Anvil key and address and the dev refund-signer key (LJ-16) ([#122](https://github.com/w3hc/longjing/issues/122)).
+- `PROFILE=local` reads only `ANVIL_RPC_URL`, `PROFILE=prod` only `ETHEREUM_RPC_URLS`: neither falls back to the other ([#122](https://github.com/w3hc/longjing/issues/122)).
+- `docker-compose.yml` sets `PROFILE=prod` as a literal and passes `ETHEREUM_RPC_URLS` and `ZK_CONTRACT_ADDRESS`; `docker-compose.dev.yml` sets `PROFILE=local` ([#122](https://github.com/w3hc/longjing/issues/122)).
+
+### Fixed
+
+- `BlockchainService` imports the `LongjingCredits` ABI as an array: the namespace import wrapped it in an object, so building the contract failed with `abi is not iterable` and contract interaction was always disabled ([#122](https://github.com/w3hc/longjing/issues/122)).
 
 ## [0.4.0] - 2026-10-05
 
