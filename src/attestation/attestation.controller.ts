@@ -1,5 +1,10 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  KEY_MANIFEST_DOMAIN,
+  KEY_MANIFEST_TYPES,
+  KeyDerivationService,
+} from '../keys/key-derivation.service';
 import { AttestationService } from './attestation.service';
 import { TeePlatform } from './attestation.types';
 
@@ -10,8 +15,8 @@ import { TeePlatform } from './attestation.types';
  * certificate to the attestation quote via report_data.
  *
  * Security model:
- * - ML-KEM key pair is generated inside the TEE
- * - Private key is sealed and never leaves the TEE
+ * - ML-KEM key pair is derived inside the TEE from the dstack KMS
+ * - Private key never leaves the TEE and is never stored
  * - Public key is bound to attestation via report_data (first 32 bytes)
  * - The TLS certificate served by this process is bound via report_data
  *   (second 32 bytes), proving TLS terminates inside the enclave
@@ -29,7 +34,56 @@ import { TeePlatform } from './attestation.types';
 @ApiTags('Attestation')
 @Controller('attestation')
 export class AttestationController {
-  constructor(private readonly attestationService: AttestationService) {}
+  constructor(
+    private readonly attestationService: AttestationService,
+    private readonly keyDerivation: KeyDerivationService,
+  ) {}
+
+  /**
+   * Returns the EIP-712 key manifest signed by the enclave's identity key,
+   * which binds the ML-KEM, refund signer and TLS keys to the app id, with
+   * the GetKey signature chains that tie the keys to the dstack KMS root.
+   * See docs/KEY_DERIVATION.md.
+   */
+  @Get('manifest')
+  @ApiOperation({
+    summary: 'Get the key manifest signed by the enclave identity key',
+  })
+  @ApiResponse({ status: 200, description: 'Signed key manifest' })
+  @ApiResponse({
+    status: 503,
+    description: 'Keys were not derived from dstack (development only)',
+  })
+  getKeyManifest() {
+    const signed = this.keyDerivation.getKeyManifest();
+    if (!signed) {
+      throw new ServiceUnavailableException(
+        'Keys were not derived from dstack, so there is no key manifest',
+      );
+    }
+    const hex = (bytes: Uint8Array) =>
+      '0x' + Buffer.from(bytes).toString('hex');
+
+    return {
+      ...signed,
+      domain: KEY_MANIFEST_DOMAIN,
+      types: KEY_MANIFEST_TYPES,
+      mlkemPublicKey: Buffer.from(
+        this.keyDerivation.getMlKemPublicKey()!,
+      ).toString('base64'),
+      identity: {
+        address: this.keyDerivation.getIdentityAddress(),
+        publicKey: hex(this.keyDerivation.getIdentityPublicKey()!),
+        signatureChain: this.keyDerivation.getIdentitySignatureChain().map(hex),
+      },
+      refundSigner: {
+        ...this.keyDerivation.getRefundSignerPublicKey(),
+        signatureChain: this.keyDerivation
+          .getRefundSignerSignatureChain()
+          .map(hex),
+      },
+    };
+  }
 
   /**
    * Returns the TEE attestation quote with bound ML-KEM public key.

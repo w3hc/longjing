@@ -2,10 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AttestationController } from './attestation.controller';
 import { AttestationService } from './attestation.service';
+import { KeyDerivationService } from '../keys/key-derivation.service';
 
 describe('AttestationController', () => {
   let controller: AttestationController;
   let attestationService: AttestationService;
+  let keyDerivation: Record<string, jest.Mock>;
 
   const mockAttestationQuote = {
     platform: 'mock' as const,
@@ -16,6 +18,21 @@ describe('AttestationController', () => {
   };
 
   beforeEach(async () => {
+    keyDerivation = {
+      getKeyManifest: jest.fn().mockReturnValue(null),
+      getMlKemPublicKey: jest.fn().mockReturnValue(new Uint8Array([1, 2])),
+      getIdentityAddress: jest.fn().mockReturnValue('0xabc'),
+      getIdentityPublicKey: jest.fn().mockReturnValue(new Uint8Array([4])),
+      getIdentitySignatureChain: jest
+        .fn()
+        .mockReturnValue([new Uint8Array([5])]),
+      getRefundSignerPublicKey: jest
+        .fn()
+        .mockReturnValue({ x: '0x01', y: '0x02' }),
+      getRefundSignerSignatureChain: jest
+        .fn()
+        .mockReturnValue([new Uint8Array([6])]),
+    };
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AttestationController],
       providers: [
@@ -27,6 +44,7 @@ describe('AttestationController', () => {
             isInTee: jest.fn().mockReturnValue(false),
           },
         },
+        { provide: KeyDerivationService, useValue: keyDerivation },
         {
           provide: ConfigService,
           useValue: {
@@ -42,6 +60,31 @@ describe('AttestationController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('getKeyManifest', () => {
+    it('returns 503 when the keys were not derived', () => {
+      expect(() => controller.getKeyManifest()).toThrow('no key manifest');
+    });
+
+    it('serves the signed manifest with public keys and signature chains', () => {
+      const signed = { manifest: { epoch: 1 }, signature: '0xsig' };
+      keyDerivation.getKeyManifest.mockReturnValue(signed);
+
+      const result = controller.getKeyManifest();
+
+      expect(result).toMatchObject({
+        ...signed,
+        domain: { name: 'Longjing', version: '1' },
+        mlkemPublicKey: 'AQI=',
+        identity: {
+          address: '0xabc',
+          publicKey: '0x04',
+          signatureChain: ['0x05'],
+        },
+        refundSigner: { x: '0x01', y: '0x02', signatureChain: ['0x06'] },
+      });
+    });
   });
 
   describe('getAttestation', () => {

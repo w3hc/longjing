@@ -1,5 +1,12 @@
 import { createHash, hkdfSync } from 'crypto';
-import { SigningKey, computeAddress, getBytes, hexlify } from 'ethers';
+import {
+  SigningKey,
+  ZeroHash,
+  computeAddress,
+  getBytes,
+  hexlify,
+  verifyTypedData,
+} from 'ethers';
 import { createMlKem1024 } from 'mlkem';
 import {
   DstackV1Client,
@@ -7,13 +14,22 @@ import {
   KeyAlgorithm,
 } from './dstack-v1.client';
 import {
+  KEY_MANIFEST_DOMAIN,
+  KEY_MANIFEST_TYPES,
   KeyDerivationService,
   REFUND_SIGNER_DOMAIN,
 } from './key-derivation.service';
+import { RefundSignerService } from '../longjing/refund-signer.service';
+import {
+  clearTlsLeafCertificate,
+  setTlsLeafCertificate,
+} from '../tls/tls-context';
 
 // App root key from the dstack guest API v1 spec test vectors
 const ROOT_KEY =
   '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b';
+
+const APP_ID = '0x1111111111111111111111111111111111111111';
 
 const lp = (value: string) => {
   const bytes = Buffer.from(value, 'utf-8');
@@ -29,6 +45,10 @@ class FakeDstack {
 
   isSimulator() {
     return this.simulator;
+  }
+
+  getAppId() {
+    return Promise.resolve(APP_ID);
   }
 
   getKey(domain: string, algorithm: KeyAlgorithm): Promise<GetKeyResponse> {
@@ -79,6 +99,7 @@ describe('KeyDerivationService', () => {
 
   afterEach(() => {
     process.env.NODE_ENV = originalEnv;
+    clearTlsLeafCertificate();
   });
 
   describe('test vectors', () => {
@@ -173,6 +194,62 @@ describe('KeyDerivationService', () => {
       );
 
       expect(hex(service.decapsulate(ciphertext))).toBe(hex(sharedSecret));
+    });
+  });
+
+  describe('key manifest', () => {
+    it('signs a manifest for its app id recoverable to the identity address', async () => {
+      const service = await create();
+
+      const { manifest, signature } = service.getKeyManifest()!;
+
+      expect(manifest.appId).toBe(APP_ID);
+      expect(manifest.mlkemPublicKeyHash).toBe(
+        '0x' + sha256(service.getMlKemPublicKey()!),
+      );
+      expect(manifest.tlsCertificateHash).toBe(ZeroHash);
+      expect(
+        verifyTypedData(
+          KEY_MANIFEST_DOMAIN,
+          KEY_MANIFEST_TYPES,
+          manifest,
+          signature,
+        ),
+      ).toBe(service.getIdentityAddress());
+    });
+
+    it('commits to the refund signer key RefundSignerService signs with', async () => {
+      const service = await create();
+      const signer = new RefundSignerService(service);
+
+      const { manifest } = service.getKeyManifest()!;
+      const publicKey = await signer.getPublicKey();
+
+      expect(manifest.refundSignerX).toBe(publicKey.x);
+      expect(manifest.refundSignerY).toBe(publicKey.y);
+      expect(service.getRefundSignerPublicKey()).toEqual(publicKey);
+    }, 30000);
+
+    it('re-signs when the TLS certificate is registered', async () => {
+      const service = await create();
+      const before = service.getKeyManifest()!;
+      const der = Buffer.from('leaf certificate');
+
+      setTlsLeafCertificate(der);
+      const after = service.getKeyManifest()!;
+
+      expect(after.manifest.tlsCertificateHash).toBe('0x' + sha256(der));
+      expect(after.signature).not.toBe(before.signature);
+      expect(service.getKeyManifest()).toBe(after);
+    });
+
+    it('has no manifest without derived keys', async () => {
+      process.env.NODE_ENV = 'development';
+      dstack.failing = true;
+
+      const service = await create();
+
+      expect(service.getKeyManifest()).toBeNull();
     });
   });
 

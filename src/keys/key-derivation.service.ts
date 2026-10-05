@@ -1,7 +1,17 @@
 import { hkdfSync } from 'crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { SigningKey, computeAddress, getBytes, hexlify } from 'ethers';
+import { buildEddsa } from 'circomlibjs';
+import {
+  SigningKey,
+  TypedDataEncoder,
+  ZeroHash,
+  computeAddress,
+  getBytes,
+  hexlify,
+  sha256,
+} from 'ethers';
 import { createMlKem1024 } from 'mlkem';
+import { getTlsLeafCertificate } from '../tls/tls-context';
 import { DstackV1Client } from './dstack-v1.client';
 
 export const MLKEM_DOMAIN = 'longjing/mlkem-1024/v1';
@@ -11,6 +21,33 @@ export const IDENTITY_DOMAIN = 'longjing/identity/v1';
 const HKDF_SALT = 'longjing';
 const MLKEM_SEED_INFO = lengthPrefixed('longjing-mlkem-1024-seed-v1');
 const REFUND_SIGNER_INFO = lengthPrefixed('longjing-refund-signer-babyjub-v1');
+
+export const KEY_MANIFEST_DOMAIN = { name: 'Longjing', version: '1' };
+export const KEY_MANIFEST_TYPES = {
+  KeyManifest: [
+    { name: 'appId', type: 'address' },
+    { name: 'mlkemPublicKeyHash', type: 'bytes32' },
+    { name: 'refundSignerX', type: 'bytes32' },
+    { name: 'refundSignerY', type: 'bytes32' },
+    { name: 'tlsCertificateHash', type: 'bytes32' },
+    { name: 'epoch', type: 'uint64' },
+  ],
+};
+
+export interface KeyManifest {
+  appId: string;
+  mlkemPublicKeyHash: string;
+  refundSignerX: string;
+  refundSignerY: string;
+  /** SHA-256 of the served TLS leaf certificate (DER), or zero if none. */
+  tlsCertificateHash: string;
+  epoch: number;
+}
+
+export interface SignedKeyManifest {
+  manifest: KeyManifest;
+  signature: string;
+}
 
 type MlKem = Awaited<ReturnType<typeof createMlKem1024>>;
 
@@ -30,9 +67,12 @@ export class KeyDerivationService implements OnModuleInit {
   private mlkemPublicKey: Uint8Array | null = null;
   private mlkemSecretKey: Uint8Array | null = null;
   private refundSignerKey: Buffer | null = null;
+  private refundSignerPublicKey: { x: string; y: string } | null = null;
   private refundSignerSignatureChain: Uint8Array[] = [];
   private identity: SigningKey | null = null;
   private identitySignatureChain: Uint8Array[] = [];
+  private appId: string | null = null;
+  private keyManifest: SignedKeyManifest | null = null;
 
   constructor(private readonly dstack: DstackV1Client) {}
 
@@ -87,6 +127,7 @@ export class KeyDerivationService implements OnModuleInit {
       hkdfSync('sha256', refundSigner.key, HKDF_SALT, REFUND_SIGNER_INFO, 32),
     );
     refundSigner.key.fill(0);
+    const refundSignerPublicKey = await babyJubjubPublicKey(refundSignerKey);
 
     const identity = await this.dstack.getKey(IDENTITY_DOMAIN, 'secp256k1');
     // hexlify leaves an immutable string copy of the key that fill(0) cannot
@@ -94,13 +135,17 @@ export class KeyDerivationService implements OnModuleInit {
     const signingKey = new SigningKey(hexlify(identity.key));
     identity.key.fill(0);
 
+    const appId = await this.dstack.getAppId();
+
     this.mlkem = mlkem;
     this.mlkemPublicKey = publicKey;
     this.mlkemSecretKey = secretKey;
     this.refundSignerKey = refundSignerKey;
+    this.refundSignerPublicKey = refundSignerPublicKey;
     this.refundSignerSignatureChain = refundSigner.signatureChain;
     this.identity = signingKey;
     this.identitySignatureChain = identity.signatureChain;
+    this.appId = appId;
   }
 
   isAvailable(): boolean {
@@ -131,6 +176,11 @@ export class KeyDerivationService implements OnModuleInit {
     return this.refundSignerKey;
   }
 
+  /** Baby Jubjub public key, as the contract's serverPublicKey expects it. */
+  getRefundSignerPublicKey(): { x: string; y: string } | null {
+    return this.refundSignerPublicKey;
+  }
+
   getRefundSignerSignatureChain(): Uint8Array[] {
     return this.refundSignerSignatureChain;
   }
@@ -147,7 +197,65 @@ export class KeyDerivationService implements OnModuleInit {
   getIdentitySignatureChain(): Uint8Array[] {
     return this.identitySignatureChain;
   }
+
+  /**
+   * The key manifest for this CVM's app id, signed by the identity key.
+   * Re-signed when the served TLS certificate changes, since main.ts loads
+   * it after the keys are derived.
+   */
+  getKeyManifest(): SignedKeyManifest | null {
+    if (!this.appId) {
+      return null;
+    }
+    const cert = getTlsLeafCertificate();
+    const tlsCertificateHash = cert ? sha256(cert) : ZeroHash;
+    if (this.keyManifest?.manifest.tlsCertificateHash !== tlsCertificateHash) {
+      this.keyManifest = this.signKeyManifest(this.appId, tlsCertificateHash);
+    }
+    return this.keyManifest;
+  }
+
+  /**
+   * Signs the EIP-712 key manifest binding Longjing's public keys to its
+   * app id.
+   */
+  signKeyManifest(
+    appId: string,
+    tlsCertificateHash: string,
+    epoch = 1,
+  ): SignedKeyManifest {
+    if (!this.identity || !this.mlkemPublicKey || !this.refundSignerPublicKey) {
+      throw new Error('Keys not derived');
+    }
+    const manifest: KeyManifest = {
+      appId,
+      mlkemPublicKeyHash: sha256(this.mlkemPublicKey),
+      refundSignerX: this.refundSignerPublicKey.x,
+      refundSignerY: this.refundSignerPublicKey.y,
+      tlsCertificateHash,
+      epoch,
+    };
+    const digest = TypedDataEncoder.hash(
+      KEY_MANIFEST_DOMAIN,
+      KEY_MANIFEST_TYPES,
+      manifest,
+    );
+    return { manifest, signature: this.identity.sign(digest).serialized };
+  }
 }
+
+// circomlibjs has no types
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
+async function babyJubjubPublicKey(
+  privateKey: Buffer,
+): Promise<{ x: string; y: string }> {
+  const eddsa = await buildEddsa();
+  const [x, y] = eddsa.prv2pub(privateKey);
+  const toHex = (value: unknown) =>
+    '0x' + String(eddsa.F.toString(value, 16)).padStart(64, '0');
+  return { x: toHex(x), y: toHex(y) };
+}
+/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 
 function lengthPrefixed(value: string): Buffer {
   const bytes = Buffer.from(value, 'utf-8');
