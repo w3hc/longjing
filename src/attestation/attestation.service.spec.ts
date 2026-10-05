@@ -188,9 +188,17 @@ describe('AttestationService', () => {
       await service.onModuleInit();
       const nonce = Buffer.alloc(32, 0x7f);
 
-      await service.getAttestation(nonce);
+      const attestation = await service.getAttestation(nonce);
 
       expect(generateQuote).toHaveBeenCalledWith(expectedReportData(nonce));
+      expect(attestation.nonce).toBe('0x' + '7f'.repeat(32));
+      expect(attestation.keys).toEqual({
+        mlkemPublicKey: MLKEM_PUBLIC_KEY.toString('base64'),
+        identityPublicKey:
+          '0x' + Buffer.from(IDENTITY_PUBLIC_KEY).toString('hex'),
+        refundSignerPublicKey: REFUND_SIGNER,
+        tlsCertificate: null,
+      });
     });
 
     it('rejects a nonce that is not 32 bytes', async () => {

@@ -15,7 +15,11 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AttestationQuote } from './attestation.types';
+import {
+  AttestationQuote,
+  BoundAttestation,
+  BoundKeys,
+} from './attestation.types';
 import { ITeePlatform } from './platforms/platform.interface';
 import { PhalaPlatform, tdxQuoteReportData } from './platforms/phala.platform';
 import { TdxPlatform } from './platforms/tdx.platform';
@@ -122,7 +126,7 @@ export class AttestationService
       return;
     }
 
-    const requested = buildReportData(this.reportDataInputs());
+    const requested = buildReportData(this.boundKeys().inputs);
 
     let quote: AttestationQuote;
     try {
@@ -167,21 +171,36 @@ export class AttestationService
 
   /**
    * The public values report_data commits to. A key that was not derived
-   * from dstack contributes an empty term.
+   * from dstack is null and contributes an empty term.
    */
-  private reportDataInputs(): ReportDataInputs {
+  private boundKeys(): {
+    inputs: ReportDataInputs;
+    keys: BoundKeys;
+  } {
     const mlkemPublicKey = this.keyManager.getPublicKeyBytes();
     if (!mlkemPublicKey) {
       throw new Error('ML-KEM public key not available from TEE Key Manager');
     }
+    const identityPublicKey = this.keyDerivation.getIdentityPublicKey();
     const refundSigner = this.keyDerivation.getRefundSignerPublicKey();
+    const tlsCertificate = getTlsLeafCertificate();
     return {
-      mlkemPublicKey,
-      identityPublicKey: this.keyDerivation.getIdentityPublicKey() ?? undefined,
-      refundSignerPublicKey: refundSigner
-        ? encodeRefundSignerPublicKey(refundSigner)
-        : undefined,
-      tlsCertificateDer: getTlsLeafCertificate() ?? undefined,
+      inputs: {
+        mlkemPublicKey,
+        identityPublicKey: identityPublicKey ?? undefined,
+        refundSignerPublicKey: refundSigner
+          ? encodeRefundSignerPublicKey(refundSigner)
+          : undefined,
+        tlsCertificateDer: tlsCertificate ?? undefined,
+      },
+      keys: {
+        mlkemPublicKey: Buffer.from(mlkemPublicKey).toString('base64'),
+        identityPublicKey: identityPublicKey
+          ? '0x' + Buffer.from(identityPublicKey).toString('hex')
+          : null,
+        refundSignerPublicKey: refundSigner,
+        tlsCertificate: tlsCertificate?.toString('base64') ?? null,
+      },
     };
   }
 
@@ -189,14 +208,15 @@ export class AttestationService
    * Generate an attestation quote whose report_data commits to the service's
    * public keys and the client's nonce
    * @param nonce - Optional 32-byte client challenge for freshness
-   * @returns Platform-specific attestation quote with bound report_data
+   * @returns The quote, with the nonce and the keys report_data commits to
    */
-  async getAttestation(nonce?: Buffer): Promise<AttestationQuote> {
+  async getAttestation(nonce?: Buffer): Promise<BoundAttestation> {
     if (!this.platform) {
       throw new Error('Attestation service not initialized');
     }
 
-    const reportData = buildReportData(this.reportDataInputs(), nonce);
+    const { inputs, keys } = this.boundKeys();
+    const reportData = buildReportData(inputs, nonce);
 
     this.logger.log(
       `Generating attestation with platform: ${this.platform.name}`,
@@ -205,7 +225,12 @@ export class AttestationService
       `Report data commitment: ${reportData.subarray(0, 32).toString('hex')}`,
     );
 
-    return this.platform.generateQuote(reportData);
+    const quote = await this.platform.generateQuote(reportData);
+    return {
+      ...quote,
+      nonce: nonce ? '0x' + nonce.toString('hex') : null,
+      keys,
+    };
   }
 
   /**

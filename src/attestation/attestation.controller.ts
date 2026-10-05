@@ -1,5 +1,11 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Query,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import {
   KEY_MANIFEST_DOMAIN,
   KEY_MANIFEST_TYPES,
@@ -7,28 +13,23 @@ import {
 } from '../keys/key-derivation.service';
 import { AttestationService } from './attestation.service';
 import { TeePlatform } from './attestation.types';
+import { parseNonce } from './report-data';
 
 /**
  * Attestation controller.
  * Provides cryptographic proof of the code running inside the TEE.
- * Binds the TEE-generated ML-KEM public key and the in-enclave TLS
- * certificate to the attestation quote via report_data.
- *
- * Security model:
- * - ML-KEM key pair is derived inside the TEE from the dstack KMS
- * - Private key never leaves the TEE and is never stored
- * - Public key is bound to attestation via report_data (first 32 bytes)
- * - The TLS certificate served by this process is bound via report_data
- *   (second 32 bytes), proving TLS terminates inside the enclave
+ * report_data commits to every public key the service uses (ML-KEM,
+ * identity, refund signer) and to the in-enclave TLS certificate, followed
+ * by the client's nonce. See docs/ATTESTATION.md#report_data.
  *
  * Clients should:
- * 1. Fetch the attestation quote from this endpoint
- * 2. Fetch the ML-KEM public key from /mlkem/pubkey
- * 3. Verify report_data = SHA-256(mlkem_public_key) || SHA-256(tls_cert_der),
- *    where tls_cert_der is the DER encoding of the TLS certificate presented
- *    by this server (a zero second half means TLS terminates OUTSIDE the TEE)
+ * 1. Fetch GET /attestation?nonce=<32 random bytes, hex>
+ * 2. Rebuild report_data from the returned keys and their nonce, and check
+ *    it equals the quote's (see verifyKeyBinding in key-binding.ts)
+ * 3. Check the returned TLS certificate is the one their TLS session saw
  * 4. Verify the quote signature with the TEE platform's verification service
- * 5. Compare the measurement hash against the published value
+ * 5. Replay RTMR0–3 from the event log and compare the measurements and the
+ *    compose hash against the published values
  * 6. Only send sensitive data if verification succeeds
  */
 @ApiTags('Attestation')
@@ -86,17 +87,22 @@ export class AttestationController {
   }
 
   /**
-   * Returns the TEE attestation quote with bound ML-KEM public key.
-   * The ML-KEM key pair is generated inside the TEE, and the private key never leaves it.
+   * Returns the TEE attestation quote, the keys its report_data commits to
+   * and, on dstack, the event log to replay RTMR0–3.
    * Clients must verify this cryptographically before trusting the service.
    * In non-TEE environments, returns a mock quote with platform='mock'.
    *
-   * @returns Attestation quote with embedded report_data
-   *          (SHA-256 of ML-KEM public key || SHA-256 of TLS certificate)
+   * @param nonce - Optional 32-byte client challenge, hex, bound in
+   *                report_data[32..64] for freshness
    */
   @Get()
   @ApiOperation({
-    summary: 'Get TEE attestation quote with bound ML-KEM public key',
+    summary: 'Get TEE attestation quote bound to the service keys and a nonce',
+  })
+  @ApiQuery({
+    name: 'nonce',
+    required: false,
+    description: '32 random bytes as hex, bound in report_data[32..64]',
   })
   @ApiResponse({
     status: 200,
@@ -116,7 +122,16 @@ export class AttestationController {
         reportData: {
           type: 'string',
           description:
-            'Hex-encoded report_data: SHA-256(mlkem_public_key) || SHA-256(tls_cert_der)',
+            'Hex-encoded report_data: key commitment || nonce (see docs/ATTESTATION.md)',
+        },
+        nonce: { type: 'string', nullable: true },
+        keys: {
+          type: 'object',
+          description: 'The public keys report_data commits to',
+        },
+        eventLog: {
+          type: 'string',
+          description: 'dstack event log (JSON), to replay RTMR0–3',
         },
         measurement: {
           type: 'string',
@@ -127,13 +142,20 @@ export class AttestationController {
       },
     },
   })
+  @ApiResponse({ status: 400, description: 'Malformed nonce' })
   @ApiResponse({
     status: 500,
     description: 'Failed to generate attestation quote',
   })
-  async getAttestation() {
-    // Generate attestation with TEE-generated key bound to report_data
-    const attestation = await this.attestationService.getAttestation();
+  async getAttestation(@Query('nonce') nonce?: string) {
+    let parsedNonce: Buffer | undefined;
+    try {
+      parsedNonce = parseNonce(nonce);
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
+    const attestation =
+      await this.attestationService.getAttestation(parsedNonce);
 
     return {
       ...attestation,
@@ -149,29 +171,29 @@ export class AttestationController {
       case 'phala':
         return (
           'Verify this quote using Phala verification service (https://verifier.phala.network/verify). ' +
-          'Compare RTMR measurements against published values. ' +
-          'Verify report_data = SHA-256(mlkem_public_key) || SHA-256(tls_cert_der). ' +
+          'Replay RTMR0–3 from eventLog and compare them against published values. ' +
+          'Rebuild report_data from keys and your nonce (docs/ATTESTATION.md). ' +
           'Docs: https://docs.phala.com/phala-cloud/attestation/verify-your-application'
         );
       case 'intel-tdx':
         return (
           'Verify this TDX quote using Intel DCAP verification. ' +
           'Compare MRTD measurement against published value. ' +
-          'Verify report_data = SHA-256(mlkem_public_key) || SHA-256(tls_cert_der). ' +
+          'Rebuild report_data from keys and your nonce (docs/ATTESTATION.md). ' +
           'Verification service: https://api.trustedservices.intel.com/tdx/certification/v4/qe/identity'
         );
       case 'amd-sev-snp':
         return (
           'Verify this SEV-SNP report using AMD verification tools. ' +
           'Compare MEASUREMENT against published value. ' +
-          'Verify report_data = SHA-256(mlkem_public_key) || SHA-256(tls_cert_der). ' +
+          'Rebuild report_data from keys and your nonce (docs/ATTESTATION.md). ' +
           'Verification service: https://kdsintf.amd.com/vcek/v1/{product}/cert_chain'
         );
       case 'aws-nitro':
         return (
           'Verify this Nitro attestation document using AWS verification. ' +
           'Compare PCR0 against published value. ' +
-          'Verify user_data = SHA-256(mlkem_public_key) || SHA-256(tls_cert_der). ' +
+          'Rebuild user_data from keys and your nonce (docs/ATTESTATION.md). ' +
           'Use aws-nitro-enclaves-cose library for verification'
         );
       case 'mock':
