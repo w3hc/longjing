@@ -1,21 +1,11 @@
 /**
  * Attestation Service
  *
- * Orchestrates cross-platform TEE attestation with report_data binding
- * Binds the TEE-generated ML-KEM public key AND the in-enclave TLS
- * certificate to attestation quotes using SHA-256 hashes:
- *
- *   report_data = SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)
- *
- * Security model:
- * - ML-KEM key pair is generated inside the TEE
- * - Private key is sealed and never leaves the TEE
- * - Public key is bound to attestation via report_data (first 32 bytes)
- * - TLS terminates inside the enclave; the served certificate is bound via
- *   report_data (second 32 bytes), so clients can verify the TLS session
- *   ends inside the attested enclave — not at an external proxy
- * - Clients can verify: attestation → report_data → public key / TLS cert
- *   → encrypted messages and transport
+ * Orchestrates cross-platform TEE attestation with report_data binding.
+ * The first 32 bytes of report_data commit to every public key the service
+ * uses (ML-KEM, identity, refund signer) and to the in-enclave TLS
+ * certificate; the last 32 bytes carry the client's nonce. See
+ * report-data.ts and docs/ATTESTATION.md#report_data.
  */
 
 import {
@@ -25,8 +15,11 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'crypto';
-import { AttestationQuote } from './attestation.types';
+import {
+  AttestationQuote,
+  BoundAttestation,
+  BoundKeys,
+} from './attestation.types';
 import { ITeePlatform } from './platforms/platform.interface';
 import { PhalaPlatform, tdxQuoteReportData } from './platforms/phala.platform';
 import { TdxPlatform } from './platforms/tdx.platform';
@@ -34,6 +27,12 @@ import { SevSnpPlatform } from './platforms/sev-snp.platform';
 import { NitroPlatform } from './platforms/nitro.platform';
 import { MockPlatform } from './platforms/mock.platform';
 import { TeeKeyManagerService } from './tee-key-manager.service';
+import {
+  buildReportData,
+  encodeRefundSignerPublicKey,
+  ReportDataInputs,
+} from './report-data';
+import { KeyDerivationService } from '../keys/key-derivation.service';
 import { getTlsLeafCertificate } from '../tls/tls-context';
 
 @Injectable()
@@ -46,6 +45,7 @@ export class AttestationService
   constructor(
     private readonly configService: ConfigService,
     private readonly keyManager: TeeKeyManagerService,
+    private readonly keyDerivation: KeyDerivationService,
   ) {}
 
   async onModuleInit() {
@@ -126,11 +126,7 @@ export class AttestationService
       return;
     }
 
-    const mlkemPublicKey = this.keyManager.getPublicKeyBytes();
-    if (!mlkemPublicKey) {
-      throw new Error('ML-KEM public key not available from TEE Key Manager');
-    }
-    const requested = this.buildReportData(mlkemPublicKey);
+    const requested = buildReportData(this.boundKeys().inputs);
 
     let quote: AttestationQuote;
     try {
@@ -174,49 +170,67 @@ export class AttestationService
   }
 
   /**
-   * Build report_data from the ML-KEM public key and the TLS leaf certificate
-   * @param mlkemPublicKey - ML-KEM-1024 public key (1568 bytes)
-   * @returns SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)
-   *          (second half is zero when this process is not terminating TLS,
-   *          e.g. behind an external proxy — clients should treat that as
-   *          a weaker guarantee)
+   * The public values report_data commits to. A key that was not derived
+   * from dstack is null and contributes an empty term.
    */
-  private buildReportData(mlkemPublicKey: Buffer): Buffer {
-    const mlkemHash = createHash('sha256').update(mlkemPublicKey).digest(); // 32 bytes
-    const tlsCertDer = getTlsLeafCertificate();
-    const tlsHash = tlsCertDer
-      ? createHash('sha256').update(tlsCertDer).digest() // 32 bytes
-      : Buffer.alloc(32);
-    return Buffer.concat([mlkemHash, tlsHash]); // → 64 bytes
-  }
-
-  /**
-   * Generate an attestation quote with embedded ML-KEM public key
-   * Uses the TEE-generated public key from TeeKeyManagerService
-   * @returns Platform-specific attestation quote with bound report_data
-   */
-  async getAttestation(): Promise<AttestationQuote> {
-    if (!this.platform) {
-      throw new Error('Attestation service not initialized');
-    }
-
-    // Get TEE-generated public key
+  private boundKeys(): {
+    inputs: ReportDataInputs;
+    keys: BoundKeys;
+  } {
     const mlkemPublicKey = this.keyManager.getPublicKeyBytes();
     if (!mlkemPublicKey) {
       throw new Error('ML-KEM public key not available from TEE Key Manager');
     }
+    const identityPublicKey = this.keyDerivation.getIdentityPublicKey();
+    const refundSigner = this.keyDerivation.getRefundSignerPublicKey();
+    const tlsCertificate = getTlsLeafCertificate();
+    return {
+      inputs: {
+        mlkemPublicKey,
+        identityPublicKey: identityPublicKey ?? undefined,
+        refundSignerPublicKey: refundSigner
+          ? encodeRefundSignerPublicKey(refundSigner)
+          : undefined,
+        tlsCertificateDer: tlsCertificate ?? undefined,
+      },
+      keys: {
+        mlkemPublicKey: Buffer.from(mlkemPublicKey).toString('base64'),
+        identityPublicKey: identityPublicKey
+          ? '0x' + Buffer.from(identityPublicKey).toString('hex')
+          : null,
+        refundSignerPublicKey: refundSigner,
+        tlsCertificate: tlsCertificate?.toString('base64') ?? null,
+      },
+    };
+  }
 
-    // Build report_data: SHA-256(mlkem_public_key) || SHA-256(tls_cert_der)
-    const reportData = this.buildReportData(mlkemPublicKey);
+  /**
+   * Generate an attestation quote whose report_data commits to the service's
+   * public keys and the client's nonce
+   * @param nonce - Optional 32-byte client challenge for freshness
+   * @returns The quote, with the nonce and the keys report_data commits to
+   */
+  async getAttestation(nonce?: Buffer): Promise<BoundAttestation> {
+    if (!this.platform) {
+      throw new Error('Attestation service not initialized');
+    }
+
+    const { inputs, keys } = this.boundKeys();
+    const reportData = buildReportData(inputs, nonce);
 
     this.logger.log(
       `Generating attestation with platform: ${this.platform.name}`,
     );
     this.logger.debug(
-      `Report data (first 32 bytes): ${reportData.subarray(0, 32).toString('hex')}`,
+      `Report data commitment: ${reportData.subarray(0, 32).toString('hex')}`,
     );
 
-    return this.platform.generateQuote(reportData);
+    const quote = await this.platform.generateQuote(reportData);
+    return {
+      ...quote,
+      nonce: nonce ? '0x' + nonce.toString('hex') : null,
+      keys,
+    };
   }
 
   /**

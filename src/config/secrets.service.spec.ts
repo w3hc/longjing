@@ -80,6 +80,13 @@ describe('SecretsService', () => {
         reportData: '',
         measurement: 'mock-measurement',
         timestamp: '2026-03-17T00:00:00.000Z',
+        nonce: null,
+        keys: {
+          mlkemPublicKey: '',
+          identityPublicKey: null,
+          refundSignerPublicKey: null,
+          tlsCertificate: null,
+        },
       };
 
       jest
@@ -160,6 +167,13 @@ describe('SecretsService', () => {
         reportData: '',
         measurement: 'mock',
         timestamp: '2026-03-17T00:00:00.000Z',
+        nonce: null,
+        keys: {
+          mlkemPublicKey: '',
+          identityPublicKey: null,
+          refundSignerPublicKey: null,
+          tlsCertificate: null,
+        },
       });
 
       (global.fetch as jest.Mock).mockResolvedValue({

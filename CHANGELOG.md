@@ -9,10 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `GET /attestation` takes an optional `nonce` (32 bytes, hex) and binds it in `report_data[32..64]`, so a client can tell a quote was generated for its request. A malformed nonce gets a 400. The response also returns the `nonce`, the `keys` that `report_data` commits to and, on dstack, the `eventLog` ([#95](https://github.com/w3hc/longjing/issues/95)).
+- `replayRtmrs` and `verifyEventLog` in `src/attestation/tdx-quote.ts` replay RTMR0–3 from the dstack event log, and check that each runtime event, such as `compose-hash`, matches its digest. They are tested against the quote and event log shipped with the dstack simulator ([#95](https://github.com/w3hc/longjing/issues/95)).
+- `verifyKeyBinding` in `src/attestation/key-binding.ts` checks an attestation on the client: the `report_data` rebuilt from the returned keys and nonce, the quote, the event log, the TLS certificate and the key manifest. `pnpm verify:attestation` uses it with a fresh nonce ([#95](https://github.com/w3hc/longjing/issues/95)).
 - `GET /attestation/manifest` serves an EIP-712 key manifest, signed by an enclave-derived identity key, that binds the app id, the ML-KEM public key, the refund signer's Baby Jubjub public key and the TLS certificate, with the `GetKey` signature chains. See [KEY_DERIVATION.md](docs/KEY_DERIVATION.md) ([#93](https://github.com/w3hc/longjing/issues/93)).
 
 ### Changed
 
+- **Breaking:** `report_data[0..32]` is one length-prefixed SHA-256 over the label `longjing-report-v1`, the ML-KEM public key, the identity public key, the refund signer public key and the TLS certificate hash, in place of `SHA-256(ek) || SHA-256(tls_cert_der)`. Clients checking the old layout must rebuild it as in [ATTESTATION.md](docs/ATTESTATION.md#report_data) ([#95](https://github.com/w3hc/longjing/issues/95)).
 - The ML-KEM, refund signer, identity and TLS keys are derived inside the enclave with the dstack v1 `GetKey` API (dstack ≥ 0.6.0), through a small client for `/var/run/dstack.sock`. The refund signer key changes, so `LongjingCredits` must be redeployed with the `serverPublicKey` the manifest reports ([#93](https://github.com/w3hc/longjing/issues/93)).
 - `docker-compose.yml` pins the `v0.3.0` image, `ghcr.io/w3hc/longjing@sha256:d7beb7b690a6a2841530ceb26d18095005af1dd65fa34cc473971657bb096577`, in place of the placeholder ([#112](https://github.com/w3hc/longjing/issues/112)).
 
@@ -23,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `report_data` commits to the refund signer's public key, so a client can check that refund tickets are signed inside the attested enclave ([#95](https://github.com/w3hc/longjing/issues/95)).
 - Production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env, when dstack key derivation fails, or with `DSTACK_SIMULATOR_ENDPOINT` set. `docker-compose.yml` sets `NODE_ENV=production` as a literal and no longer passes `ADMIN_MLKEM_*` through, so the operator cannot inject keys or switch the checks off. The only opt-out, `ALLOW_KEYS_OUTSIDE_ENCLAVE=true`, must be a compose literal, so using it changes the attested hash ([#93](https://github.com/w3hc/longjing/issues/93)).
 - Production attests only through dstack, and refuses to start without the dstack socket, with `DSTACK_SIMULATOR_ENDPOINT` set, or with `TEE_PLATFORM` naming another platform. Before serving, it generates a first quote and checks that it carries the requested `report_data`. Outside production, an unknown `TEE_PLATFORM` throws instead of falling back to the mock ([#94](https://github.com/w3hc/longjing/issues/94)).
 

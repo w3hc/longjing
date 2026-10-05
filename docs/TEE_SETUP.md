@@ -767,7 +767,10 @@ curl -k https://your-server:443/attestation | jq .
 # {
 #   "platform": "phala" | "intel-tdx" | "amd-sev-snp" | "aws-nitro",
 #   "quote": "base64-encoded-attestation-quote",
-#   "reportData": "hex: sha256(mlkem-pubkey) || sha256(tls-cert-der), 128 chars",
+#   "reportData": "hex: key commitment || nonce, 128 chars",
+#   "nonce": null,
+#   "keys": { "mlkemPublicKey": "...", "identityPublicKey": "0x04...", ... },
+#   "eventLog": "[...]",
 #   "measurement": "hex-measurement-hash",
 #   "timestamp": "2026-03-17T...",
 #   "instructions": "Platform-specific verification instructions..."
@@ -776,21 +779,21 @@ curl -k https://your-server:443/attestation | jq .
 # If platform is "mock", you're NOT in a TEE
 ```
 
-### 2. Verify report_data Binding (Critical Security Check)
+### 2. Verify the Key Binding (Critical Security Check)
 
-The attestation quote cryptographically binds the **TEE-generated ML-KEM public key** (first 32 bytes) and the **in-enclave TLS certificate** (second 32 bytes) to the TEE measurement using the `report_data` field. This provides three critical security guarantees:
+The attestation quote's `report_data` commits to every public key Longjing uses, the **ML-KEM key**, the **identity key** and the **refund signer key**, and to the **in-enclave TLS certificate**, followed by a **nonce** the client chooses. This provides four guarantees:
 
-1. **Key Origin**: The ML-KEM key pair was generated **inside the TEE**, not loaded from environment variables
-2. **MITM Prevention**: An attacker cannot serve their own encryption key while replaying a valid TEE attestation
+1. **Key Origin**: The keys were derived **inside the TEE**, not loaded from environment variables
+2. **MITM Prevention**: An attacker cannot serve their own encryption key, or sign refund tickets outside the enclave, while replaying a valid TEE attestation
 3. **TLS Endpoint Binding**: The TLS certificate the server presents is bound to the quote, proving the TLS session terminates **inside the attested enclave** (not at an external proxy)
+4. **Freshness**: The quote carries the client's nonce, so it was generated for this request
 
 **How it works:**
-- At startup, Longjing derives its ML-KEM-1024 key pair inside the enclave from the dstack KMS (`GetKey`, see [KEY_DERIVATION.md](KEY_DERIVATION.md))
-- The private key is never stored and never leaves the TEE, and every instance of the app derives the same key
+- At startup, Longjing derives its ML-KEM-1024, identity and refund signer keys inside the enclave from the dstack KMS (`GetKey`, see [KEY_DERIVATION.md](KEY_DERIVATION.md))
+- The private keys are never stored and never leave the TEE, and every instance of the app derives the same keys
 - The TLS private key is derived in-enclave via the dstack KMS (or loaded from enclave-only storage)
-- Both are bound to the attestation quote via `report_data = SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)`
-- Clients verify this binding to ensure they're encrypting to a TEE-sealed private key **and** talking TLS directly to the enclave
-- A `report_data` whose second half is all zeros means the server is **not** terminating TLS itself — treat that as a weaker deployment
+- `GET /attestation?nonce=<hex>` returns the quote, the keys `report_data` commits to and the event log; the layout is in [ATTESTATION.md](ATTESTATION.md#report_data)
+- A null `keys.tlsCertificate` means the server is **not** terminating TLS itself — treat that as a weaker deployment
 
 **Security comparison:**
 - ❌ **Old approach**: Keys in `ADMIN_MLKEM_PRIVATE_KEY` environment variable → Operator can access private key
@@ -799,57 +802,25 @@ The attestation quote cryptographically binds the **TEE-generated ML-KEM public 
 **Automated Verification:**
 
 ```bash
-# Run the verification script (verifies report_data binding automatically)
-pnpm test:attestation https://your-server:443/attestation
+# Sends a fresh nonce, rebuilds report_data from the returned keys, checks the
+# served TLS certificate and replays RTMR0–3 from the event log
+pnpm verify:attestation https://your-server:443/attestation
 ```
 
-**Manual Verification:**
-
-```bash
-# 1. Fetch the attestation quote
-curl -k https://your-server:443/attestation > attestation.json
-
-# 2. Fetch the ML-KEM public key
-curl -k https://your-server:443/mlkem/pubkey > pubkey.json
-
-# 3. Extract values
-REPORT_DATA=$(cat attestation.json | jq -r '.reportData')
-PUBKEY=$(cat pubkey.json | jq -r '.publicKey')
-
-# 4. Compute expected report_data:
-#    SHA-256(mlkem_pubkey) || SHA-256(tls_leaf_cert_der) (64 bytes total)
-EXPECTED_MLKEM=$(echo -n "$PUBKEY" | base64 -d | sha256sum | cut -d' ' -f1)
-
-# Fetch the TLS certificate the server actually presents and hash its DER
-openssl s_client -connect your-server:443 -servername your-server </dev/null 2>/dev/null \
-  | openssl x509 -outform DER > served-cert.der
-EXPECTED_TLS=$(sha256sum served-cert.der | cut -d' ' -f1)
-
-EXPECTED="${EXPECTED_MLKEM}${EXPECTED_TLS}"
-
-# 5. Verify they match
-if [ "$REPORT_DATA" = "$EXPECTED" ]; then
-  echo "✅ report_data matches ML-KEM public key AND served TLS cert"
-else
-  echo "❌ report_data MISMATCH - DO NOT TRUST THIS SERVER"
-  echo "Expected: $EXPECTED"
-  echo "Got:      $REPORT_DATA"
-  exit 1
-fi
-```
+**Manual Verification:** follow [ATTESTATION.md](ATTESTATION.md#verification), which has a Python version of the `report_data` rebuild.
 
 **What This Proves:**
-- The attestation quote was generated with knowledge of the ML-KEM public key
-- An attacker cannot substitute their own key and replay a valid quote (hash won't match)
-- The encryption key is cryptographically bound to the TEE measurement
+- The attestation quote was generated for your nonce, with knowledge of the returned keys
+- An attacker cannot substitute their own key or replay an old quote (the commitment or the nonce won't match)
+- The encryption and refund signing keys are cryptographically bound to the TEE measurement
 
 **Security Impact:**
-Without `report_data` binding, an attacker could:
+Without the key binding, an attacker could:
 1. Serve their own ML-KEM public key (to decrypt your secrets)
 2. Replay a valid TEE attestation from the real server
 3. Client thinks it's secure, but secrets are encrypted to attacker's key
 
-With `report_data` binding, this attack is cryptographically impossible.
+With the key binding and a fresh nonce, this attack is cryptographically impossible.
 
 ### 3. Verify TLS Termination Inside TEE
 
@@ -870,8 +841,8 @@ https://<app-id>-3000.<gateway-base-domain>      ← gateway terminates TLS (do 
 **Verification:**
 
 ```bash
-# 1. The served certificate must hash to bytes 32-63 of the attestation
-#    report_data (see section 2 above) — this is the cryptographic proof
+# 1. The served certificate must be the keys.tlsCertificate that report_data
+#    commits to (see section 2 above) — this is the cryptographic proof
 #    that your TLS session ends inside the attested enclave. Automated:
 pnpm verify:attestation https://your-server:443/attestation
 

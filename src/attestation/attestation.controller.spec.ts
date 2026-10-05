@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AttestationController } from './attestation.controller';
@@ -15,6 +16,13 @@ describe('AttestationController', () => {
     reportData: '0'.repeat(128), // 64 bytes hex
     measurement: 'mock-measurement',
     timestamp: '2026-03-17T00:00:00.000Z',
+    nonce: null,
+    keys: {
+      mlkemPublicKey: 'AQI=',
+      identityPublicKey: null,
+      refundSignerPublicKey: null,
+      tlsCertificate: null,
+    },
   };
 
   beforeEach(async () => {
@@ -109,7 +117,24 @@ describe('AttestationController', () => {
 
       await controller.getAttestation();
 
-      expect(getAttestationSpy).toHaveBeenCalled();
+      expect(getAttestationSpy).toHaveBeenCalledWith(undefined);
+    });
+
+    it('passes the client nonce to the attestation service', async () => {
+      const getAttestationSpy = jest.spyOn(
+        attestationService,
+        'getAttestation',
+      );
+
+      await controller.getAttestation('0x' + '11'.repeat(32));
+
+      expect(getAttestationSpy).toHaveBeenCalledWith(Buffer.alloc(32, 0x11));
+    });
+
+    it('rejects a malformed nonce with 400', async () => {
+      await expect(controller.getAttestation('1234')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should return Phala verification instructions', async () => {

@@ -18,7 +18,7 @@ export interface ITeePlatform {
 
   /**
    * Generate an attestation quote with embedded report_data
-   * @param reportData - Data to embed in the quote (typically SHA-256 of ML-KEM public key)
+   * @param reportData - Data to embed in the quote (64 bytes, see report-data.ts)
    * @returns Platform-specific attestation quote
    */
   generateQuote(reportData: Buffer): Promise<AttestationQuote>;

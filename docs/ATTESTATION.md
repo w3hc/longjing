@@ -6,38 +6,39 @@ This guide explains how to verify Longjing's TEE attestation quotes to ensure yo
 
 - [Overview](#overview)
 - [Quick Start](#quick-start)
-- [Understanding report_data Binding](#understanding-report_data-binding)
+- [report_data](#report_data)
+- [Verification](#verification)
 - [Platform-Specific Verification](#platform-specific-verification)
 - [Client Implementation](#client-implementation)
 - [Security Best Practices](#security-best-practices)
 
 ## Overview
 
-Longjing implements **application attestation** using the `report_data` field to bind the ML-KEM encryption key to the TEE quote. This prevents man-in-the-middle attacks where an attacker could substitute their own encryption key.
+Longjing implements **application attestation** using the `report_data` field of the quote. It commits to every public key the service uses (the ML-KEM key, the identity key and the refund signer key) and to the TLS certificate served from inside the enclave, followed by a nonce chosen by the client. This prevents man-in-the-middle attacks where an attacker substitutes their own key, and replays of an old quote.
 
 ### What Gets Verified
 
-1. **Platform Authenticity**: Quote is signed by real TEE hardware (AMD SEV-SNP, Intel TDX, AWS Nitro, or Phala)
-2. **Code Measurement**: The running code matches expected measurement (MRTD/PCR0/etc.)
-3. **Key Binding**: The ML-KEM public key is cryptographically bound to the quote via `SHA-256(pubkey)` in `report_data`
-4. **Freshness**: Quote timestamp is recent (not a replay attack)
+1. **Platform Authenticity**: Quote is signed by real TEE hardware (Phala/dstack in production)
+2. **Code Measurement**: RTMR0–3, replayed from the event log, match the published values, and RTMR3's `compose-hash` event names a published release
+3. **Key Binding**: `report_data` commits to the ML-KEM, identity and refund signer public keys and to the TLS certificate of your session
+4. **Freshness**: `report_data` carries the nonce you just sent
 
 ### Attack Prevention
 
-**Without `report_data` binding:**
+**Without key binding:**
 ```
 ❌ Attacker intercepts traffic
-❌ Serves their own ML-KEM public key
+❌ Serves their own ML-KEM key, or signs refund tickets outside the enclave
 ❌ Replays valid TEE quote from real server
-❌ Client encrypts secrets to attacker's key
+❌ Client encrypts secrets to attacker's key, or trusts forged refunds
 ```
 
-**With `report_data` binding:**
+**With key binding and a nonce:**
 ```
-✅ report_data = SHA-256(mlkem_public_key) || 0x00...00
+✅ report_data = SHA-256(label, ML-KEM key, identity key, refund signer key, TLS cert) || nonce
 ✅ TEE hardware signs the quote including report_data
-✅ Client verifies: quote.reportData == SHA-256(fetched_pubkey)
-✅ Attacker cannot forge quote with different key (no TEE hardware)
+✅ Client rebuilds report_data from the returned keys and its own nonce
+✅ Attacker cannot forge a quote for other keys or a new nonce (no TEE hardware)
 ✅ Attack prevented
 ```
 
@@ -49,167 +50,93 @@ The easiest way to verify attestation:
 
 ```bash
 # Verify localhost (development)
-pnpm test:attestation
+pnpm verify:attestation
 
 # Verify remote server
-pnpm test:attestation https://your-longjing.phala.network/attestation
+pnpm verify:attestation https://your-longjing.phala.network/attestation
 
-# Verify from file
-pnpm test:attestation attestation.json
+# Verify from file (cannot prove freshness)
+pnpm verify:attestation attestation.json
 ```
 
 **What the script checks:**
 - ✅ Platform is not 'mock' (real TEE)
-- ✅ `report_data` matches `SHA-256(mlkem_public_key)`
+- ✅ `report_data` commits to the returned keys and to a fresh random nonce
+- ✅ The TLS certificate of the session is the bound one
+- ✅ The event log replays to RTMR0–3 of the quote
+- ✅ `GET /attestation/manifest` signs the same keys
 - ✅ Quote structure is valid
-- ✅ Timestamp is fresh (within 5 minutes)
 
-### Manual Verification (Bash)
+### Manual Verification
 
 ```bash
-#!/bin/bash
-set -e
-
 SERVER_URL="https://your-server:443"
+NONCE=$(openssl rand -hex 32)
 
-# 1. Fetch attestation quote
-curl -k "$SERVER_URL/attestation" > attestation.json
+# Fetch the attestation with your nonce
+curl -k "$SERVER_URL/attestation?nonce=$NONCE" > attestation.json
 
-# 2. Fetch ML-KEM public key
-curl -k "$SERVER_URL/mlkem/pubkey" > pubkey.json
+# The last 32 bytes of report_data must be your nonce
+[ "$(jq -r '.reportData[64:]' attestation.json)" = "$NONCE" ] || exit 1
 
-# 3. Extract values
-PLATFORM=$(jq -r '.platform' attestation.json)
-REPORT_DATA=$(jq -r '.reportData' attestation.json)
-PUBKEY=$(jq -r '.publicKey' pubkey.json)
-
-# 4. Check platform
-if [ "$PLATFORM" = "mock" ]; then
-  echo "❌ Server is NOT in a TEE!"
-  exit 1
-fi
-echo "✅ Platform: $PLATFORM"
-
-# 5. Verify report_data binding
-EXPECTED=$(echo -n "$PUBKEY" | base64 -d | sha256sum | cut -d' ' -f1)
-EXPECTED_PADDED="${EXPECTED}$(printf '0%.0s' {1..64})"
-
-if [ "$REPORT_DATA" = "$EXPECTED_PADDED" ]; then
-  echo "✅ report_data matches ML-KEM public key"
-else
-  echo "❌ report_data MISMATCH - DO NOT TRUST"
-  exit 1
-fi
-
-# 6. Platform-specific verification (optional but recommended)
-# See Platform-Specific Verification section below
+# Then rebuild the first 32 bytes from .keys, see report_data below
 ```
 
-## Understanding report_data Binding
+## report_data
 
-### What is report_data?
+`report_data` is the 64-byte, user-controlled field of the quote that the TEE hardware signs. Longjing builds it in [`report-data.ts`](../src/attestation/report-data.ts):
 
-The `report_data` field is a **user-controlled input** to the TEE attestation quote that gets signed by the hardware. All major TEE platforms support it:
-
-| Platform | Field Name | Size | Location |
-|----------|-----------|------|----------|
-| **Phala** | `report_data` | 64 bytes | TDX quote via `tdxQuote()` |
-| **Intel TDX** | `REPORT_DATA` | 64 bytes | TDX quote structure offset 536 |
-| **AMD SEV-SNP** | `REPORT_DATA` | 64 bytes | SNP report structure offset 80 |
-| **AWS Nitro** | `user_data` | Up to 512 bytes | NSM attestation document |
-
-### How Longjing Uses It
-
-```typescript
-// Server-side (src/attestation/attestation.service.ts)
-function buildReportData(mlkemPublicKey: Buffer): Buffer {
-  const hash = createHash('sha256').update(mlkemPublicKey).digest(); // 32 bytes
-  return Buffer.concat([hash, Buffer.alloc(32)]);                    // → 64 bytes
-}
-
-// When generating quote:
-// 1. ML-KEM key pair is generated INSIDE the TEE by TeeKeyManagerService
-const mlkemPublicKey = this.keyManager.getPublicKeyBytes();
-
-// 2. Public key is bound to attestation via report_data
-const reportData = buildReportData(mlkemPublicKey);
-const quote = await platform.generateQuote(reportData);
-
-// Result:
-// quote.reportData = "a1b2c3d4..." (SHA-256 of public key)
-//                    + "0000000000..." (zero padding)
-//                    = 128 hex characters (64 bytes)
+```
+report_data[0..32]  = SHA-256( LP("longjing-report-v1")
+                             || LP(mlkem_public_key)
+                             || LP(identity_public_key)
+                             || LP(refund_signer_x || refund_signer_y)
+                             || LP(SHA-256(tls_leaf_cert_der)) )
+report_data[32..64] = client nonce, or 32 zero bytes
 ```
 
-### Security: TEE-Generated Keys
+- `LP(x)` is `x` prefixed with its length as a 4-byte big-endian integer, so no two inputs encode the same way.
+- `mlkem_public_key` is the 1568-byte ML-KEM-1024 encapsulation key.
+- `identity_public_key` is the 65-byte uncompressed secp256k1 key that signs the key manifest.
+- `refund_signer_x || refund_signer_y` is the Baby Jubjub public key that signs refund tickets, each coordinate as 32 big-endian bytes.
+- A key that was not derived from dstack (development only), or a TLS certificate that is not served from inside the enclave, is an empty term: `LP(empty)` is four zero bytes.
 
-**Critical security feature:** The ML-KEM key pair is **generated inside the TEE**, not loaded from environment variables.
+`GET /attestation` returns every input under `keys`, the nonce it bound under `nonce`, and on dstack the event log under `eventLog`:
 
-```typescript
-// src/attestation/tee-key-manager.service.ts
-private async initializeTeeKeys() {
-  // Generate key pair INSIDE the TEE
-  const [publicKey, privateKey] = this.mlkem.generateKeyPair();
-
-  // Seal private key using platform-specific mechanisms
-  const sealedPrivateKey = await this.sealPrivateKey(privateKey);
-  await fs.writeFile(SEALED_KEY_PATH, sealedPrivateKey);
-
-  // Private key NEVER leaves the TEE
-  // Only the public key is exported for client use
+```json
+{
+  "platform": "phala",
+  "quote": "<base64 TDX quote>",
+  "reportData": "<128 hex chars>",
+  "nonce": "0x<64 hex chars>",
+  "keys": {
+    "mlkemPublicKey": "<base64>",
+    "identityPublicKey": "0x04...",
+    "refundSignerPublicKey": { "x": "0x...", "y": "0x..." },
+    "tlsCertificate": "<base64 DER>"
+  },
+  "eventLog": "[{\"imr\":0,\"event_type\":...,\"digest\":\"...\"}, ...]"
 }
 ```
 
-**Why this matters:**
-- ✅ **Private key never known to operator** - Generated inside the secure enclave
-- ✅ **No environment variable exposure** - Keys don't exist in deployment configs
-- ✅ **Cryptographic proof** - Attestation binds the TEE-generated public key via report_data
-- ✅ **Trustless decryption** - Only the attested TEE can decrypt messages
+The nonce is optional, 32 bytes as 64 hex characters with or without `0x`. A malformed one gets a 400. Without one, the second half of `report_data` is zero and the quote proves nothing about freshness.
 
-**Trust model:**
-- **Before:** "Trust the operator not to access `ADMIN_MLKEM_PRIVATE_KEY` environment variable"
-- **After:** "Don't trust anyone - verify the private key is sealed in the TEE via attestation"
+The ML-KEM, identity and refund signer keys are derived inside the enclave from the dstack KMS, see [KEY_DERIVATION.md](./KEY_DERIVATION.md).
 
-### Client Verification
+## Verification
 
-```typescript
-// Client-side verification (TypeScript)
-import { createHash } from 'crypto';
+[`verifyKeyBinding`](../src/attestation/key-binding.ts) runs every check below except the quote signature and the comparison with published values:
 
-async function verifyAttestation(serverUrl: string): Promise<boolean> {
-  // 1. Fetch attestation
-  const attestation = await fetch(`${serverUrl}/attestation`).then(r => r.json());
-
-  // 2. Check platform
-  if (attestation.platform === 'mock') {
-    throw new Error('Server not in TEE');
-  }
-
-  // 3. Fetch ML-KEM public key
-  const { publicKey } = await fetch(`${serverUrl}/mlkem/pubkey`).then(r => r.json());
-  const pubkeyBytes = Buffer.from(publicKey, 'base64');
-
-  // 4. Compute expected report_data
-  const hash = createHash('sha256').update(pubkeyBytes).digest();
-  const expectedReportData = Buffer.concat([hash, Buffer.alloc(32)]).toString('hex');
-
-  // 5. Verify match
-  if (attestation.reportData.toLowerCase() !== expectedReportData.toLowerCase()) {
-    throw new Error('report_data mismatch - possible MITM attack');
-  }
-
-  console.log('✅ report_data binding verified');
-
-  // 6. Platform-specific quote verification (optional)
-  // See platform-specific sections below
-
-  return true;
-}
-```
+1. Send a fresh 32-byte random nonce: `GET /attestation?nonce=<hex>`.
+2. Rebuild `report_data` from `keys` and your nonce, and check it equals both `reportData` and the `report_data` inside the quote (offset 568 of a TDX quote).
+3. Check that `keys.tlsCertificate` is the certificate your TLS session presented. A null certificate means TLS terminates outside the enclave.
+4. Replay RTMR0–3 from `eventLog` ([`replayRtmrs`](../src/attestation/tdx-quote.ts)): each RTMR starts at 48 zero bytes and every event extends it as `RTMR = SHA-384(RTMR || digest)`. Check the result equals RTMR0–3 of the quote. A dstack runtime event (type `0x08000001`) must also carry `digest = SHA-384(event_type as u32 LE || ":" || event || ":" || event_payload)`, so its payload, the `compose-hash` for one, can be trusted.
+5. Check that `GET /attestation/manifest` commits to the same keys and is signed by `keys.identityPublicKey`.
+6. Verify the quote signature with the platform's verification service, and compare the measurements and the `compose-hash` against the published release.
 
 ## Platform-Specific Verification
 
-After verifying `report_data` binding, perform platform-specific cryptographic verification.
+After verifying the key binding, perform platform-specific cryptographic verification.
 
 ### Phala Network
 
@@ -241,7 +168,7 @@ curl -X POST https://verifier.phala.network/verify \
 **What to check:**
 - ✅ `valid: true` - Quote signature is valid
 - ✅ `tcb_status: "UpToDate"` - TEE firmware is up-to-date
-- ✅ `measurement` or `rtmr2` matches published value
+- ✅ RTMR0–3 match the event log, and the `compose-hash` event matches the published release
 
 **Documentation:**
 - https://docs.phala.com/phala-cloud/attestation/verify-your-application
@@ -324,7 +251,7 @@ EOF
 **What to check:**
 - ✅ Certificate chain verifies to AWS Nitro root CA
 - ✅ PCR0 matches published enclave measurement
-- ✅ user_data field matches `report_data` from attestation JSON
+- ✅ user_data field matches `reportData` from the attestation JSON
 
 **Documentation:**
 - https://docs.aws.amazon.com/enclaves/latest/user/verify-root.html
@@ -334,162 +261,75 @@ EOF
 ### JavaScript/TypeScript Client
 
 ```typescript
-import { createHash } from 'crypto';
+import { randomBytes, X509Certificate } from 'crypto';
+import { verifyKeyBinding } from 'longjing/src/attestation/key-binding';
 
-interface AttestationQuote {
-  platform: 'phala' | 'intel-tdx' | 'amd-sev-snp' | 'aws-nitro' | 'mock';
-  quote: string;
-  reportData: string;
-  measurement: string;
-  timestamp: string;
-}
+async function verifyServerAttestation(
+  serverUrl: string,
+  servedCertificate?: Buffer, // DER of the certificate your TLS session saw
+): Promise<void> {
+  const nonce = randomBytes(32);
+  const attestation = await fetch(
+    `${serverUrl}/attestation?nonce=${nonce.toString('hex')}`,
+  ).then((r) => r.json());
 
-async function verifyServerAttestation(serverUrl: string): Promise<void> {
-  // Step 1: Fetch attestation
-  const attestation: AttestationQuote = await fetch(`${serverUrl}/attestation`)
-    .then(r => r.json());
-
-  // Step 2: Reject mock/development platforms
   if (attestation.platform === 'mock') {
     throw new Error('Server is not running in a TEE');
   }
 
-  // Step 3: Fetch ML-KEM public key
-  const { publicKey } = await fetch(`${serverUrl}/mlkem/pubkey`)
-    .then(r => r.json());
-
-  // Step 4: Verify report_data binding
-  const pubkeyBytes = Buffer.from(publicKey, 'base64');
-  const hash = createHash('sha256').update(pubkeyBytes).digest();
-  const expectedReportData = Buffer.concat([hash, Buffer.alloc(32)]).toString('hex');
-
-  if (attestation.reportData.toLowerCase() !== expectedReportData.toLowerCase()) {
-    throw new Error(
-      'report_data does not match ML-KEM public key. ' +
-      'Possible man-in-the-middle attack!'
-    );
-  }
-
-  // Step 5: Check timestamp freshness (within 5 minutes)
-  const attestationTime = new Date(attestation.timestamp).getTime();
-  const now = Date.now();
-  const ageSeconds = (now - attestationTime) / 1000;
-
-  if (ageSeconds > 300) {
-    throw new Error('Attestation is too old (possible replay attack)');
-  }
-
-  if (ageSeconds < -60) {
-    throw new Error('Attestation timestamp is in the future');
-  }
-
-  // Step 6: Platform-specific verification (optional but recommended)
-  await verifyPlatformQuote(attestation);
-
-  console.log('✅ Server attestation verified successfully');
-  console.log(`   Platform: ${attestation.platform}`);
-  console.log(`   Measurement: ${attestation.measurement.substring(0, 32)}...`);
-}
-
-async function verifyPlatformQuote(attestation: AttestationQuote): Promise<void> {
-  switch (attestation.platform) {
-    case 'phala':
-      // Verify with Phala verification service
-      const response = await fetch('https://verifier.phala.network/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quote: attestation.quote })
-      });
-      const result = await response.json();
-
-      if (!result.valid || result.tcb_status !== 'UpToDate') {
-        throw new Error(`Phala verification failed: ${result.tcb_status}`);
-      }
-      break;
-
-    case 'intel-tdx':
-    case 'amd-sev-snp':
-    case 'aws-nitro':
-      // Implement platform-specific verification or skip for basic checks
-      console.warn(`Platform-specific verification not implemented for ${attestation.platform}`);
-      break;
-  }
-}
-
-// Usage
-verifyServerAttestation('https://your-longjing.phala.network')
-  .then(() => {
-    // Safe to send sensitive data
-    console.log('Server verified, proceeding with encrypted request...');
-  })
-  .catch(error => {
-    console.error('❌ Server verification failed:', error.message);
-    // DO NOT send sensitive data
+  const keyManifest = await fetch(`${serverUrl}/attestation/manifest`).then(
+    (r) => r.json(),
+  );
+  const failures = verifyKeyBinding(attestation, {
+    nonce,
+    servedCertificate,
+    keyManifest,
   });
+  if (failures.length > 0) {
+    throw new Error(`Key binding failed: ${failures.join('; ')}`);
+  }
+
+  // Then verify the quote signature, e.g. with Phala's verification service,
+  // and compare RTMR0–3 and the compose hash against the published release
+}
 ```
 
 ### Python Client
 
 ```python
+import base64, hashlib, secrets, struct
 import requests
-import hashlib
-import base64
-from datetime import datetime, timedelta
 
-def verify_server_attestation(server_url):
-    # 1. Fetch attestation
-    attestation = requests.get(f"{server_url}/attestation").json()
+def lp(data: bytes) -> bytes:
+    return struct.pack('>I', len(data)) + data
 
-    # 2. Check platform
+def report_data(keys: dict, nonce: bytes) -> bytes:
+    ek = base64.b64decode(keys['mlkemPublicKey'])
+    identity = bytes.fromhex(keys['identityPublicKey'][2:]) if keys['identityPublicKey'] else b''
+    rs = keys['refundSignerPublicKey']
+    refund = (int(rs['x'], 16).to_bytes(32, 'big') + int(rs['y'], 16).to_bytes(32, 'big')) if rs else b''
+    cert = keys['tlsCertificate']
+    cert_hash = hashlib.sha256(base64.b64decode(cert)).digest() if cert else b''
+    commitment = hashlib.sha256(
+        lp(b'longjing-report-v1') + lp(ek) + lp(identity) + lp(refund) + lp(cert_hash)
+    ).digest()
+    return commitment + nonce
+
+def verify_server_attestation(server_url: str) -> dict:
+    nonce = secrets.token_bytes(32)
+    attestation = requests.get(f"{server_url}/attestation", params={'nonce': nonce.hex()}).json()
     if attestation['platform'] == 'mock':
         raise ValueError("Server is not in a TEE")
 
-    # 3. Fetch ML-KEM public key
-    pubkey_response = requests.get(f"{server_url}/mlkem/pubkey").json()
-    pubkey = base64.b64decode(pubkey_response['publicKey'])
+    expected = report_data(attestation['keys'], nonce)
+    if bytes.fromhex(attestation['reportData']) != expected:
+        raise ValueError("report_data does not commit to the returned keys and nonce")
+    quote = base64.b64decode(attestation['quote'])
+    if quote[568:632] != expected:
+        raise ValueError("The quote report_data does not match")
 
-    # 4. Verify report_data binding
-    hash_digest = hashlib.sha256(pubkey).hexdigest()
-    expected_report_data = hash_digest + ('0' * 64)
-
-    if attestation['reportData'].lower() != expected_report_data.lower():
-        raise ValueError("report_data mismatch - possible MITM attack")
-
-    # 5. Check timestamp freshness
-    attestation_time = datetime.fromisoformat(attestation['timestamp'].replace('Z', '+00:00'))
-    age = datetime.now(attestation_time.tzinfo) - attestation_time
-
-    if age > timedelta(minutes=5):
-        raise ValueError("Attestation too old")
-
-    if age < timedelta(minutes=-1):
-        raise ValueError("Attestation timestamp in future")
-
-    # 6. Platform-specific verification (optional)
-    if attestation['platform'] == 'phala':
-        verify_phala_quote(attestation['quote'])
-
-    print(f"✅ Server attestation verified")
-    print(f"   Platform: {attestation['platform']}")
-    print(f"   Measurement: {attestation['measurement'][:32]}...")
-    return True
-
-def verify_phala_quote(quote):
-    response = requests.post(
-        'https://verifier.phala.network/verify',
-        json={'quote': quote}
-    )
-    result = response.json()
-
-    if not result.get('valid') or result.get('tcb_status') != 'UpToDate':
-        raise ValueError(f"Phala verification failed: {result.get('tcb_status')}")
-
-# Usage
-try:
-    verify_server_attestation('https://your-longjing.phala.network')
-    print("Safe to send sensitive data")
-except Exception as e:
-    print(f"❌ Verification failed: {e}")
+    # Then replay RTMR0–3 from attestation['eventLog'] and verify the quote signature
+    return attestation['keys']
 ```
 
 ## Security Best Practices
@@ -510,17 +350,17 @@ except Exception as e:
    }
    ```
 
-3. **Verify report_data binding**
+3. **Verify the key binding**
    - This is the critical security check
-   - Prevents key substitution attacks
+   - Prevents key substitution attacks, including a refund signer outside the enclave
 
 4. **Check measurement hash**
    - Compare against published/expected measurement
    - Ensures you're talking to the correct code
 
 5. **Enforce freshness**
-   - Reject quotes older than 5 minutes
-   - Prevents replay attacks
+   - Send a fresh random nonce and check it is in `report_data`
+   - Prevents replay attacks; the `timestamp` field is not signed and proves nothing
 
 6. **Use platform-specific verification**
    - Phala: Use verification service
@@ -551,17 +391,17 @@ except Exception as e:
 
 ### Common Pitfalls
 
-❌ **DON'T: Skip report_data verification**
+❌ **DON'T: Skip key binding verification**
 ```typescript
 // WRONG - vulnerable to MITM
 const pubkey = await fetch(`${url}/mlkem/pubkey`);
 encrypt(data, pubkey);  // ❌ No attestation check
 ```
 
-✅ **DO: Verify report_data binding**
+✅ **DO: Verify the key binding**
 ```typescript
 // CORRECT
-await verifyAttestation(url);  // ✅ Checks report_data
+await verifyAttestation(url);  // ✅ Checks report_data and the nonce
 const pubkey = await fetch(`${url}/mlkem/pubkey`);
 encrypt(data, pubkey);
 ```
@@ -574,11 +414,13 @@ if (cachedAttestation.platform !== 'mock') {  // ❌ Could be hours old
 }
 ```
 
-✅ **DO: Check freshness**
+✅ **DO: Bind a fresh nonce**
 ```typescript
 // CORRECT
-const attestation = await fetchAttestation();  // ✅ Fresh quote
-if (Date.now() - new Date(attestation.timestamp) < 300000) {
+const nonce = randomBytes(32);
+const attestation = await fetch(`${url}/attestation?nonce=${nonce.toString('hex')}`)
+  .then((r) => r.json());
+if (verifyKeyBinding(attestation, { nonce }).length === 0) {  // ✅ Fresh quote
   sendSecrets();
 }
 ```
@@ -594,7 +436,7 @@ if (Date.now() - new Date(attestation.timestamp) < 300000) {
 ## Support
 
 For attestation verification issues:
-1. Run `pnpm test:attestation` to diagnose
+1. Run `pnpm verify:attestation` to diagnose
 2. Check server logs for attestation generation errors
 3. Review platform-specific troubleshooting in [TEE_SETUP.md](TEE_SETUP.md)
-4. File issues at https://github.com/your-org/longjing/issues
+4. File issues at https://github.com/w3hc/longjing/issues
