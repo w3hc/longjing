@@ -1,3 +1,12 @@
+[![Test](https://github.com/w3hc/longjing/actions/workflows/test.yml/badge.svg)](https://github.com/w3hc/longjing/actions/workflows/test.yml)
+[![NestJS](https://img.shields.io/badge/NestJS-v12-E0234E?logo=nestjs)](https://nestjs.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript)](https://www.typescriptlang.org/)
+[![Solidity](https://img.shields.io/badge/Solidity-0.8.35-363636?logo=solidity)](https://soliditylang.org/)
+[![Circom](https://img.shields.io/badge/Circom-2-1E1E1E)](https://docs.circom.io/)
+[![pnpm](https://img.shields.io/badge/pnpm-10.23-F69220?logo=pnpm)](https://pnpm.io/)
+[![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=node.js)](https://nodejs.org/)
+[![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
+
 # Longjing
 
 Anonymous, prepaid API access behind a TEE gateway. Deposit ETH once, then make API requests that can't be linked back to you — not by an eavesdropper, and not by the operator running the service.
