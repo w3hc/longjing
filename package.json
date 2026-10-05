@@ -21,6 +21,7 @@
     "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json",
     "test:proof": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPatterns \"circuit\\.spec|proof\\.spec\"",
     "verify:attestation": "ts-node scripts/testing/verify-attestation.ts",
+    "governance:propose-release": "ts-node scripts/governance/propose-release.ts",
     "setup:circuit": "ts-node scripts/setup/setup-trusted-setup.ts",
     "circuits:fetch": "ts-node scripts/setup/fetch-circuits.ts",
     "dance": "pnpm format && pnpm lint && pnpm test && pnpm build && (cd contracts && forge test) && pnpm outdated || true",

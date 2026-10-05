@@ -55,7 +55,7 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
 
 Both projects are experimental and both evolve; this comparison reflects ethereum/zkapi as of October 2026.
 
-**Trust Assumptions**: For production deployment, the system requires: (1) server key rotation mechanism, (2) timelock on the remaining admin functions (verifier and server address changes already wait 7 days), (3) trusted setup ceremonies (development setup complete, production needs 50+ participants), and (4) independent review. See security considerations below.
+**Trust Assumptions**: For production deployment, the system requires: (1) server key rotation mechanism, (2) timelock on the remaining admin functions (verifier and server address changes already wait 7 days, and new compose hashes on the `DstackApp` too, see [GOVERNANCE.md](./GOVERNANCE.md)), (3) trusted setup ceremonies (development setup complete, production needs 50+ participants), and (4) independent review. See security considerations below.
 
 ## TEE Deployment: Why This Matters
 

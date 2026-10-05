@@ -14,6 +14,10 @@
  * Or with local JSON file:
  *   pnpm verify:attestation attestation.json
  *
+ * Check who can add builds that derive the keys (docs/GOVERNANCE.md):
+ *   pnpm verify:attestation <url> --app <DstackApp> [--from-block <n>]
+ *     [--rpc <url>] [--min-delay <seconds>]
+ *
  * What it verifies:
  *   1. Platform detection (not 'mock')
  *   2. report_data commits to the returned ML-KEM, identity and refund
@@ -23,6 +27,9 @@
  *   4. The event log replays to the quote's RTMR0–3
  *   5. The key manifest signs the same keys
  *   6. Quote structure validity and measurement extraction
+ *   7. With --app: the key manifest names that DstackApp, a LongjingAppOwner
+ *      behind a timelock of at least --min-delay owns it, requireTcbUpToDate
+ *      is set, and the running compose hash is allowed
  *
  * What it does NOT verify (requires platform-specific verification):
  *   - Full cryptographic signature verification
@@ -35,11 +42,25 @@
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import * as tls from 'tls';
+import { JsonRpcProvider, getAddress } from 'ethers';
+import {
+  DEFAULT_MIN_DELAY_SECONDS,
+  checkAppGovernance,
+  composeHashFromEventLog,
+  readAppGovernance,
+} from '../../src/attestation/app-governance';
 import { BoundAttestation } from '../../src/attestation/attestation.types';
 import { verifyKeyBinding } from '../../src/attestation/key-binding';
 import { SignedKeyManifest } from '../../src/keys/key-derivation.service';
 
 type AttestationQuote = BoundAttestation & { instructions?: string };
+
+interface GovernanceOptions {
+  app: string;
+  rpc: string;
+  fromBlock?: number;
+  minDelay: bigint;
+}
 
 // Intel TDX Quote v4 Structure (simplified)
 // Full spec: https://download.01.org/intel-sgx/latest/dcap-latest/linux/docs/Intel_TDX_DCAP_Quoting_Library_API.pdf
@@ -370,9 +391,90 @@ function verifyTimestamp(timestamp: string, maxAgeSeconds: number = 300): boolea
 }
 
 /**
+ * Check who can add builds that derive the keys, and list every build that
+ * ever could. Exits on failure.
+ */
+async function verifyGovernance(
+  options: GovernanceOptions,
+  keyManifest: SignedKeyManifest | undefined,
+  eventLog: string | undefined,
+) {
+  log(`\n🏛️  Governance Check:`, 'blue');
+  info(`  DstackApp: ${options.app}`);
+  info(`  RPC: ${options.rpc}`);
+
+  if (!keyManifest) {
+    error('No key manifest: cannot tell which app these keys belong to');
+    process.exit(1);
+  }
+  if (getAddress(keyManifest.manifest.appId) !== getAddress(options.app)) {
+    error(
+      `The key manifest names app ${keyManifest.manifest.appId}, not ${options.app}: these are another app's keys`,
+    );
+    process.exit(1);
+  }
+  success('The key manifest names this app');
+
+  // verifyBinding already replayed the event log to the quote's RTMRs
+  const composeHash = eventLog ? composeHashFromEventLog(eventLog) : undefined;
+  if (composeHash) {
+    info(`  Running compose hash: ${composeHash}`);
+  } else {
+    warning('No compose-hash event: the running build is not checked');
+  }
+
+  const governance = await readAppGovernance(
+    new JsonRpcProvider(options.rpc),
+    options.app,
+    { fromBlock: options.fromBlock },
+  );
+  info(`  Owner: ${governance.owner}`);
+  if (governance.appOwner) {
+    const { timelock, minDelay, guardian } = governance.appOwner;
+    info(`  Timelock: ${timelock} (${minDelay}s delay)`);
+    info(`  Guardian: ${guardian}`);
+  }
+  info(`  requireTcbUpToDate: ${governance.requireTcbUpToDate}`);
+
+  log(`\n  Compose hashes ever allowed:`, 'blue');
+  if (governance.composeHashes.length === 0) {
+    warning('No ComposeHashAdded event found: check --from-block');
+  }
+  for (const record of governance.composeHashes) {
+    const status = record.allowed ? 'ALLOWED' : 'removed';
+    const running = record.composeHash === composeHash ? '  ← running' : '';
+    info(
+      `  ${record.composeHash}  ${status}  added at ${record.added.join(', ')}${
+        record.removed.length ? `, removed at ${record.removed.join(', ')}` : ''
+      }${running}`,
+    );
+  }
+  for (const upgrade of governance.upgrades) {
+    warning(
+      `Implementation upgraded to ${upgrade.implementation} at block ${upgrade.blockNumber}`,
+    );
+  }
+
+  const { failures, warnings } = checkAppGovernance(governance, {
+    minDelay: options.minDelay,
+    composeHash,
+  });
+  warnings.forEach((message) => warning(message));
+  if (failures.length > 0) {
+    failures.forEach((failure) => error(failure));
+    error('Builds can be added to this app without the published governance.');
+    process.exit(1);
+  }
+  success('Only timelocked builds can be added, and the running build is allowed');
+}
+
+/**
  * Main verification function
  */
-async function verifyAttestation(source: string) {
+async function verifyAttestation(
+  source: string,
+  governanceOptions?: GovernanceOptions,
+) {
   log('\n🔍 Longjing TEE Attestation Verifier', 'cyan');
   log('═══════════════════════════════════\n', 'cyan');
 
@@ -440,7 +542,14 @@ async function verifyAttestation(source: string) {
     // 5. Verify timestamp (the nonce is what proves freshness)
     verifyTimestamp(attestation.timestamp);
 
-    // 6. Summary
+    // 6. Check the app's on-chain governance
+    if (governanceOptions) {
+      await verifyGovernance(governanceOptions, keyManifest, attestation.eventLog);
+    } else {
+      warning('Skipped governance: pass --app <DstackApp> to check who can add builds');
+    }
+
+    // 7. Summary
     log(`\n═══════════════════════════════════`, 'cyan');
     log(`📊 Verification Summary:`, 'cyan');
     log(`═══════════════════════════════════\n`, 'cyan');
@@ -449,6 +558,9 @@ async function verifyAttestation(source: string) {
     success('Key binding: Valid ✓');
     success('Quote structure: Valid ✓');
     success('Timestamp: Fresh ✓');
+    if (governanceOptions) {
+      success('Governance: Timelocked ✓');
+    }
 
     log(`\n✅ Basic verification PASSED\n`, 'green');
     log(`⚠️  For production: Follow platform-specific verification steps\n`, 'yellow');
@@ -736,13 +848,36 @@ async function verifyNitroQuote(attestation: AttestationQuote) {
 // CLI entry point
 const args = process.argv.slice(2);
 
+function flag(name: string): string | undefined {
+  const index = args.indexOf(name);
+  if (index === -1) return undefined;
+  const [, value] = args.splice(index, 2);
+  return value;
+}
+
+const app = flag('--app');
+const rpc = flag('--rpc') ?? process.env.BASE_RPC_URL ?? 'https://mainnet.base.org';
+const fromBlock = flag('--from-block');
+const minDelay = flag('--min-delay');
+const governanceOptions: GovernanceOptions | undefined = app
+  ? {
+      app,
+      rpc,
+      fromBlock: fromBlock ? Number(fromBlock) : undefined,
+      minDelay: minDelay ? BigInt(minDelay) : DEFAULT_MIN_DELAY_SECONDS,
+    }
+  : undefined;
+
 if (args.length === 0) {
   // Default to localhost if no argument provided
   const defaultUrl = 'http://localhost:3000/attestation';
   log(`No URL provided, using default: ${defaultUrl}`, 'yellow');
-  log('Usage: pnpm verify:attestation [url-or-file]\n', 'cyan');
-  verifyAttestation(defaultUrl);
+  log(
+    'Usage: pnpm verify:attestation [url-or-file] [--app <DstackApp>] [--from-block <n>] [--rpc <url>] [--min-delay <seconds>]\n',
+    'cyan',
+  );
+  verifyAttestation(defaultUrl, governanceOptions);
 } else {
   const source = args[0];
-  verifyAttestation(source);
+  verifyAttestation(source, governanceOptions);
 }
