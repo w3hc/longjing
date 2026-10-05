@@ -79,4 +79,12 @@ describe('Environment Validation', () => {
       expect(result.KMS_URL).toBeUndefined();
     });
   });
+  it('refuses key material in env in production', () => {
+    expect(() =>
+      validateEnvironment({
+        NODE_ENV: 'production',
+        OPERATOR_PRIVATE_KEY: '0x01',
+      }),
+    ).toThrow('key material in env');
+  });
 });

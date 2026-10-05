@@ -81,6 +81,9 @@ const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
 const sha256 = (bytes: Uint8Array) =>
   createHash('sha256').update(bytes).digest('hex');
 
+// circomlibjs builds its wasm on first use, which is slow under load
+jest.setTimeout(30000);
+
 describe('KeyDerivationService', () => {
   let dstack: FakeDstack;
   const originalEnv = process.env.NODE_ENV;
@@ -266,6 +269,19 @@ describe('KeyDerivationService', () => {
       dstack.failing = true;
 
       await expect(create()).rejects.toThrow('Key derivation');
+    });
+
+    it('starts without keys in production under the compose opt-out', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.ALLOW_KEYS_OUTSIDE_ENCLAVE = 'true';
+      dstack.failing = true;
+
+      try {
+        const service = await create();
+        expect(service.isAvailable()).toBe(false);
+      } finally {
+        delete process.env.ALLOW_KEYS_OUTSIDE_ENCLAVE;
+      }
     });
 
     it('starts without keys outside production when dstack is unreachable', async () => {

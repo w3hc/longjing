@@ -13,6 +13,7 @@ import {
 import { createMlKem1024 } from 'mlkem';
 import { getTlsLeafCertificate } from '../tls/tls-context';
 import { DstackV1Client } from './dstack-v1.client';
+import { keysOutsideEnclaveAllowed } from './key-policy';
 
 export const MLKEM_DOMAIN = 'longjing/mlkem-1024/v1';
 export const REFUND_SIGNER_DOMAIN = 'longjing/refund-signer/babyjub/v1';
@@ -77,7 +78,8 @@ export class KeyDerivationService implements OnModuleInit {
   constructor(private readonly dstack: DstackV1Client) {}
 
   async onModuleInit(): Promise<void> {
-    const production = process.env.NODE_ENV === 'production';
+    const production =
+      process.env.NODE_ENV === 'production' && !keysOutsideEnclaveAllowed();
 
     if (production && this.dstack.isSimulator()) {
       throw new Error(
@@ -246,10 +248,14 @@ export class KeyDerivationService implements OnModuleInit {
 
 // circomlibjs has no types
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
+let eddsaPromise: ReturnType<typeof buildEddsa> | null = null;
+
 async function babyJubjubPublicKey(
   privateKey: Buffer,
 ): Promise<{ x: string; y: string }> {
-  const eddsa = await buildEddsa();
+  // Building the wasm is slow; one instance serves every derivation
+  eddsaPromise ??= buildEddsa();
+  const eddsa = await eddsaPromise;
   const [x, y] = eddsa.prv2pub(privateKey);
   const toHex = (value: unknown) =>
     '0x' + String(eddsa.F.toString(value, 16)).padStart(64, '0');

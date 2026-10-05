@@ -5,7 +5,8 @@
  * - In the enclave: derived from the dstack KMS by KeyDerivationService, so
  *   the private key never leaves the enclave and is never stored
  * - Outside production, when dstack is unavailable: read from
- *   ADMIN_MLKEM_PUBLIC_KEY / ADMIN_MLKEM_PRIVATE_KEY (development only)
+ *   ADMIN_MLKEM_PUBLIC_KEY / ADMIN_MLKEM_PRIVATE_KEY (development, or the
+ *   ALLOW_KEYS_OUTSIDE_ENCLAVE opt-out)
  *
  * See docs/KEY_DERIVATION.md.
  */
@@ -43,8 +44,8 @@ export class TeeKeyManagerService implements OnModuleInit {
   }
 
   /**
-   * Development fallback: keys from env. KeyDerivationService already
-   * refuses to start in production without dstack, so this never runs there.
+   * Development fallback: keys from env. In production it only runs under
+   * the ALLOW_KEYS_OUTSIDE_ENCLAVE compose opt-out (see key-policy.ts).
    */
   private initializeEnvKeys() {
     this.logger.warn(

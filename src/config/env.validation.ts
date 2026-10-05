@@ -7,6 +7,7 @@ import {
   IsEthereumAddress,
   validateSync,
 } from 'class-validator';
+import { assertNoKeyMaterialInEnv } from '../keys/key-policy';
 
 /**
  * Environment configuration schema.
@@ -45,6 +46,8 @@ export class EnvironmentVariables {
  * Fails fast if any required variables are missing or invalid.
  */
 export function validateEnvironment(config: Record<string, unknown>) {
+  assertNoKeyMaterialInEnv(config);
+
   const validatedConfig = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: true,
   });

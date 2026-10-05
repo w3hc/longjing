@@ -10,9 +10,13 @@ import { SanitizedLogger } from './logging/sanitized-logger';
 import { TeeExceptionFilter } from './filters/tee-exception.filter';
 import { ProofVerifierService } from './longjing/proof-verifier.service';
 import { loadTlsMaterial } from './tls/tee-tls';
+import { assertNoKeyMaterialInEnv } from './keys/key-policy';
 
 async function bootstrap() {
   const isProd = process.env.NODE_ENV === 'production';
+
+  // Before TLS loads, since TLS_KEY_PATH / TLS_CERT_PATH are key material
+  assertNoKeyMaterialInEnv();
 
   // TLS terminates INSIDE the TEE:
   // - dev: self-signed certs from ./secrets
