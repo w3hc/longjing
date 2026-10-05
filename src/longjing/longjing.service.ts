@@ -213,7 +213,7 @@ export class LongjingService {
           }
         } else {
           this.logger.warn(
-            'Slashing disabled - configure ANVIL_RPC_URL, ANVIL_PRIVATE_KEY, and ZK_CONTRACT_ADDRESS',
+            'Slashing disabled - no contract or transaction signer (see docs/LOCAL_SETUP.md)',
           );
         }
 

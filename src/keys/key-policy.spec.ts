@@ -8,14 +8,14 @@ describe('assertNoKeyMaterialInEnv', () => {
     'TLS_CERT_PATH',
   ])('refuses %s in production', (name) => {
     expect(() =>
-      assertNoKeyMaterialInEnv({ NODE_ENV: 'production', [name]: 'x' }),
+      assertNoKeyMaterialInEnv({ PROFILE: 'prod', [name]: 'x' }),
     ).toThrow(name);
   });
 
   it('allows production without key material', () => {
     expect(() =>
       assertNoKeyMaterialInEnv({
-        NODE_ENV: 'production',
+        PROFILE: 'prod',
         ADMIN_MLKEM_PUBLIC_KEY: 'public',
       }),
     ).not.toThrow();
@@ -24,7 +24,7 @@ describe('assertNoKeyMaterialInEnv', () => {
   it('allows key material under the compose opt-out', () => {
     expect(() =>
       assertNoKeyMaterialInEnv({
-        NODE_ENV: 'production',
+        PROFILE: 'prod',
         ALLOW_KEYS_OUTSIDE_ENCLAVE: 'true',
         OPERATOR_PRIVATE_KEY: 'x',
       }),
@@ -34,9 +34,25 @@ describe('assertNoKeyMaterialInEnv', () => {
   it('allows key material outside production', () => {
     expect(() =>
       assertNoKeyMaterialInEnv({
-        NODE_ENV: 'development',
+        PROFILE: 'local',
         ADMIN_MLKEM_PRIVATE_KEY: 'x',
       }),
     ).not.toThrow();
+  });
+
+  it('keys on PROFILE, not NODE_ENV', () => {
+    expect(() =>
+      assertNoKeyMaterialInEnv({
+        NODE_ENV: 'production',
+        PROFILE: 'local',
+        OPERATOR_PRIVATE_KEY: 'x',
+      }),
+    ).not.toThrow();
+  });
+
+  it('refuses to guess without a PROFILE', () => {
+    expect(() =>
+      assertNoKeyMaterialInEnv({ OPERATOR_PRIVATE_KEY: 'x' }),
+    ).toThrow('PROFILE must be');
   });
 });

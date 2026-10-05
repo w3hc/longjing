@@ -275,15 +275,15 @@ describe('ProofVerifierService', () => {
     let originalEnv: string | undefined;
 
     beforeEach(() => {
-      originalEnv = process.env.NODE_ENV;
+      originalEnv = process.env.PROFILE;
     });
 
     afterEach(() => {
-      process.env.NODE_ENV = originalEnv;
+      process.env.PROFILE = originalEnv;
     });
 
     it('should throw error in production mode when snarkjs not available', async () => {
-      process.env.NODE_ENV = 'production';
+      process.env.PROFILE = 'prod';
       snarkjsProofService.isAvailable.mockReturnValue(false);
 
       await expect(service.verify(mockProof, mockPublicInputs)).rejects.toThrow(
@@ -292,7 +292,7 @@ describe('ProofVerifierService', () => {
     });
 
     it('should allow verification in production when snarkjs is available', async () => {
-      process.env.NODE_ENV = 'production';
+      process.env.PROFILE = 'prod';
       snarkjsProofService.isAvailable.mockReturnValue(true);
       snarkjsProofService.verifyProof.mockResolvedValue(true);
 
@@ -302,7 +302,7 @@ describe('ProofVerifierService', () => {
     });
 
     it('should throw error even in dev mode when snarkjs not available', async () => {
-      process.env.NODE_ENV = 'development';
+      process.env.PROFILE = 'local';
       snarkjsProofService.isAvailable.mockReturnValue(false);
 
       await expect(service.verify(mockProof, mockPublicInputs)).rejects.toThrow(
@@ -314,7 +314,7 @@ describe('ProofVerifierService', () => {
   describe('metrics', () => {
     beforeEach(() => {
       // Reset metrics
-      process.env.NODE_ENV = 'development';
+      process.env.PROFILE = 'local';
     });
 
     it('should track successful verifications', async () => {

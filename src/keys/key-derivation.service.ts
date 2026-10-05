@@ -2,8 +2,10 @@ import { hkdfSync } from 'crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { buildEddsa } from 'circomlibjs';
 import {
+  Provider,
   SigningKey,
   TypedDataEncoder,
+  Wallet,
   ZeroHash,
   computeAddress,
   getBytes,
@@ -14,6 +16,7 @@ import { createMlKem1024 } from 'mlkem';
 import { getTlsLeafCertificate } from '../tls/tls-context';
 import { DstackV1Client } from './dstack-v1.client';
 import { keysOutsideEnclaveAllowed } from './key-policy';
+import { isProd } from '../config/profile';
 
 export const MLKEM_DOMAIN = 'longjing/mlkem-1024/v1';
 export const REFUND_SIGNER_DOMAIN = 'longjing/refund-signer/babyjub/v1';
@@ -78,8 +81,7 @@ export class KeyDerivationService implements OnModuleInit {
   constructor(private readonly dstack: DstackV1Client) {}
 
   async onModuleInit(): Promise<void> {
-    const production =
-      process.env.NODE_ENV === 'production' && !keysOutsideEnclaveAllowed();
+    const production = isProd() && !keysOutsideEnclaveAllowed();
 
     if (production && this.dstack.isSimulator()) {
       throw new Error(
@@ -198,6 +200,14 @@ export class KeyDerivationService implements OnModuleInit {
 
   getIdentitySignatureChain(): Uint8Array[] {
     return this.identitySignatureChain;
+  }
+
+  /**
+   * The identity key as a transaction signer. In production it is the only
+   * key that sends transactions, so its address needs gas.
+   */
+  getIdentitySigner(provider: Provider): Wallet | null {
+    return this.identity ? new Wallet(this.identity, provider) : null;
   }
 
   /**

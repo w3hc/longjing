@@ -13,6 +13,7 @@ import { RequestFingerprintThrottler } from './guards/request-fingerprint-thrott
 import { TimingProtectionInterceptor } from './interceptors/timing-protection.interceptor';
 import { MetadataSanitizerInterceptor } from './interceptors/metadata-sanitizer.interceptor';
 import { RequestSanitizerMiddleware } from './middleware/request-sanitizer.middleware';
+import { isProd } from './config/profile';
 
 @Module({
   imports: [
@@ -27,8 +28,8 @@ import { RequestSanitizerMiddleware } from './middleware/request-sanitizer.middl
     ThrottlerModule.forRoot([
       {
         ttl: 60000, // 60 seconds
-        // Higher limit in development for testing, lower in production
-        limit: process.env.NODE_ENV === 'production' ? 10 : 100,
+        // Relaxed locally, strict in production
+        limit: isProd() ? 10 : 100,
       },
     ]),
     AttestationModule,

@@ -46,6 +46,7 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
   beforeAll(async () => {
     // Set test environment
     process.env.NODE_ENV = 'test';
+    process.env.PROFILE = 'local';
     process.env.KMS_URL = 'http://localhost:3001';
     process.env.DATA_DIR = ':memory:';
     process.env.ADMIN_MLKEM_PUBLIC_KEY = Buffer.alloc(1568).toString('base64');
@@ -77,7 +78,7 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
     // Deploy contract
     console.log('\n=== Deploying Contract ===');
     const deployOutput = await execAsync(
-      `cd contracts && forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url ${RPC_URL} --broadcast --private-key ${PRIVATE_KEY} 2>&1`,
+      `cd contracts && PROFILE=local forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url ${RPC_URL} --broadcast --private-key ${PRIVATE_KEY} 2>&1`,
     );
 
     const match = deployOutput.stdout.match(

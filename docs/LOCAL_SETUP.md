@@ -33,6 +33,8 @@ cp .env.template .env.local
 Edit `.env.local` and configure:
 
 ```bash
+# Required: local or prod, see Profiles below
+PROFILE=local
 NODE_ENV=development
 KMS_URL=https://your-kms.example.com/release
 
@@ -40,11 +42,12 @@ KMS_URL=https://your-kms.example.com/release
 MY_API_KEY=<your-api-key>
 
 # Blockchain RPC Configuration
-# For local development with Anvil:
+# PROFILE=local reads only ANVIL_RPC_URL, on chain 31337:
 ZK_CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
 ANVIL_RPC_URL=http://127.0.0.1:8545
+ANVIL_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
-# For production Ethereum mainnet (comma-separated list - API will randomly pick one):
+# PROFILE=prod reads only ETHEREUM_RPC_URLS (comma-separated, one is picked at random):
 # ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,https://rpc.flashbots.net,https://ethereum-rpc.publicnode.com
 
 # Optional: ML-KEM-1024 Admin Keypair (DEVELOPMENT ONLY - for non-TEE environments)
@@ -203,25 +206,33 @@ longjing/
 └── dist/                    # Compiled output
 ```
 
-## Environment Modes
+## Profiles
 
-The application behaves differently based on `NODE_ENV`:
+`PROFILE` picks between local development and production. It is required: an unset or unknown value is a startup error, never a fallback. `NODE_ENV` only drives framework behavior, and `NODE_ENV=production` requires `PROFILE=prod`.
 
-### Development Mode (`NODE_ENV=development`)
+### Local (`PROFILE=local`)
 
-- Uses HTTPS with self-signed certificates
-- Detailed logging with stack traces
-- CORS enabled for all origins (`*`)
-- Hot reload enabled with `pnpm start:dev`
-- Swagger UI accessible
+- Anvil only: reads `ANVIL_RPC_URL`, and refuses to start if its chain id is not 31337. Without an RPC, or with Anvil down, contract interaction is disabled.
+- Signs contract transactions with `ANVIL_PRIVATE_KEY` (Anvil account #0 in `.env.template`).
+- Without the dstack socket, falls back to `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY` or the deterministic dev refund-signer key. Run the dstack simulator to derive keys instead, see [KEY_DERIVATION.md](./KEY_DERIVATION.md#development).
+- Mock TEE platform when no real one is detected, self-signed TLS from `./secrets`, CORS open to `*`, 100 requests per minute, the `api_credit_proof_test` circuit by default.
 
-### Production Mode (`NODE_ENV=production`)
+Deploy the contract to Anvil with the same profile:
 
-- Uses HTTP (expects TLS termination proxy)
-- Sanitized logging (no sensitive data)
-- CORS disabled by default
-- Optimized build with only production dependencies
-- Swagger UI still accessible (consider disabling in production)
+```bash
+anvil
+cd contracts && PROFILE=local forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits \
+  --rpc-url http://127.0.0.1:8545 --broadcast
+```
+
+### Production (`PROFILE=prod`)
+
+- Requires `ETHEREUM_RPC_URLS` and `ZK_CONTRACT_ADDRESS`, refuses to start if the RPC is unreachable or on chain 31337, and never reads `ANVIL_RPC_URL`.
+- Every key is derived in the enclave, see [KEY_DERIVATION.md](./KEY_DERIVATION.md#production-policy). Contract transactions are signed by the identity key, so its address (`GET /attestation/manifest`) needs ETH for gas.
+- Refuses `ANVIL_RPC_URL`, `ANVIL_PRIVATE_KEY`, `DSTACK_SIMULATOR_ENDPOINT` and any placeholder: an Anvil key or address, Anvil's first deployment address `0x5FbDB…0aa3`, or an `example.com` URL.
+- dstack attestation only, TLS terminated in the enclave, sanitized logging, CORS disabled, 10 requests per minute, the `api_request` circuit only.
+
+`docker-compose.yml` sets `PROFILE=prod` as a literal, so the attested compose hash commits to it.
 
 ## Troubleshooting
 

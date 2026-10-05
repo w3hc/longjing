@@ -6,6 +6,7 @@ import { BlockchainService } from './blockchain.service';
 import { ProofGenService } from './proof-gen.service';
 import { RefundSignerService } from './refund-signer.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
+import { isProd } from '../config/profile';
 
 /**
  * Service for verifying ZK-SNARK proofs using Groth16
@@ -71,10 +72,7 @@ export class ProofVerifierService {
     },
   ): Promise<boolean> {
     // CRITICAL: Production mode requires real cryptographic verification
-    if (
-      process.env.NODE_ENV === 'production' &&
-      !this.snarkjsProofService.isAvailable()
-    ) {
+    if (isProd() && !this.snarkjsProofService.isAvailable()) {
       this.logger.error(
         'CRITICAL: Production mode requires real proof verification. Circuit artifacts not loaded.',
       );

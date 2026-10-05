@@ -86,7 +86,7 @@ jest.setTimeout(30000);
 
 describe('KeyDerivationService', () => {
   let dstack: FakeDstack;
-  const originalEnv = process.env.NODE_ENV;
+  const originalProfile = process.env.PROFILE;
 
   const create = async () => {
     const service = new KeyDerivationService(
@@ -101,7 +101,7 @@ describe('KeyDerivationService', () => {
   });
 
   afterEach(() => {
-    process.env.NODE_ENV = originalEnv;
+    process.env.PROFILE = originalProfile;
     clearTlsLeafCertificate();
   });
 
@@ -136,6 +136,23 @@ describe('KeyDerivationService', () => {
   });
 
   describe('derivation', () => {
+    it('exposes the identity key as a transaction signer', async () => {
+      const service = await create();
+
+      expect(service.getIdentitySigner(null as never)?.address).toBe(
+        service.getIdentityAddress(),
+      );
+    });
+
+    it('has no transaction signer without derived keys', async () => {
+      process.env.PROFILE = 'local';
+      dstack.failing = true;
+
+      const service = await create();
+
+      expect(service.getIdentitySigner(null as never)).toBeNull();
+    });
+
     it('is deterministic across instances', async () => {
       const a = await create();
       const b = await create();
@@ -247,7 +264,7 @@ describe('KeyDerivationService', () => {
     });
 
     it('has no manifest without derived keys', async () => {
-      process.env.NODE_ENV = 'development';
+      process.env.PROFILE = 'local';
       dstack.failing = true;
 
       const service = await create();
@@ -258,21 +275,21 @@ describe('KeyDerivationService', () => {
 
   describe('failure modes', () => {
     it('refuses the simulator in production', async () => {
-      process.env.NODE_ENV = 'production';
+      process.env.PROFILE = 'prod';
       dstack.simulator = true;
 
       await expect(create()).rejects.toThrow('DSTACK_SIMULATOR_ENDPOINT');
     });
 
     it('fails startup in production when dstack is unreachable', async () => {
-      process.env.NODE_ENV = 'production';
+      process.env.PROFILE = 'prod';
       dstack.failing = true;
 
       await expect(create()).rejects.toThrow('Key derivation');
     });
 
     it('starts without keys in production under the compose opt-out', async () => {
-      process.env.NODE_ENV = 'production';
+      process.env.PROFILE = 'prod';
       process.env.ALLOW_KEYS_OUTSIDE_ENCLAVE = 'true';
       dstack.failing = true;
 
@@ -285,7 +302,7 @@ describe('KeyDerivationService', () => {
     });
 
     it('starts without keys outside production when dstack is unreachable', async () => {
-      process.env.NODE_ENV = 'development';
+      process.env.PROFILE = 'local';
       dstack.failing = true;
 
       const service = await create();

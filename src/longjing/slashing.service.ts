@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
+import { BlockchainService } from './blockchain.service';
 
 // Smart contract ABI for slashing functions
 const SLASHING_ABI = [
@@ -22,55 +22,26 @@ interface RlnSignal {
 @Injectable()
 export class SlashingService {
   private readonly logger = new Logger(SlashingService.name);
-  private readonly provider: ethers.Provider | null;
-  private readonly wallet: ethers.Wallet | null;
-  private readonly contract: ethers.Contract | null;
-  private readonly contractAddress: string | null;
 
-  constructor(private readonly configService: ConfigService) {
-    // Get configuration
-    const rpcUrl = this.configService.get<string>('ANVIL_RPC_URL');
-    const privateKey = this.configService.get<string>('ANVIL_PRIVATE_KEY');
-    this.contractAddress =
-      this.configService.get<string>('ZK_CONTRACT_ADDRESS') || null;
+  /**
+   * Shares BlockchainService's RPC and signer, so slashing follows the
+   * profile: the identity key in prod, ANVIL_PRIVATE_KEY in local.
+   */
+  constructor(private readonly blockchain: BlockchainService) {}
 
-    // Initialize provider and contract if all config is present
-    if (rpcUrl && privateKey && this.contractAddress) {
-      try {
-        this.provider = new ethers.JsonRpcProvider(rpcUrl);
-        this.wallet = new ethers.Wallet(privateKey, this.provider);
-        this.contract = new ethers.Contract(
-          this.contractAddress,
-          SLASHING_ABI,
-          this.wallet,
-        );
-        this.logger.log(
-          `SlashingService initialized with contract at ${this.contractAddress}`,
-        );
-      } catch (error) {
-        this.logger.warn(
-          'Failed to initialize SlashingService - slashing will be disabled',
-          error,
-        );
-        this.provider = null;
-        this.wallet = null;
-        this.contract = null;
-      }
-    } else {
-      this.logger.warn(
-        'SlashingService not configured - missing ANVIL_RPC_URL, ANVIL_PRIVATE_KEY, or ZK_CONTRACT_ADDRESS. Slashing will be disabled.',
-      );
-      this.provider = null;
-      this.wallet = null;
-      this.contract = null;
-    }
+  private slashingContract(): ethers.Contract | null {
+    const signer = this.blockchain.getSigner();
+    const address = this.blockchain.getContractAddress();
+    return signer && address
+      ? new ethers.Contract(address, SLASHING_ABI, signer)
+      : null;
   }
 
   /**
-   * Check if slashing is enabled (contract is configured)
+   * Check if slashing is enabled (contract and signer are configured)
    */
   isEnabled(): boolean {
-    return this.contract !== null;
+    return this.slashingContract() !== null;
   }
 
   /**
@@ -95,7 +66,8 @@ export class SlashingService {
     proof: string[],
     publicSignals: string[],
   ): Promise<string | null> {
-    if (!this.contract) {
+    const contract = this.slashingContract();
+    if (!contract) {
       this.logger.warn(
         'Slashing transaction skipped - contract not configured',
       );
@@ -122,7 +94,7 @@ export class SlashingService {
       // Submit transaction with ZK proof
       // Contract signature: slashDoubleSpend(bytes32 _secretKey, bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[4] _publicSignals)
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const tx = await this.contract.slashDoubleSpend(
+      const tx = await contract.slashDoubleSpend(
         secretKey,
         nullifier,
         idCommitment,
@@ -150,7 +122,7 @@ export class SlashingService {
         const event = receipt.logs
           .map((log: { topics: string[]; data: string }) => {
             try {
-              return this.contract!.interface.parseLog({
+              return contract.interface.parseLog({
                 topics: log.topics,
                 data: log.data,
               });
@@ -186,14 +158,14 @@ export class SlashingService {
    * Get the contract address being used
    */
   getContractAddress(): string | null {
-    return this.contractAddress || null;
+    return this.blockchain.getContractAddress();
   }
 
   /**
    * Get the wallet address being used for slashing
    */
   getSlasherAddress(): string | null {
-    return this.wallet?.address || null;
+    return this.blockchain.getSigner()?.address ?? null;
   }
 
   /**
@@ -210,7 +182,8 @@ export class SlashingService {
     proof: bigint[],
     publicSignals: bigint[],
   ): Promise<string | null> {
-    if (!this.contract) {
+    const contract = this.slashingContract();
+    if (!contract) {
       this.logger.warn(
         'Policy slashing transaction skipped - contract not configured',
       );
@@ -224,7 +197,7 @@ export class SlashingService {
 
       // Submit transaction
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const tx = await this.contract.slashPolicyViolation(
+      const tx = await contract.slashPolicyViolation(
         nullifier,
         idCommitment,
         proof,

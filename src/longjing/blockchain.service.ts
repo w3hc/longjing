@@ -1,8 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
-import * as LongjingCreditsABI from './contracts/LongjingCredits.abi.json';
+import LongjingCreditsABI from './contracts/LongjingCredits.abi.json';
 import { MerkleTreeService } from './merkle-tree.service';
+import { isProd } from '../config/profile';
+import { KeyDerivationService } from '../keys/key-derivation.service';
+import { assertChainMatchesProfile, fetchChainId, selectRpcUrl } from './chain';
 
 /**
  * Service for interacting with the LongjingCredits smart contract
@@ -18,56 +21,61 @@ export class BlockchainService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly merkleTree: MerkleTreeService,
+    private readonly keyDerivation: KeyDerivationService,
   ) {}
 
-  /**
-   * Get RPC URL from environment configuration.
-   * In production, randomly selects from ETHEREUM_RPC_URLS if available.
-   * Falls back to ANVIL_RPC_URL for local development.
-   */
-  private getRpcUrl(): string | undefined {
-    const ethereumRpcUrls = this.configService.get<string>('ETHEREUM_RPC_URLS');
-
-    if (ethereumRpcUrls) {
-      const urls = ethereumRpcUrls
-        .split(',')
-        .map((url) => url.trim())
-        .filter((url) => url.length > 0);
-      if (urls.length > 0) {
-        const selectedUrl = urls[Math.floor(Math.random() * urls.length)];
-        return selectedUrl;
-      }
-    }
-
-    return this.configService.get<string>('ANVIL_RPC_URL');
-  }
-
   async onModuleInit() {
-    const rpcUrl = this.getRpcUrl();
+    const prod = isProd();
+    const rpcUrl = selectRpcUrl(this.configService);
     const contractAddress = this.configService.get<string>(
       'ZK_CONTRACT_ADDRESS',
     );
-    const privateKey = this.configService.get<string>('ANVIL_PRIVATE_KEY');
 
     if (!rpcUrl || !contractAddress) {
+      if (prod) {
+        throw new Error(
+          'PROFILE=prod requires ETHEREUM_RPC_URLS and ZK_CONTRACT_ADDRESS',
+        );
+      }
       this.logger.warn(
         'Blockchain configuration not found. Contract interaction will be disabled.',
       );
       return;
     }
 
+    let chainId: bigint;
     try {
-      this.logger.log(`Connecting to RPC: ${rpcUrl}`);
-      this.provider = new ethers.JsonRpcProvider(rpcUrl);
+      chainId = await fetchChainId(rpcUrl);
+    } catch (error) {
+      if (prod) {
+        throw new Error('Cannot start in production: RPC unreachable', {
+          cause: error,
+        });
+      }
+      this.logger.warn(
+        `RPC unreachable at ${rpcUrl}. Contract interaction will be disabled.`,
+      );
+      return;
+    }
+    assertChainMatchesProfile(chainId);
+
+    try {
+      this.logger.log(`Connecting to RPC: ${rpcUrl} (chain ${chainId})`);
+      this.provider = new ethers.JsonRpcProvider(rpcUrl, chainId, {
+        staticNetwork: true,
+      });
       this.contract = new ethers.Contract(
         contractAddress,
         LongjingCreditsABI,
         this.provider,
       );
 
-      if (privateKey) {
-        this.wallet = new ethers.Wallet(privateKey, this.provider);
+      this.wallet = this.createSigner(prod, this.provider);
+      if (this.wallet) {
+        this.logger.log(`Transactions signed by ${this.wallet.address}`);
         this.contract = this.contract.connect(this.wallet) as ethers.Contract;
+      } else {
+        this.logger.warn('No transaction signer: contract access is read-only');
       }
 
       // Test connection
@@ -82,8 +90,37 @@ export class BlockchainService implements OnModuleInit {
       // Start listening for new deposits
       this.startEventMonitoring();
     } catch (error) {
+      if (prod) {
+        throw new Error('Cannot start in production: blockchain unavailable', {
+          cause: error,
+        });
+      }
       this.logger.error('Failed to connect to blockchain', error);
     }
+  }
+
+  /** The connected transaction signer, or null when read-only. */
+  getSigner(): ethers.Wallet | null {
+    return this.contract ? this.wallet : null;
+  }
+
+  getContractAddress(): string | null {
+    return this.contract ? (this.contract.target as string) : null;
+  }
+
+  /**
+   * prod signs with the enclave-derived identity key, local with
+   * ANVIL_PRIVATE_KEY. Neither falls back to the other.
+   */
+  private createSigner(
+    prod: boolean,
+    provider: ethers.Provider,
+  ): ethers.Wallet | null {
+    if (prod) {
+      return this.keyDerivation.getIdentitySigner(provider);
+    }
+    const privateKey = this.configService.get<string>('ANVIL_PRIVATE_KEY');
+    return privateKey ? new ethers.Wallet(privateKey, provider) : null;
   }
 
   /**

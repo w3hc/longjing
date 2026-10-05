@@ -112,17 +112,18 @@ struct KeyManifest {
 
 ## Production policy
 
-With `NODE_ENV=production`:
+With `PROFILE=prod`:
 
 - Startup fails if `GetKey` fails, or if `DSTACK_SIMULATOR_ENDPOINT` is set, since the simulator's root key is public.
 - Startup fails if `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` is set ([`key-policy.ts`](../src/keys/key-policy.ts)).
-- `docker-compose.yml` sets `NODE_ENV=production` as a literal, and passes none of the above through `${...}` substitution, so the operator cannot set them on a dstack CVM.
+- Contract transactions are signed by the identity key, never `ANVIL_PRIVATE_KEY`, which is refused like any placeholder ([LOCAL_SETUP.md](./LOCAL_SETUP.md#profiles)). Fund the identity address for gas.
+- `docker-compose.yml` sets `PROFILE=prod` as a literal, and passes none of the above through `${...}` substitution, so the operator cannot set them on a dstack CVM.
 
 `ALLOW_KEYS_OUTSIDE_ENCLAVE=true` lifts both checks. It does not lift the attestation checks: production still attests only through dstack. It must be written as a literal in `docker-compose.yml`, never as `${...}`, so using it changes the attested compose hash and is visible to every verifier. Under it, the refund signer needs `OPERATOR_PRIVATE_KEY`.
 
 ## Development
 
-Without `/var/run/dstack.sock`, outside production, the keys fall back to `ADMIN_MLKEM_PUBLIC_KEY` / `ADMIN_MLKEM_PRIVATE_KEY` and `OPERATOR_PRIVATE_KEY`, or a deterministic dev refund key, and there is no manifest.
+Without `/var/run/dstack.sock`, with `PROFILE=local`, the keys fall back to `ADMIN_MLKEM_PUBLIC_KEY` / `ADMIN_MLKEM_PRIVATE_KEY` and `OPERATOR_PRIVATE_KEY`, or a deterministic dev refund key, and there is no manifest.
 
 To exercise derivation locally, run the [dstack simulator](https://github.com/Dstack-TEE/dstack/tree/master/sdk/simulator) and point Longjing at it:
 
@@ -137,7 +138,7 @@ The derived refund signer is a new key, and `LongjingCredits.serverPublicKey` is
 
 1. Deploy the new image on dstack.
 2. Read `refundSigner.x` and `refundSigner.y` from `GET /attestation/manifest`.
-3. Deploy `LongjingCredits` with them, and point `ZK_CONTRACT_ADDRESS` at it.
+3. Deploy `LongjingCredits` with them (`PROFILE=prod SERVER_PUBKEY_X=… SERVER_PUBKEY_Y=…`, see [contracts/README.md](../contracts/README.md#deployment)), and point `ZK_CONTRACT_ADDRESS` at it.
 
 Changing a domain, a label or the derivation itself rotates every key the same way. The pinned values in [`key-derivation.service.spec.ts`](../src/keys/key-derivation.service.spec.ts) catch that.
 

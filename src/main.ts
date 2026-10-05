@@ -11,9 +11,10 @@ import { TeeExceptionFilter } from './filters/tee-exception.filter';
 import { ProofVerifierService } from './longjing/proof-verifier.service';
 import { loadTlsMaterial } from './tls/tee-tls';
 import { assertNoKeyMaterialInEnv } from './keys/key-policy';
+import { isProd } from './config/profile';
 
 async function bootstrap() {
-  const isProd = process.env.NODE_ENV === 'production';
+  const prod = isProd();
 
   // Before TLS loads, since TLS_KEY_PATH / TLS_CERT_PATH are key material
   assertNoKeyMaterialInEnv();
@@ -24,15 +25,15 @@ async function bootstrap() {
   //   enclave storage), failing closed if neither is available.
   // The served certificate is bound into the attestation report_data so
   // clients can verify the TLS endpoint is the attested enclave.
-  const { httpsOptions, source: tlsSource } = await loadTlsMaterial(isProd);
+  const { httpsOptions, source: tlsSource } = await loadTlsMaterial(prod);
 
   const app = await NestFactory.create(AppModule, {
     httpsOptions,
-    logger: isProd ? new SanitizedLogger() : undefined,
+    logger: prod ? new SanitizedLogger() : undefined,
   });
 
   // CRITICAL: Validate proof verification is ready for production
-  if (isProd) {
+  if (prod) {
     const proofVerifierService =
       app.get<ProofVerifierService>(ProofVerifierService);
 
@@ -77,7 +78,7 @@ async function bootstrap() {
 
   // CORS configuration - restrict to trusted origins in production
   app.enableCors({
-    origin: isProd ? false : '*', // Disable CORS in production by default
+    origin: prod ? false : '*', // Disable CORS in production by default
     credentials: true,
   });
 
