@@ -126,7 +126,7 @@ Copy the output keys to your `.env.prod` file.
 
 To update an existing deployment:
 
-1. **Release and pin the new image**: push a new `v*` tag and pin the digest from its release notes in `docker-compose.yml`. The compose hash changes with it.
+1. **Release and pin the new image**: push a new `v*` tag and pin the digest from its release notes in `docker-compose.yml`. The compose hash changes with it, and the new build cannot boot until the timelock has allowed it: see [GOVERNANCE.md](./GOVERNANCE.md#releases).
 
 2. **Update deployment** (required to pull new image):
    ```bash

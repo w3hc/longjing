@@ -24,7 +24,7 @@ Longjing derives its keys at boot from the [dstack](https://github.com/Dstack-TE
 | Identity key | `longjing/identity/v1` | `secp256k1` | Signing the [key manifest](#key-manifest) |
 | TLS key | `GetTlsKey` | — | In-enclave TLS termination |
 
-`GetKey` is deterministic in `(app_id, domain, algorithm)`: every instance of the app, on every restart, gets the same keys, so nothing needs to be persisted or backed up. The KMS releases the app's root key only to a CVM whose boot measurements match the app's on-chain policy (allowed compose hash, allowed OS image), so only code the app owner has registered on chain can derive them.
+`GetKey` is deterministic in `(app_id, domain, algorithm)`: every instance of the app, on every restart, gets the same keys, so nothing needs to be persisted or backed up. The KMS releases the app's root key only to a CVM whose boot measurements match the app's on-chain policy (allowed compose hash, allowed OS image), so only code the app owner has registered on chain can derive them. Under [GOVERNANCE.md](./GOVERNANCE.md), a Safe and a 7-day timelock own the app, so every new build is public for that delay before it can boot.
 
 This replaces three weaker sources:
 

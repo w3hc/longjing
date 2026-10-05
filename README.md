@@ -152,6 +152,7 @@ The provider layer is an abstraction — OpenAI, Stripe, and custom APIs plug in
 **Deployment**
 - [TEE_SETUP.md](docs/TEE_SETUP.md) — production TEE deployment
 - [KEY_DERIVATION.md](docs/KEY_DERIVATION.md) — enclave-derived keys and the key manifest
+- [GOVERNANCE.md](docs/GOVERNANCE.md) — Safe and timelock in front of the builds that can derive the keys
 - [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) — Phala Cloud setup
 - [DOCKER.md](docs/DOCKER.md) — Docker environment
 
