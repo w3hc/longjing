@@ -19,10 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - The `/sealed-storage` ML-KEM key file, the v0 `TappdClient` fallback and the `tappd.sock` mount ([#93](https://github.com/w3hc/longjing/issues/93)).
+- The legacy `TeePlatformService`, which shelled out to `snpguest` with files in `/tmp`, faked a Nitro document and fell back to `none`. `SecretsService` attests through `AttestationService`. `docker-compose.yml` no longer passes `TEE_PLATFORM` through ([#94](https://github.com/w3hc/longjing/issues/94)).
 
 ### Security
 
 - Production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env, when dstack key derivation fails, or with `DSTACK_SIMULATOR_ENDPOINT` set. `docker-compose.yml` sets `NODE_ENV=production` as a literal and no longer passes `ADMIN_MLKEM_*` through, so the operator cannot inject keys or switch the checks off. The only opt-out, `ALLOW_KEYS_OUTSIDE_ENCLAVE=true`, must be a compose literal, so using it changes the attested hash ([#93](https://github.com/w3hc/longjing/issues/93)).
+- Production attests only through dstack, and refuses to start without the dstack socket, with `DSTACK_SIMULATOR_ENDPOINT` set, or with `TEE_PLATFORM` naming another platform. Before serving, it generates a first quote and checks that it carries the requested `report_data`. Outside production, an unknown `TEE_PLATFORM` throws instead of falling back to the mock ([#94](https://github.com/w3hc/longjing/issues/94)).
 
 ## [0.3.0] - 2026-10-04
 
