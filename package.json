@@ -24,9 +24,7 @@
     "prove": "ts-node scripts/client/prove.ts",
     "governance:propose-release": "ts-node scripts/governance/propose-release.ts",
     "setup:circuit": "ts-node scripts/setup/setup-trusted-setup.ts",
-    "circuits:fetch": "ts-node scripts/setup/fetch-circuits.ts",
-    "dance": "pnpm format && pnpm lint && pnpm test && pnpm build && (cd contracts && forge test) && pnpm outdated || true",
-    "dance:full": "pnpm format && pnpm lint && pnpm test && pnpm test:e2e && pnpm build && (cd contracts && forge test) && pnpm outdated || true"
+    "circuits:fetch": "ts-node scripts/setup/fetch-circuits.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
