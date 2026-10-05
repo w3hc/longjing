@@ -23,6 +23,12 @@ https://your-domain.com  (production)
     - [POST /longjing/estimate-cost](#post-longjingestimate-cost)
     - [POST /longjing/redeem-refund](#post-longjingredeem-refund)
     - [GET /longjing/server-pubkey](#get-longjingserver-pubkey)
+    - [POST /longjing/proofs/slashing](#post-longjingproofsslashing)
+  - [TEE Attestation Endpoints](#tee-attestation-endpoints)
+    - [GET /attestation](#get-attestation)
+    - [GET /attestation/manifest](#get-attestationmanifest)
+  - [Authentication Endpoints](#authentication-endpoints)
+    - [POST /auth/nonce](#post-authnonce)
   - [Available for Future Implementation](#available-for-future-implementation)
   - [Health Check Endpoints](#health-check-endpoints)
     - [GET /health](#get-health)
@@ -354,6 +360,42 @@ curl -k https://localhost:3000/longjing/server-pubkey
 
 ---
 
+### POST /longjing/proofs/slashing
+
+Generate the Groth16 proof that slashes a double-spender. The secret key it takes is the one recovered from two RLN signals sharing a nullifier, which anyone can compute from public data, so sending it reveals nothing new.
+
+Longjing has no endpoint that proves withdrawals or refund redemptions: they need the user's own secret key, so the client proves them itself (see [Client Implementation Guide](#client-implementation-guide)).
+
+**Authentication:** None
+
+**Request Body:**
+
+```typescript
+{
+  secretKey: string;    // Recovered secret key (hex)
+  ticketIndex: string;  // Ticket index both signals share (hex)
+  signal1: { x: string; y: string };
+  signal2: { x: string; y: string };  // Different x than signal1
+}
+```
+
+**Response:**
+
+```typescript
+{
+  proof: string[];          // 8 hex strings, for slashDoubleSpend
+  publicSignals: string[];  // hex strings
+  metadata: {
+    idCommitment: string;
+    nullifier: string;
+    secretKey: string;
+    timestamp: number;
+  };
+}
+```
+
+---
+
 ## TEE Attestation Endpoints
 
 ### GET /attestation
@@ -432,37 +474,38 @@ curl "https://your-server/attestation?nonce=$(openssl rand -hex 32)" > attestati
 
 ---
 
-### GET /mlkem/pubkey
+### GET /attestation/manifest
 
-Returns the server's ML-KEM-1024 public key for quantum-resistant encryption.
+Returns the EIP-712 key manifest, signed by the enclave-derived identity key, that binds the app id, the ML-KEM public key, the refund signer's Baby Jubjub public key and the TLS certificate, with the `GetKey` signature chains.
 
 **Authentication:** None (public endpoint)
 
-**Response:**
+The ML-KEM public key has no endpoint of its own: read it from `keys.mlkemPublicKey` in `GET /attestation`, after checking that `report_data` commits to it.
+
+**Documentation:**
+- [docs/KEY_DERIVATION.md](KEY_DERIVATION.md) - Key derivation and the manifest
+- [docs/MLKEM.md](MLKEM.md) - ML-KEM encryption guide
+
+---
+
+## Authentication Endpoints
+
+### POST /auth/nonce
+
+Returns a single-use nonce for a Sign-In with Ethereum message. It expires after 5 minutes. No endpoint requires SIWE yet; `SiweGuard` in `src/auth/` is ready for the ones that will.
+
+**Response (201):**
 
 ```typescript
 {
-  publicKey: string;  // Base64-encoded ML-KEM-1024 public key (1568 bytes)
-  algorithm: 'ML-KEM-1024';
+  nonce: string;
+  issuedAt: string;   // ISO 8601
+  expiresAt: string;  // ISO 8601
 }
 ```
-
-**Example Response:**
-
-```json
-{
-  "publicKey": "AgABACsAIAAA...base64...==",
-  "algorithm": "ML-KEM-1024"
-}
-```
-
-**Usage:**
-1. Fetch `/attestation` and verify it (see above)
-2. Verify this key equals `attestation.keys.mlkemPublicKey`, which `report_data` commits to
-3. Only then use this public key for encryption
 
 **Documentation:**
-- [docs/MLKEM.md](MLKEM.md) - ML-KEM encryption guide
+- [docs/SIWE.md](SIWE.md) - SIWE guide
 
 ---
 
@@ -471,7 +514,6 @@ Returns the server's ML-KEM-1024 public key for quantum-resistant encryption.
 The following endpoints have been removed from the API but their underlying utilities remain in the codebase:
 
 - **ML-KEM Encrypted Storage Endpoints** (`/secret/store`, `/secret/access`) - The `MlKemEncryptionService` is still available in `src/encryption/` for future implementation
-- **Authentication Endpoint** (`POST /auth/nonce`) - The SIWE authentication service and guard are still available in `src/auth/` for future implementation
 
 These can be re-enabled by creating new controllers that use the existing services.
 

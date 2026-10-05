@@ -1,6 +1,6 @@
 # ML-KEM Quantum-Resistant Encryption
 
-> **Note:** ML-KEM encryption/decryption utilities are available in the codebase (`src/encryption/mlkem-encryption.service.ts`) but the API endpoints are currently not exposed. SIWE authentication (`src/auth/siwe.service.ts`, `src/auth/siwe.guard.ts`) is also available for protecting future endpoints. This documentation is maintained for reference and future use.
+> **Note:** ML-KEM encryption/decryption utilities are available in the codebase (`src/encryption/mlkem-encryption.service.ts`) but the encryption endpoints are currently not exposed. The ML-KEM public key is served in `keys.mlkemPublicKey` of `GET /attestation`, bound in `report_data`. SIWE authentication (`src/auth/siwe.service.ts`, `src/auth/siwe.guard.ts`) is also available for protecting future endpoints. This documentation is maintained for reference and future use.
 
 ## Overview
 
@@ -900,7 +900,7 @@ The complete production flow on Phala:
 
 **Cause:** Client encrypted with wrong public key or corrupted payload
 
-**Solution:** Verify client is using `mlkemPublicKey` from `/secret/attestation`
+**Solution:** Verify client is using `keys.mlkemPublicKey` from `GET /attestation`
 
 #### "Server public key not found in recipients list"
 
