@@ -44,6 +44,31 @@ describe('Proof Generation Integration (e2e)', () => {
     };
   };
 
+  // Proves on the client side, as a user would: the secret key never reaches the API
+  const proveWithdrawal = async (key: bigint): Promise<ProofResponse> => {
+    const { proof, publicSignals } =
+      await proofGenService.generateWithdrawalProof({
+        secretKey: key,
+        ticketIndex,
+        signalX,
+      });
+    const idCommitment = await proofGenService.generateIdCommitment(key);
+    const { nullifier } = await proofGenService.generateRLNSignal(
+      key,
+      ticketIndex,
+      signalX,
+    );
+    return {
+      proof: proof.map((p) => '0x' + BigInt(p).toString(16)),
+      publicSignals: publicSignals.map((x) => '0x' + BigInt(x).toString(16)),
+      metadata: {
+        idCommitment: '0x' + idCommitment.toString(16),
+        nullifier: '0x' + nullifier.toString(16),
+        timestamp: Date.now(),
+      },
+    };
+  };
+
   beforeAll(async () => {
     // Set test environment variables
     process.env.NODE_ENV = 'test';
@@ -69,103 +94,15 @@ describe('Proof Generation Integration (e2e)', () => {
   });
 
   describe('Withdrawal Proof Generation (e2e)', () => {
-    it('should generate withdrawal proof via API endpoint', async () => {
-      const response = await request(app.getHttpServer())
-        .post('/longjing/proofs/withdrawal')
-        .send({
-          secretKey: `0x${secretKey.toString(16)}`,
-          ticketIndex: `0x${ticketIndex.toString(16)}`,
-          signalX: `0x${signalX.toString(16)}`,
-        })
-        .expect(200);
-
-      const body = response.body as ProofResponse;
-
-      // Verify response structure
-      expect(body).toHaveProperty('proof');
-      expect(body).toHaveProperty('publicSignals');
-      expect(body).toHaveProperty('metadata');
-
-      // Verify proof is an array of 8 hex strings
-      expect(Array.isArray(body.proof)).toBe(true);
-      expect(body.proof).toHaveLength(8);
-      body.proof.forEach((element: string) => {
-        expect(element).toMatch(/^0x[0-9a-f]+$/i);
-      });
-
-      // Verify publicSignals is an array of 5 hex strings
-      expect(Array.isArray(body.publicSignals)).toBe(true);
-      expect(body.publicSignals).toHaveLength(5);
-      body.publicSignals.forEach((signal: string) => {
-        expect(signal).toMatch(/^0x[0-9a-f]+$/i);
-      });
-
-      // Verify metadata
-      expect(body.metadata).toHaveProperty('idCommitment');
-      expect(body.metadata).toHaveProperty('nullifier');
-      expect(body.metadata).toHaveProperty('timestamp');
-      expect(body.metadata.idCommitment).toMatch(/^0x[0-9a-f]+$/i);
-      expect(body.metadata.nullifier).toMatch(/^0x[0-9a-f]+$/i);
-      expect(typeof body.metadata.timestamp).toBe('number');
-    });
-
-    it('should validate withdrawal proof inputs', async () => {
-      // Missing secretKey
-      await request(app.getHttpServer())
-        .post('/longjing/proofs/withdrawal')
-        .send({
-          ticketIndex: `0x${ticketIndex.toString(16)}`,
-          signalX: `0x${signalX.toString(16)}`,
-        })
-        .expect(400);
-
-      // Missing ticketIndex
-      await request(app.getHttpServer())
-        .post('/longjing/proofs/withdrawal')
-        .send({
-          secretKey: `0x${secretKey.toString(16)}`,
-          signalX: `0x${signalX.toString(16)}`,
-        })
-        .expect(400);
-
-      // Missing signalX
+    it('should not expose a withdrawal proving endpoint', async () => {
       await request(app.getHttpServer())
         .post('/longjing/proofs/withdrawal')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
-        })
-        .expect(400);
-    });
-
-    it('should generate consistent proofs for same inputs', async () => {
-      const response1 = await request(app.getHttpServer())
-        .post('/longjing/proofs/withdrawal')
-        .send({
-          secretKey: `0x${secretKey.toString(16)}`,
-          ticketIndex: `0x${ticketIndex.toString(16)}`,
           signalX: `0x${signalX.toString(16)}`,
         })
-        .expect(200);
-
-      const response2 = await request(app.getHttpServer())
-        .post('/longjing/proofs/withdrawal')
-        .send({
-          secretKey: `0x${secretKey.toString(16)}`,
-          ticketIndex: `0x${ticketIndex.toString(16)}`,
-          signalX: `0x${signalX.toString(16)}`,
-        })
-        .expect(200);
-
-      const body1 = response1.body as ProofResponse;
-      const body2 = response2.body as ProofResponse;
-
-      // Public signals should be identical
-      expect(body1.publicSignals).toEqual(body2.publicSignals);
-
-      // Metadata should be consistent (except timestamp)
-      expect(body1.metadata.idCommitment).toBe(body2.metadata.idCommitment);
-      expect(body1.metadata.nullifier).toBe(body2.metadata.nullifier);
+        .expect(404);
     });
 
     it('should generate valid proof using ProofGenService directly', async () => {
@@ -196,55 +133,17 @@ describe('Proof Generation Integration (e2e)', () => {
   });
 
   describe('Refund Redemption Proof Generation (e2e)', () => {
-    it('should generate refund proof via API endpoint', async () => {
-      const recipient = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'; // Test recipient
-      const response = await request(app.getHttpServer())
+    it('should not expose a refund proving endpoint', async () => {
+      await request(app.getHttpServer())
         .post('/longjing/proofs/refund')
         .send({
           secretKey: `0x${secretKey.toString(16)}`,
           ticketIndex: `0x${ticketIndex.toString(16)}`,
           signalX: `0x${signalX.toString(16)}`,
-          recipient, // include recipient
+          recipient: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
         })
-        .expect(200);
-
-      const body = response.body as ProofResponse;
-
-      // Verify response structure
-      expect(body).toHaveProperty('proof');
-      expect(body).toHaveProperty('publicSignals');
-      expect(body).toHaveProperty('metadata');
-
-      // Verify proof format
-      expect(Array.isArray(body.proof)).toBe(true);
-      expect(body.proof).toHaveLength(8);
-
-      // Verify publicSignals format - refund_redemption.circom has 8 public signals (front-running protection fix)
-      // [signalX, refundValueClaimed, serverPublicKeyX, serverPublicKeyY, recipient, nullifier, signalY, idCommitment]
-      expect(Array.isArray(body.publicSignals)).toBe(true);
-      expect(body.publicSignals).toHaveLength(8);
-
-      // Verify metadata includes nullifier for redemption tracking
-      expect(body.metadata).toHaveProperty('nullifier');
-      expect(body.metadata.nullifier).toMatch(/^0x[0-9a-f]+$/i);
+        .expect(404);
     });
-
-    it(
-      'should validate refund proof inputs',
-      suppressErrorLogs(async () => {
-        // Invalid secretKey format - BigInt conversion will fail, resulting in 500
-        const response = await request(app.getHttpServer())
-          .post('/longjing/proofs/refund')
-          .send({
-            secretKey: 'invalid',
-            ticketIndex: `0x${ticketIndex.toString(16)}`,
-            signalX: `0x${signalX.toString(16)}`,
-          });
-
-        // Expect either 400 (validation error) or 500 (BigInt conversion error)
-        expect([400, 500]).toContain(response.status);
-      }),
-    );
 
     it('should generate valid refund proof using ProofGenService directly', async () => {
       // Generate identity commitment and nullifier
@@ -434,16 +333,7 @@ describe('Proof Generation Integration (e2e)', () => {
 
   describe('Proof Format Compatibility (e2e)', () => {
     it('should format proofs compatible with Solidity contract', async () => {
-      const response = await request(app.getHttpServer())
-        .post('/longjing/proofs/withdrawal')
-        .send({
-          secretKey: `0x${secretKey.toString(16)}`,
-          ticketIndex: `0x${ticketIndex.toString(16)}`,
-          signalX: `0x${signalX.toString(16)}`,
-        })
-        .expect(200);
-
-      const body = response.body as ProofResponse;
+      const body = await proveWithdrawal(secretKey);
       const { proof, publicSignals } = body;
 
       // Verify proof can be converted to uint[8] format for Solidity
@@ -471,16 +361,7 @@ describe('Proof Generation Integration (e2e)', () => {
     });
 
     it('should maintain Groth16 proof structure', async () => {
-      const response = await request(app.getHttpServer())
-        .post('/longjing/proofs/withdrawal')
-        .send({
-          secretKey: `0x${secretKey.toString(16)}`,
-          ticketIndex: `0x${ticketIndex.toString(16)}`,
-          signalX: `0x${signalX.toString(16)}`,
-        })
-        .expect(200);
-
-      const body = response.body as ProofResponse;
+      const body = await proveWithdrawal(secretKey);
       const { proof } = body;
 
       // Groth16 proof structure: [pA[0], pA[1], pB[0][1], pB[0][0], pB[1][1], pB[1][0], pC[0], pC[1]]
@@ -500,14 +381,7 @@ describe('Proof Generation Integration (e2e)', () => {
     it('should generate withdrawal proof within reasonable time', async () => {
       const start = Date.now();
 
-      await request(app.getHttpServer())
-        .post('/longjing/proofs/withdrawal')
-        .send({
-          secretKey: `0x${secretKey.toString(16)}`,
-          ticketIndex: `0x${ticketIndex.toString(16)}`,
-          signalX: `0x${signalX.toString(16)}`,
-        })
-        .expect(200);
+      await proveWithdrawal(secretKey);
 
       const duration = Date.now() - start;
 
@@ -515,31 +389,20 @@ describe('Proof Generation Integration (e2e)', () => {
       expect(duration).toBeLessThan(5000);
     });
 
-    it('should handle concurrent proof generation requests', async () => {
-      const requests = Array.from({ length: 3 }, (_, i) =>
-        request(app.getHttpServer())
-          .post('/longjing/proofs/withdrawal')
-          .send({
-            secretKey: `0x${BigInt(secretKey + BigInt(i)).toString(16)}`,
-            ticketIndex: `0x${ticketIndex.toString(16)}`,
-            signalX: `0x${signalX.toString(16)}`,
-          })
-          .expect(200),
+    it('should handle concurrent proof generation', async () => {
+      const bodies = await Promise.all(
+        Array.from({ length: 3 }, (_, i) =>
+          proveWithdrawal(secretKey + BigInt(i)),
+        ),
       );
 
-      const responses = await Promise.all(requests);
-
-      // All requests should succeed
-      responses.forEach((response) => {
-        const body = response.body as ProofResponse;
+      bodies.forEach((body) => {
         expect(body).toHaveProperty('proof');
         expect(body).toHaveProperty('publicSignals');
       });
 
       // Each should have unique idCommitment
-      const commitments = responses.map(
-        (r) => (r.body as ProofResponse).metadata.idCommitment,
-      );
+      const commitments = bodies.map((b) => b.metadata.idCommitment);
       const uniqueCommitments = new Set(commitments);
       expect(uniqueCommitments.size).toBe(3);
     });
