@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-05
+
 ### Added
 
+- `pnpm prove refund` generates a refund redemption proof on the client from a refund ticket, so the secret key never leaves the user's machine ([#97](https://github.com/w3hc/longjing/issues/97)).
 - `LongjingAppOwner` and `DeployGovernance.s.sol` put a Safe and a 7-day `TimelockController` in front of Longjing's `DstackApp`: a new compose hash can derive the keys only after a public delay, while a guardian can remove one at once. See [GOVERNANCE.md](docs/GOVERNANCE.md) ([#96](https://github.com/w3hc/longjing/issues/96)).
 - `pnpm governance:propose-release` checks an `app-compose.json` against `docker-compose.yml` and writes the Safe files that schedule and execute a release: add its compose hash, remove every other one ([#96](https://github.com/w3hc/longjing/issues/96)).
 - `pnpm verify:attestation --app <DstackApp>` checks the app's governance on chain: the key manifest names that app, a timelock of at least `--min-delay` owns it, `requireTcbUpToDate` is set and the running compose hash is allowed. It lists every compose hash ever added ([#96](https://github.com/w3hc/longjing/issues/96)).
@@ -19,17 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Swagger UI reports version 0.4.0 instead of 0.1.0 ([#97](https://github.com/w3hc/longjing/issues/97)).
+- The docs describe only the endpoints Longjing serves: `/mlkem/pubkey`, `/longjing/chat`, `/longjing/merkle-root` and `POST /hello` are gone from them, `POST /auth/nonce`, `GET /attestation/manifest` and `POST /longjing/proofs/slashing` are documented, the client guide uses the `api_request` circuit inputs, and broken links are fixed ([#97](https://github.com/w3hc/longjing/issues/97)).
 - **Breaking:** `report_data[0..32]` is one length-prefixed SHA-256 over the label `longjing-report-v1`, the ML-KEM public key, the identity public key, the refund signer public key and the TLS certificate hash, in place of `SHA-256(ek) || SHA-256(tls_cert_der)`. Clients checking the old layout must rebuild it as in [ATTESTATION.md](docs/ATTESTATION.md#report_data) ([#95](https://github.com/w3hc/longjing/issues/95)).
 - The ML-KEM, refund signer, identity and TLS keys are derived inside the enclave with the dstack v1 `GetKey` API (dstack ≥ 0.6.0), through a small client for `/var/run/dstack.sock`. The refund signer key changes, so `LongjingCredits` must be redeployed with the `serverPublicKey` the manifest reports ([#93](https://github.com/w3hc/longjing/issues/93)).
 - `docker-compose.yml` pins the `v0.3.0` image, `ghcr.io/w3hc/longjing@sha256:d7beb7b690a6a2841530ceb26d18095005af1dd65fa34cc473971657bb096577`, in place of the placeholder ([#112](https://github.com/w3hc/longjing/issues/112)).
 
 ### Removed
 
+- **Breaking:** `POST /longjing/proofs/withdrawal` and `POST /longjing/proofs/refund`, which took the user's `secretKey`. The refund one also signed a mock refund ticket. Withdrawal proving on the client is tracked in [#119](https://github.com/w3hc/longjing/issues/119) ([#97](https://github.com/w3hc/longjing/issues/97)).
+- The `pnpm dance` and `pnpm dance:full` scripts, and the stray `test-proof-end-to-end.js` ([#97](https://github.com/w3hc/longjing/issues/97)).
 - The `/sealed-storage` ML-KEM key file, the v0 `TappdClient` fallback and the `tappd.sock` mount ([#93](https://github.com/w3hc/longjing/issues/93)).
 - The legacy `TeePlatformService`, which shelled out to `snpguest` with files in `/tmp`, faked a Nitro document and fell back to `none`. `SecretsService` attests through `AttestationService`. `docker-compose.yml` no longer passes `TEE_PLATFORM` through ([#94](https://github.com/w3hc/longjing/issues/94)).
 
 ### Security
 
+- The server no longer receives the user's secret key to generate proofs, so it can no longer link the requests of a user who proves withdrawals or refunds ([#97](https://github.com/w3hc/longjing/issues/97)).
 - `report_data` commits to the refund signer's public key, so a client can check that refund tickets are signed inside the attested enclave ([#95](https://github.com/w3hc/longjing/issues/95)).
 - Production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env, when dstack key derivation fails, or with `DSTACK_SIMULATOR_ENDPOINT` set. `docker-compose.yml` sets `NODE_ENV=production` as a literal and no longer passes `ADMIN_MLKEM_*` through, so the operator cannot inject keys or switch the checks off. The only opt-out, `ALLOW_KEYS_OUTSIDE_ENCLAVE=true`, must be a compose literal, so using it changes the attested hash ([#93](https://github.com/w3hc/longjing/issues/93)).
 - Production attests only through dstack, and refuses to start without the dstack socket, with `DSTACK_SIMULATOR_ENDPOINT` set, or with `TEE_PLATFORM` naming another platform. Before serving, it generates a first quote and checks that it carries the requested `report_data`. Outside production, an unknown `TEE_PLATFORM` throws instead of falling back to the mock ([#94](https://github.com/w3hc/longjing/issues/94)).

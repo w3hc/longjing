@@ -30,10 +30,10 @@ If you want the simplified protocol with a browser SDK, use zkapi. If you want t
 ## How it works
 
 1. **Deposit once.** You send ETH to a smart contract along with an identity commitment. This is the only step that touches your onchain identity.
-2. **Prove, don't reveal.** For each request, your client generates a zero-knowledge proof that you have credits — without exposing your balance, your deposit, or your past requests.
+2. **Prove, don't reveal.** For each request, your client generates a zero-knowledge proof that you have credits — without exposing your balance, your deposit, or your past requests. Your secret key never leaves your machine: the server never generates proofs that need it.
 3. **Request anonymously.** You submit the API request with the proof and a one-time nullifier. The operator verifies the proof and forwards the request. It can't tell which depositor you are.
 4. **Unlinkable by design.** Each request uses a fresh nullifier, so two requests from the same person can't be correlated with each other.
-5. **Get unused credits back.** Refund tickets let you redeem what you didn't spend, onchain.
+5. **Get unused credits back.** Refund tickets let you redeem what you didn't spend, onchain, with a proof your client generates (`pnpm prove refund`).
 
 The operator sees valid proofs and the requests it forwards. It does **not** see who you are or link your requests together. That property is enforced by cryptography, not by a policy promise.
 
@@ -42,12 +42,12 @@ The operator sees valid proofs and the requests it forwards. It does **not** see
 - **Anonymous API access** — make requests without revealing your identity
 - **Unlinkable requests** — a unique nullifier per request prevents correlation
 - **Prove solvency, not balance** — ZK proofs confirm you can pay without exposing how much you have or what you've spent
-- **Multi-provider** — provider abstraction supporting OpenAI, Stripe, and custom APIs
+- **Multi-provider** — a provider abstraction any API can plug into; Claude ships as the reference provider
 - **Trustless refunds** — automatic refund tickets for unused credits
-- **TEE support** — deploy in Trusted Execution Environments (Phala Network, AWS Nitro Enclaves)
+- **TEE support** — runs on [dstack](https://github.com/Dstack-TEE/dstack) (Intel TDX, e.g. Phala Cloud), with keys derived in the enclave and an attestation clients can verify
 - **Production circuits** — Groth16 verifiers for withdrawal, refund, and slashing proofs
 - **Privacy-preserving storage** — SQLite-based Merkle tree designed not to retain linkage
-- **Tested** — 400+ unit tests plus end-to-end integration tests with real proofs
+- **Tested** — 580+ unit tests plus end-to-end integration tests with real proofs
 
 ## What this protects — and what it doesn't
 
@@ -115,7 +115,7 @@ openssl req -x509 -newkey rsa:4096 \
 pnpm start:dev
 ```
 
-Server runs at `https://localhost:3000`. An EdDSA keypair auto-generates if not configured.
+Server runs at `https://localhost:3000`, with the Swagger UI at its root. Outside production, keys come from the [dstack simulator](https://github.com/Dstack-TEE/dstack) when `DSTACK_SIMULATOR_ENDPOINT` is set; otherwise the refund signer uses a dev-only random key.
 
 ### Deploy to production
 
@@ -124,11 +124,12 @@ In production, Longjing runs on [dstack](https://github.com/Dstack-TEE/dstack) a
 ```
 docker compose up   # docker-compose.yml mounts /var/run/dstack.sock
 ```
- See [TEE_SETUP.md](docs/TEE_SETUP.md) and [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) for production configurations. Running in a TEE is strongly recommended for any deployment serving users other than yourself — it's what lets users trust the operator without trusting you personally.
+
+Clients check the deployment with `pnpm verify:attestation`. See [TEE_SETUP.md](docs/TEE_SETUP.md) and [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) for production configurations. Running in a TEE is strongly recommended for any deployment serving users other than yourself — it's what lets users trust the operator without trusting you personally.
 
 ## Add your own provider
 
-The provider layer is an abstraction — OpenAI, Stripe, and custom APIs plug in the same way. See [QUICK_START.md](docs/QUICK_START.md) to add a new provider in 10 steps.
+The provider layer is an abstraction — any upstream API plugs in the same way as the Claude provider. See [QUICK_START.md](docs/QUICK_START.md) to add a new provider in 10 steps.
 
 ## Documentation
 
@@ -136,7 +137,7 @@ The provider layer is an abstraction — OpenAI, Stripe, and custom APIs plug in
 - [OVERVIEW.md](docs/OVERVIEW.md) — system architecture and status
 - [QUICK_START.md](docs/QUICK_START.md) — add a new provider in 10 steps
 - [LOCAL_SETUP.md](docs/LOCAL_SETUP.md) — local development setup
-- [API_REFERENCE.md](docs/API_REFERENCE.md) — endpoints and request formats
+- [API_REFERENCE.md](docs/API_REFERENCE.md) — endpoints, request formats and client-side proving
 
 **Zero-knowledge**
 - [ZK.md](docs/ZK.md) — circuits and proofs
@@ -146,9 +147,12 @@ The provider layer is an abstraction — OpenAI, Stripe, and custom APIs plug in
 **Architecture**
 - [PROVIDERS.md](docs/PROVIDERS.md) — provider abstraction design
 - [SQLITE3.md](docs/SQLITE3.md) — database and privacy design
+- [MLKEM.md](docs/MLKEM.md) — post-quantum key encapsulation
+- [SIWE.md](docs/SIWE.md) — Sign-In with Ethereum
 
 **Deployment**
 - [TEE_SETUP.md](docs/TEE_SETUP.md) — production TEE deployment
+- [ATTESTATION.md](docs/ATTESTATION.md) — verifying the attestation and the keys it binds
 - [KEY_DERIVATION.md](docs/KEY_DERIVATION.md) — enclave-derived keys and the key manifest
 - [GOVERNANCE.md](docs/GOVERNANCE.md) — Safe and timelock in front of the builds that can derive the keys
 - [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) — Phala Cloud setup
