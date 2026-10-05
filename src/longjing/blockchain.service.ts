@@ -455,7 +455,7 @@ export class BlockchainService implements OnModuleInit {
     nullifier: string;
     refundValue: string;
     recipient: string;
-    proof: number[];
+    proof: bigint[];
     publicSignals: bigint[];
   }): Promise<string> {
     if (!this.contract || !this.wallet) {
@@ -469,7 +469,7 @@ export class BlockchainService implements OnModuleInit {
         `Redeeming refund for nullifier ${params.nullifier}, amount: ${params.refundValue} wei`,
       );
 
-      // Contract expects: redeemRefund(bytes32, bytes32, uint256, address, uint256[8], uint256[7])
+      // Contract expects: redeemRefund(bytes32, bytes32, uint256, address, uint256[8], uint256[8])
       const tx = (await this.contract.redeemRefund(
         params.idCommitment,
         params.nullifier,

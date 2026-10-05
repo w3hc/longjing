@@ -356,7 +356,7 @@ export class ProofGenService {
     };
     recipient: string; // Ethereum address - required for front-running protection fix
   }): Promise<{
-    proof: number[];
+    proof: string[];
     publicSignals: bigint[];
   }> {
     await this.initialize();
@@ -451,8 +451,8 @@ export class ProofGenService {
     signal1: { x: bigint; y: bigint };
     signal2: { x: bigint; y: bigint };
   }): Promise<{
-    proof: number[];
-    publicSignals: number[];
+    proof: string[];
+    publicSignals: bigint[];
   }> {
     await this.initialize();
 
@@ -469,30 +469,29 @@ export class ProofGenService {
       throw new Error('Secret key does not match recovered key from signals');
     }
 
-    // Calculate expected values
-    const idCommitment = await this.generateIdCommitment(params.secretKey);
     const { nullifier } = await this.generateRLNSignal(
       params.secretKey,
       params.ticketIndex,
       params.signal1.x,
     );
 
-    // For slashing proof, we use one of the signals as the proof
-    // In production, this would be a dedicated slashing circuit
     const inputs = {
-      secretKey: params.secretKey.toString(),
+      signal1_x: params.signal1.x.toString(),
+      signal1_y: params.signal1.y.toString(),
+      signal2_x: params.signal2.x.toString(),
+      signal2_y: params.signal2.y.toString(),
       ticketIndex: params.ticketIndex.toString(),
-      signalX: params.signal1.x.toString(),
-      idCommitmentExpected: idCommitment.toString(),
+      secretKeyClaimed: params.secretKey.toString(),
+      nullifierExpected: nullifier.toString(),
     };
 
     const wasmPath = path.join(
       process.cwd(),
-      'circuits/build/api_credit_proof_test_js/api_credit_proof_test.wasm',
+      'circuits/build/double_spend_slashing_js/double_spend_slashing.wasm',
     );
     const zkeyPath = path.join(
       process.cwd(),
-      'circuits/build/api_credit_proof_test.zkey',
+      'circuits/build/double_spend_slashing_final.zkey',
     );
 
     // Check if files exist

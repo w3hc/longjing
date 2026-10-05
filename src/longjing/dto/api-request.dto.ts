@@ -5,6 +5,8 @@ import {
   ValidateNested,
   IsOptional,
   IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -141,15 +143,29 @@ export class RedeemRefundRequestDto {
     ],
   })
   @IsArray()
+  @ArrayMinSize(8)
+  @ArrayMaxSize(8)
   @IsString({ each: true })
   proof: string[];
 
   @ApiProperty({
-    description: 'Public signals for the proof (array of 7 hex strings)',
+    description:
+      'Public signals in snarkjs order (array of 8 hex strings): nullifier, signalY, idCommitment, signalX, refundValueClaimed, serverPublicKeyX, serverPublicKeyY, recipient',
     type: [String],
-    example: ['0x...', '0x...', '0x...', '0x...', '0x...', '0x...', '0x...'],
+    example: [
+      '0x...',
+      '0x...',
+      '0x...',
+      '0x...',
+      '0x...',
+      '0x...',
+      '0x...',
+      '0x...',
+    ],
   })
   @IsArray()
+  @ArrayMinSize(8)
+  @ArrayMaxSize(8)
   @IsString({ each: true })
   publicSignals: string[];
 }
