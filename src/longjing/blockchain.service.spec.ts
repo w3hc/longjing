@@ -4,8 +4,10 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { ethers } from 'ethers';
 import { BlockchainService } from './blockchain.service';
 import { MerkleTreeService } from './merkle-tree.service';
+import { KeyDerivationService } from '../keys/key-derivation.service';
 
 describe('BlockchainService', () => {
   let service: BlockchainService;
@@ -32,6 +34,7 @@ describe('BlockchainService', () => {
       providers: [
         BlockchainService,
         MerkleTreeService,
+        { provide: KeyDerivationService, useValue: {} },
         {
           provide: ConfigService,
           useValue: {
@@ -279,7 +282,11 @@ describe('BlockchainService', () => {
     function startup(profile: string, values: Record<string, string>) {
       process.env.PROFILE = profile;
       const config = { get: (key: string) => values[key] } as ConfigService;
-      const blockchain = new BlockchainService(config, merkleTreeService);
+      const blockchain = new BlockchainService(
+        config,
+        merkleTreeService,
+        {} as KeyDerivationService,
+      );
       (blockchain as any).logger = { log: jest.fn(), warn: jest.fn() };
       return blockchain.onModuleInit();
     }
@@ -356,6 +363,7 @@ describe('BlockchainService', () => {
       const blockchain = new BlockchainService(
         { get } as unknown as ConfigService,
         merkleTreeService,
+        {} as KeyDerivationService,
       );
       (blockchain as any).logger = { log: jest.fn(), warn: jest.fn() };
 
@@ -363,6 +371,58 @@ describe('BlockchainService', () => {
 
       expect(get).not.toHaveBeenCalledWith('ANVIL_PRIVATE_KEY');
       expect(get).not.toHaveBeenCalledWith('ANVIL_RPC_URL');
+    });
+  });
+
+  describe('Transaction signer', () => {
+    const ANVIL_KEY =
+      '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+    const provider = new ethers.JsonRpcProvider('http://127.0.0.1:1', 1n, {
+      staticNetwork: true,
+    });
+
+    function signerFor(
+      prod: boolean,
+      identity: ethers.Wallet | null,
+      values: Record<string, string> = { ANVIL_PRIVATE_KEY: ANVIL_KEY },
+    ) {
+      const get = jest.fn((key: string) => values[key]);
+      const keyDerivation = {
+        getIdentitySigner: jest.fn(() => identity),
+      } as unknown as KeyDerivationService;
+      const blockchain = new BlockchainService(
+        { get } as unknown as ConfigService,
+        merkleTreeService,
+        keyDerivation,
+      );
+      const signer = (blockchain as any).createSigner(
+        prod,
+        provider,
+      ) as ethers.Wallet | null;
+      return { signer, get };
+    }
+
+    it('signs with the identity key in prod, never ANVIL_PRIVATE_KEY', () => {
+      const identity = ethers.Wallet.createRandom().connect(provider);
+
+      const { signer, get } = signerFor(true, identity as ethers.Wallet);
+
+      expect(signer?.address).toBe(identity.address);
+      expect(get).not.toHaveBeenCalledWith('ANVIL_PRIVATE_KEY');
+    });
+
+    it('is read-only in prod without a derived identity', () => {
+      expect(signerFor(true, null).signer).toBeNull();
+    });
+
+    it('signs with ANVIL_PRIVATE_KEY in local', () => {
+      expect(signerFor(false, null).signer?.address).toBe(
+        '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+      );
+    });
+
+    it('is read-only in local without ANVIL_PRIVATE_KEY', () => {
+      expect(signerFor(false, null, {}).signer).toBeNull();
     });
   });
 });

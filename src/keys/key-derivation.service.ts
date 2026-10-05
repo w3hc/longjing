@@ -2,8 +2,10 @@ import { hkdfSync } from 'crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { buildEddsa } from 'circomlibjs';
 import {
+  Provider,
   SigningKey,
   TypedDataEncoder,
+  Wallet,
   ZeroHash,
   computeAddress,
   getBytes,
@@ -198,6 +200,14 @@ export class KeyDerivationService implements OnModuleInit {
 
   getIdentitySignatureChain(): Uint8Array[] {
     return this.identitySignatureChain;
+  }
+
+  /**
+   * The identity key as a transaction signer. In production it is the only
+   * key that sends transactions, so its address needs gas.
+   */
+  getIdentitySigner(provider: Provider): Wallet | null {
+    return this.identity ? new Wallet(this.identity, provider) : null;
   }
 
   /**

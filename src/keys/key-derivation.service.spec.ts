@@ -136,6 +136,23 @@ describe('KeyDerivationService', () => {
   });
 
   describe('derivation', () => {
+    it('exposes the identity key as a transaction signer', async () => {
+      const service = await create();
+
+      expect(service.getIdentitySigner(null as never)?.address).toBe(
+        service.getIdentityAddress(),
+      );
+    });
+
+    it('has no transaction signer without derived keys', async () => {
+      process.env.PROFILE = 'local';
+      dstack.failing = true;
+
+      const service = await create();
+
+      expect(service.getIdentitySigner(null as never)).toBeNull();
+    });
+
     it('is deterministic across instances', async () => {
       const a = await create();
       const b = await create();

@@ -4,6 +4,7 @@ import { ethers } from 'ethers';
 import * as LongjingCreditsABI from './contracts/LongjingCredits.abi.json';
 import { MerkleTreeService } from './merkle-tree.service';
 import { isProd } from '../config/profile';
+import { KeyDerivationService } from '../keys/key-derivation.service';
 import { assertChainMatchesProfile, fetchChainId, selectRpcUrl } from './chain';
 
 /**
@@ -20,6 +21,7 @@ export class BlockchainService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly merkleTree: MerkleTreeService,
+    private readonly keyDerivation: KeyDerivationService,
   ) {}
 
   async onModuleInit() {
@@ -68,12 +70,12 @@ export class BlockchainService implements OnModuleInit {
         this.provider,
       );
 
-      const privateKey = prod
-        ? undefined
-        : this.configService.get<string>('ANVIL_PRIVATE_KEY');
-      if (privateKey) {
-        this.wallet = new ethers.Wallet(privateKey, this.provider);
+      this.wallet = this.createSigner(prod, this.provider);
+      if (this.wallet) {
+        this.logger.log(`Transactions signed by ${this.wallet.address}`);
         this.contract = this.contract.connect(this.wallet) as ethers.Contract;
+      } else {
+        this.logger.warn('No transaction signer: contract access is read-only');
       }
 
       // Test connection
@@ -95,6 +97,21 @@ export class BlockchainService implements OnModuleInit {
       }
       this.logger.error('Failed to connect to blockchain', error);
     }
+  }
+
+  /**
+   * prod signs with the enclave-derived identity key, local with
+   * ANVIL_PRIVATE_KEY. Neither falls back to the other.
+   */
+  private createSigner(
+    prod: boolean,
+    provider: ethers.Provider,
+  ): ethers.Wallet | null {
+    if (prod) {
+      return this.keyDerivation.getIdentitySigner(provider);
+    }
+    const privateKey = this.configService.get<string>('ANVIL_PRIVATE_KEY');
+    return privateKey ? new ethers.Wallet(privateKey, provider) : null;
   }
 
   /**
