@@ -79,7 +79,7 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
   ticketIndex: string;          // Ticket index for this request
   idCommitment: string;         // Identity commitment (Hash of secret key)
   idCommitmentExpected: string; // Expected identity commitment (circuit public input)
-  model?: string;               // Example: claude-opus-4.6, claude-sonnet-4.6, claude-haiku-4.5 (default: sonnet)
+  model?: string;               // Example: claude-fable-5-1, claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5 (default: claude-fable-5-1)
 }
 ```
 
@@ -133,7 +133,7 @@ curl -k -X POST https://localhost:3000/longjing/request \
     "initialDeposit": "10000000000000000",
     "ticketIndex": "0",
     "idCommitment": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-    "model": "claude-sonnet-4.6"
+    "model": "claude-fable-5-1"
   }'
 
 # Response
@@ -823,7 +823,7 @@ const response = await fetch('https://api.longjing.example/longjing/request', {
     ticketIndex: ticketIndex.toString(),
     idCommitment,
     idCommitmentExpected: idCommitment,
-    model: 'claude-sonnet-4.6'
+    model: 'claude-fable-5-1'
   })
 });
 
@@ -866,13 +866,14 @@ Withdrawal proofs are not covered yet: see [#119](https://github.com/w3hc/longji
 
 ## Cost Calculation
 
-### Claude API Pricing (March 2026)
+### Claude API Pricing (October 2026)
 
 | Model | Input ($/M tokens) | Output ($/M tokens) |
 |-------|-------------------|---------------------|
-| claude-opus-4.6 | $5 | $25 |
-| claude-sonnet-4.6 | $3 | $15 |
-| claude-haiku-4.5 | $1 | $5 |
+| claude-fable-5-1 | $10 | $50 |
+| claude-opus-4-6 | $5 | $25 |
+| claude-sonnet-4-6 | $3 | $15 |
+| claude-haiku-4-5 | $1 | $5 |
 
 ### Example Calculations
 

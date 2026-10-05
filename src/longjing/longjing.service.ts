@@ -26,9 +26,10 @@ import {
 // Example: Claude API Pricing (USD per million tokens)
 // This can be configured for any API service with similar pricing models
 const CLAUDE_PRICING = {
-  'claude-opus-4.6': { input: 5, output: 25 },
-  'claude-sonnet-4.6': { input: 3, output: 15 },
-  'claude-haiku-4.5': { input: 1, output: 5 },
+  'claude-fable-5-1': { input: 10, output: 50 },
+  'claude-opus-4-6': { input: 5, output: 25 },
+  'claude-sonnet-4-6': { input: 3, output: 15 },
+  'claude-haiku-4-5': { input: 1, output: 5 },
 };
 
 type ClaudeModel = keyof typeof CLAUDE_PRICING;
@@ -101,7 +102,7 @@ export class LongjingService {
    * Implements the full protocol: nullifier check, proof verification, API call, refund
    */
   async handleRequest(req: LongjingRequestDto): Promise<LongjingResponseDto> {
-    const model = (req.model || 'claude-sonnet-4.6') as ClaudeModel;
+    const model = (req.model || 'claude-fable-5-1') as ClaudeModel;
 
     // 1. Check per-nullifier rate limit (before expensive operations)
     if (!this.nullifierStore.checkRateLimit(req.nullifier)) {

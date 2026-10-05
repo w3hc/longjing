@@ -80,7 +80,7 @@ export class LongjingRequestDto {
   idCommitmentExpected: string;
 
   @ApiProperty({
-    description: 'Model/service variant to use (example: claude-sonnet-4.6)',
+    description: 'Model/service variant to use (example: claude-fable-5-1)',
     required: false,
   })
   @IsString()
