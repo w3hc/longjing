@@ -46,6 +46,7 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
   beforeAll(async () => {
     // Set test environment
     process.env.NODE_ENV = 'test';
+    process.env.PROFILE = 'local';
     process.env.KMS_URL = 'http://localhost:3001';
     process.env.DATA_DIR = ':memory:';
     process.env.ADMIN_MLKEM_PUBLIC_KEY = Buffer.alloc(1568).toString('base64');

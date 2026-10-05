@@ -1,5 +1,8 @@
 // Global Jest setup to suppress expected circomlibjs teardown errors
 
+// PROFILE is required at startup; specs that test prod set it themselves
+process.env.PROFILE ??= 'local';
+
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
 
 // Filter stderr output to suppress known circomlibjs teardown errors
