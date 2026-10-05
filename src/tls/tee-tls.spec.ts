@@ -10,13 +10,11 @@ import { getTlsLeafCertificate, clearTlsLeafCertificate } from './tls-context';
 jest.mock('fs');
 jest.mock('@phala/dstack-sdk', () => ({
   DstackClient: jest.fn(),
-  TappdClient: jest.fn(),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const dstackSdk = require('@phala/dstack-sdk') as {
   DstackClient: jest.Mock;
-  TappdClient: jest.Mock;
 };
 
 // The loader passes the key through without parsing it, so a placeholder suffices
@@ -47,12 +45,9 @@ describe('loadTlsMaterial', () => {
     delete process.env.TLS_KEY_PATH;
     delete process.env.TLS_CERT_PATH;
     delete process.env.ALLOW_EXTERNAL_TLS_TERMINATION;
-    // Default: dstack sockets unavailable (constructor throws like the SDK)
+    // Default: dstack socket unavailable (constructor throws like the SDK)
     dstackSdk.DstackClient.mockImplementation(() => {
       throw new Error('Unix socket file /var/run/dstack.sock does not exist');
-    });
-    dstackSdk.TappdClient.mockImplementation(() => {
-      throw new Error('Unix socket file /var/run/tappd.sock does not exist');
     });
   });
 
@@ -116,19 +111,6 @@ describe('loadTlsMaterial', () => {
       expect(createHash('sha256').update(der!).digest()).toEqual(
         createHash('sha256').update(FIXTURE_CERT_DER).digest(),
       );
-    });
-
-    it('falls back to TappdClient when DstackClient socket is missing', async () => {
-      const getTlsKey = jest.fn().mockResolvedValue({
-        key: FIXTURE_KEY,
-        certificate_chain: [FIXTURE_CERT],
-      });
-      dstackSdk.TappdClient.mockImplementation(() => ({ getTlsKey }));
-
-      const material = await loadTlsMaterial(true);
-
-      expect(material.source).toBe('dstack');
-      expect(getTlsKey).toHaveBeenCalled();
     });
 
     it('serves plain HTTP only with explicit ALLOW_EXTERNAL_TLS_TERMINATION', async () => {

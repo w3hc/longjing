@@ -8,9 +8,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # Phala tappd socket (ignored on non-Phala platforms)
-      - /var/run/tappd.sock:/var/run/tappd.sock
-      # Legacy dstack socket (for backward compatibility)
+      # dstack guest agent: key derivation, TLS key and quotes
       - /var/run/dstack.sock:/var/run/dstack.sock
     environment:
       - NODE_ENV=${NODE_ENV}

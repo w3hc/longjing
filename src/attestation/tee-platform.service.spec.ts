@@ -234,7 +234,7 @@ describe('TeePlatformService', () => {
     beforeEach(async () => {
       (fs.existsSync as jest.Mock).mockImplementation((path: string) => {
         // Return false for Phala sockets, true for TDX device
-        if (path === '/var/run/dstack.sock' || path === '/var/run/tappd.sock') {
+        if (path === '/var/run/dstack.sock') {
           return false;
         }
         return path === '/dev/tdx-guest';
@@ -257,7 +257,7 @@ describe('TeePlatformService', () => {
       (fs.unlinkSync as jest.Mock).mockReturnValue(undefined);
       (fs.existsSync as jest.Mock).mockImplementation((path: string) => {
         // Return false for Phala sockets, true for everything else in TDX tests
-        if (path === '/var/run/dstack.sock' || path === '/var/run/tappd.sock') {
+        if (path === '/var/run/dstack.sock') {
           return false;
         }
         return true;
@@ -283,7 +283,7 @@ describe('TeePlatformService', () => {
       (fs.unlinkSync as jest.Mock).mockReturnValue(undefined);
       (fs.existsSync as jest.Mock).mockImplementation((path: string) => {
         // Return false for Phala sockets, true for everything else in TDX tests
-        if (path === '/var/run/dstack.sock' || path === '/var/run/tappd.sock') {
+        if (path === '/var/run/dstack.sock') {
           return false;
         }
         return true;
@@ -467,7 +467,7 @@ describe('TeePlatformService', () => {
       expect(service.getPlatform()).toBe('intel-tdx');
     });
 
-    it('should detect Phala environment via tappd.sock', async () => {
+    it('ignores the legacy tappd.sock', async () => {
       (fs.existsSync as jest.Mock).mockImplementation((path: string) => {
         return path === '/var/run/tappd.sock';
       });
@@ -478,7 +478,7 @@ describe('TeePlatformService', () => {
 
       service = module.get<TeePlatformService>(TeePlatformService);
 
-      expect(service.getPlatform()).toBe('intel-tdx');
+      expect(service.getPlatform()).not.toBe('intel-tdx');
     });
   });
 
@@ -674,7 +674,7 @@ describe('TeePlatformService', () => {
 
     it('should handle non-Error exceptions in TDX attestation', async () => {
       (fs.existsSync as jest.Mock).mockImplementation((path: string) => {
-        if (path === '/var/run/dstack.sock' || path === '/var/run/tappd.sock') {
+        if (path === '/var/run/dstack.sock') {
           return false;
         }
         return path === '/dev/tdx-guest';
@@ -729,7 +729,7 @@ describe('TeePlatformService', () => {
   describe('file cleanup edge cases', () => {
     it('should handle cleanup when report data file does not exist in TDX', async () => {
       (fs.existsSync as jest.Mock).mockImplementation((path: string) => {
-        if (path === '/var/run/dstack.sock' || path === '/var/run/tappd.sock') {
+        if (path === '/var/run/dstack.sock') {
           return false;
         }
         if (path === '/tmp/tdx-report-data.bin') {

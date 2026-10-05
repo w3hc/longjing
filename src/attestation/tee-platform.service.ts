@@ -30,10 +30,7 @@ export class TeePlatformService {
    */
   private detectPlatform(): AttestationReport['platform'] {
     // Check for Phala DStack (Intel TDX via Unix socket)
-    if (
-      fs.existsSync('/var/run/dstack.sock') ||
-      fs.existsSync('/var/run/tappd.sock')
-    ) {
+    if (fs.existsSync('/var/run/dstack.sock')) {
       return 'intel-tdx'; // Phala uses Intel TDX
     }
 
@@ -145,10 +142,7 @@ export class TeePlatformService {
    * Detects if we're running in Phala environment
    */
   private isPhalaEnvironment(): boolean {
-    return (
-      fs.existsSync('/var/run/dstack.sock') ||
-      fs.existsSync('/var/run/tappd.sock')
-    );
+    return fs.existsSync('/var/run/dstack.sock');
   }
 
   /**
