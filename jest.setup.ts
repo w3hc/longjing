@@ -3,6 +3,17 @@
 // PROFILE is required at startup; specs that test prod set it themselves
 process.env.PROFILE ??= 'local';
 
+// Specs set up their own chain; one from the shell (a sourced .env.local)
+// would point the app at another contract
+for (const name of [
+  'ZK_CONTRACT_ADDRESS',
+  'ANVIL_RPC_URL',
+  'ANVIL_PRIVATE_KEY',
+  'ETHEREUM_RPC_URLS',
+]) {
+  delete process.env[name];
+}
+
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
 
 // Filter stderr output to suppress known circomlibjs teardown errors

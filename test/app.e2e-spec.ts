@@ -78,7 +78,7 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
     // Deploy contract
     console.log('\n=== Deploying Contract ===');
     const deployOutput = await execAsync(
-      `cd contracts && forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url ${RPC_URL} --broadcast --private-key ${PRIVATE_KEY} 2>&1`,
+      `cd contracts && PROFILE=local forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url ${RPC_URL} --broadcast --private-key ${PRIVATE_KEY} 2>&1`,
     );
 
     const match = deployOutput.stdout.match(
