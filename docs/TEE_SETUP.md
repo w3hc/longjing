@@ -43,7 +43,9 @@ Before deploying to any TEE platform, ensure you have:
 
 ## Secret Management
 
-**Keys** (ML-KEM, refund signer, identity, TLS) are never secrets you manage: on dstack they are derived inside the enclave with `GetKey`, and production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env. See [KEY_DERIVATION.md](KEY_DERIVATION.md), including the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out for TEE platforms without dstack.
+**Keys** (ML-KEM, refund signer, identity, TLS) are never secrets you manage: on dstack they are derived inside the enclave with `GetKey`, and production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env. See [KEY_DERIVATION.md](KEY_DERIVATION.md), including the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out.
+
+**Attestation** in production goes only through dstack. The server refuses to start without `/var/run/dstack.sock`, with `DSTACK_SIMULATOR_ENDPOINT` set, or with `TEE_PLATFORM` set to anything but `auto` or `phala`, and it checks that a first quote carries the requested `report_data` before serving.
 
 The strategies below apply to the remaining secrets, such as `ANTHROPIC_API_KEY`.
 
@@ -81,7 +83,7 @@ The platform encrypts secrets and injects them as environment variables. `Secret
 
 ### Strategy 3: Environment Variables (Basic VPS)
 
-**Use when**: Deploying to basic Ubuntu VPS without TEE
+**Use when**: Deploying to basic Ubuntu VPS without TEE. Not in production mode: production attests only through dstack and refuses to start without it.
 
 ```bash
 NODE_ENV=production
@@ -103,6 +105,8 @@ OPERATOR_PRIVATE_KEY=0x...  # Optional, auto-generates if not set
 If not provided, a deterministic dev key is generated automatically.
 
 ## Platform-Specific Setup
+
+The AMD SEV-SNP, Intel TDX and AWS Nitro adapters below are not production-ready. In production, Longjing attests only through dstack ([Phala Network](#phala-network-intel-tdxsgx)) and refuses to start on any other platform.
 
 ### AMD SEV-SNP
 
@@ -351,10 +355,7 @@ cat attestation.json | jq -r '.measurement'
 }
 ```
 
-**Detection logic** (src/attestation/tee-platform.service.ts):
-- Checks for `/dev/tdx-guest`
-- Checks for `/dev/tdx_guest` (alternate naming)
-- Checks for `/sys/firmware/tdx_seam` directory
+**Detection logic** (src/attestation/platforms/tdx.platform.ts), outside production only.
 
 #### Production Recommendations
 
@@ -855,7 +856,7 @@ With `report_data` binding, this attack is cryptographically impossible.
 In production, Longjing terminates TLS **inside the enclave**. The TLS private key is obtained in one of two ways, and the server **fails closed** if neither is available:
 
 1. **dstack KMS (Phala/Dstack — default)**: the key is derived inside the CVM via `getTlsKey()` on `/var/run/dstack.sock`. It exists only in enclave memory and never touches the host.
-2. **Operator-provisioned** (`TLS_KEY_PATH` / `TLS_CERT_PATH`): for non-dstack TEE platforms, under the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out; the files must live in enclave-only storage.
+2. **Operator-provisioned** (`TLS_KEY_PATH` / `TLS_CERT_PATH`): under the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out; the files must live in enclave-only storage. Production still requires dstack for attestation.
 
 Setting `ALLOW_EXTERNAL_TLS_TERMINATION=true` restores plain HTTP behind an external TLS proxy. **Do not use this with real user secrets** — request bodies (including `secretKey` on `/longjing/proofs/*`) become visible in plaintext at the termination proxy, outside the TEE trust boundary.
 

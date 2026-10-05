@@ -215,7 +215,7 @@ See [PROVIDERS.md](./PROVIDERS.md) for adding new providers.
 |---------|---------|
 | **SiweService** | Sign-In with Ethereum authentication |
 | **MlkemEncryptionService** | Post-quantum encryption (ML-KEM-768) |
-| **TeePlatformService** | TEE attestation verification |
+| **AttestationService** | TEE attestation, dstack only in production |
 | **SecretService** | Secure secret management (TEE/KMS) |
 | **MetadataSanitizerInterceptor** | Remove identifying headers from logs |
 | **TimingProtectionInterceptor** | Constant-time responses (prevent timing attacks) |

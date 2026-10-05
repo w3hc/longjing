@@ -4,7 +4,6 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { SecretsService } from './config/secrets.service';
 import { AttestationModule } from './attestation/attestation.module';
-import { TeePlatformService } from './attestation/tee-platform.service';
 import { HealthController } from './health/health.controller';
 import { validateEnvironment } from './config/env.validation';
 import { AuthModule } from './auth/auth.module';
@@ -39,7 +38,6 @@ import { RequestSanitizerMiddleware } from './middleware/request-sanitizer.middl
   controllers: [HealthController],
   providers: [
     SecretsService,
-    TeePlatformService,
     // Hybrid rate limiting with privacy protection
     {
       provide: APP_GUARD,
@@ -59,7 +57,7 @@ import { RequestSanitizerMiddleware } from './middleware/request-sanitizer.middl
       useClass: MetadataSanitizerInterceptor,
     },
   ],
-  exports: [SecretsService, TeePlatformService],
+  exports: [SecretsService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

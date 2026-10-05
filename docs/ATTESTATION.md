@@ -545,11 +545,9 @@ except Exception as e:
    - AWS Nitro: Enclaves auto-update
    - Phala: Dstack updates
 
-4. **Use production platforms**
-   ```bash
-   # Force real TEE (never use mock in production)
-   TEE_PLATFORM=auto  # Let it auto-detect real hardware
-   ```
+4. **Attest through dstack**
+   - Production attests only through dstack and refuses to start otherwise, including with `TEE_PLATFORM=mock`
+   - Leave `TEE_PLATFORM` unset in production
 
 ### Common Pitfalls
 

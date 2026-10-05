@@ -118,7 +118,7 @@ With `NODE_ENV=production`:
 - Startup fails if `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` is set ([`key-policy.ts`](../src/keys/key-policy.ts)).
 - `docker-compose.yml` sets `NODE_ENV=production` as a literal, and passes none of the above through `${...}` substitution, so the operator cannot set them on a dstack CVM.
 
-`ALLOW_KEYS_OUTSIDE_ENCLAVE=true` lifts both checks, for TEE platforms without dstack. It must be written as a literal in `docker-compose.yml`, never as `${...}`, so using it changes the attested compose hash and is visible to every verifier. Under it, the refund signer needs `OPERATOR_PRIVATE_KEY`.
+`ALLOW_KEYS_OUTSIDE_ENCLAVE=true` lifts both checks. It does not lift the attestation checks: production still attests only through dstack. It must be written as a literal in `docker-compose.yml`, never as `${...}`, so using it changes the attested compose hash and is visible to every verifier. Under it, the refund signer needs `OPERATOR_PRIVATE_KEY`.
 
 ## Development
 

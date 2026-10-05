@@ -1,5 +1,5 @@
-import { Injectable, OnModuleInit, Logger, Inject } from '@nestjs/common';
-import { TeePlatformService } from '../attestation/tee-platform.service';
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { AttestationService } from '../attestation/attestation.service';
 
 /**
  * Manages application secrets, loading them from KMS in production
@@ -13,10 +13,7 @@ export class SecretsService implements OnModuleInit {
   private readonly logger = new Logger('SecretsService');
   private secrets: Map<string, string> = new Map();
 
-  constructor(
-    @Inject(TeePlatformService)
-    private readonly teePlatform: TeePlatformService,
-  ) {}
+  constructor(private readonly attestation: AttestationService) {}
 
   async onModuleInit(): Promise<void> {
     if (process.env.NODE_ENV === 'production') {
@@ -82,7 +79,7 @@ export class SecretsService implements OnModuleInit {
   }
 
   private async getAttestationReport(): Promise<string> {
-    const attestation = await this.teePlatform.generateAttestationReport();
-    return attestation.report;
+    const attestation = await this.attestation.getAttestation();
+    return attestation.quote;
   }
 }
