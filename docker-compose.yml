@@ -8,15 +8,15 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # Phala tappd socket (ignored on non-Phala platforms)
-      - /var/run/tappd.sock:/var/run/tappd.sock
-      # Legacy dstack socket (for backward compatibility)
+      # dstack guest agent: key derivation, TLS key and quotes
       - /var/run/dstack.sock:/var/run/dstack.sock
     environment:
-      - NODE_ENV=${NODE_ENV}
+      # Literal, so the attested compose hash commits to production mode.
+      # Keys are derived from the dstack KMS, see docs/KEY_DERIVATION.md.
+      # The only opt-out, which changes the hash, is adding a literal
+      # ALLOW_KEYS_OUTSIDE_ENCLAVE=true here.
+      - NODE_ENV=production
       - KMS_URL=${KMS_URL}
-      - ADMIN_MLKEM_PUBLIC_KEY=${ADMIN_MLKEM_PUBLIC_KEY}
-      - ADMIN_MLKEM_PRIVATE_KEY=${ADMIN_MLKEM_PRIVATE_KEY}
       # TEE platform override (auto-detect by default)
       # Options: auto | phala | intel-tdx | amd-sev-snp | aws-nitro | mock
       - TEE_PLATFORM=${TEE_PLATFORM:-auto}

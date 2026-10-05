@@ -1,7 +1,7 @@
 /**
  * Phala Network Platform Adapter
  *
- * Uses @phala/dstack-sdk to generate TDX quotes via tappd.sock
+ * Uses @phala/dstack-sdk to generate TDX quotes via dstack.sock
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -17,20 +17,18 @@ export class PhalaPlatform implements ITeePlatform {
   private client: DstackClient | null = null;
 
   async isAvailable(): Promise<boolean> {
-    // Check for Phala tappd socket
-    if (!fs.existsSync('/var/run/tappd.sock')) {
+    if (!fs.existsSync('/var/run/dstack.sock')) {
       return false;
     }
 
     try {
-      // Try to connect to tappd
       this.client = new DstackClient();
-      await this.client.deriveKey('/', 'test');
+      await this.client.info();
       return true;
     } catch (error) {
       if (process.env.NODE_ENV !== 'test') {
         this.logger.debug(
-          `Phala tappd.sock exists but connection failed: ${error instanceof Error ? error.message : String(error)}`,
+          `Phala dstack.sock exists but connection failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
       return false;

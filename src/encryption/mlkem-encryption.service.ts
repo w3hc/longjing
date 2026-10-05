@@ -71,11 +71,9 @@ export class MlKemEncryptionService {
    * @returns Decrypted plaintext
    */
   decryptMultiRecipient(payload: MultiRecipientEncryptedPayload): string {
-    const mlkem = this.keyManager.getMlKem();
-    const privateKey = this.keyManager.getPrivateKey();
     const publicKey = this.keyManager.getPublicKeyBytes();
 
-    if (!mlkem || !privateKey || !publicKey) {
+    if (!this.keyManager.isAvailable() || !publicKey) {
       throw new Error('ML-KEM encryption not initialized');
     }
 
@@ -110,7 +108,7 @@ export class MlKemEncryptionService {
       const encryptedAesKey = combinedCiphertext.subarray(kemCiphertextLength);
 
       // Decapsulate to recover shared secret
-      const sharedSecret = mlkem.decap(kemCiphertext, privateKey);
+      const sharedSecret = this.keyManager.decapsulate(kemCiphertext);
 
       // XOR-decrypt the AES key using the first 32 bytes of shared secret
       const kek = sharedSecret.subarray(0, 32);
@@ -154,10 +152,7 @@ export class MlKemEncryptionService {
    * @deprecated Use decryptMultiRecipient for new implementations
    */
   decrypt(payload: EncryptedPayload): string {
-    const mlkem = this.keyManager.getMlKem();
-    const privateKey = this.keyManager.getPrivateKey();
-
-    if (!mlkem || !privateKey) {
+    if (!this.keyManager.isAvailable()) {
       throw new Error('ML-KEM encryption not initialized');
     }
 
@@ -176,7 +171,7 @@ export class MlKemEncryptionService {
       }
 
       // Decapsulate to recover shared secret
-      const sharedSecret = mlkem.decap(ciphertext, privateKey);
+      const sharedSecret = this.keyManager.decapsulate(ciphertext);
 
       // Decrypt data with AES-256-GCM
       const decipher = crypto.createDecipheriv('aes-256-gcm', sharedSecret, iv);

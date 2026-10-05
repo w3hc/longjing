@@ -121,20 +121,12 @@ Server runs at `https://localhost:3000`. An EdDSA keypair auto-generates if not 
 
 ### Deploy to production
 
-Production requires `NODE_ENV=production` and an `OPERATOR_PRIVATE_KEY`:
+In production, Longjing runs on [dstack](https://github.com/Dstack-TEE/dstack) and derives every key inside the enclave with `GetKey`: the ML-KEM key, the refund signer, the TLS key and an identity key that signs a key manifest, served at `GET /attestation/manifest`. No one handles them, the operator included, and production refuses to start with key material in env. See [KEY_DERIVATION.md](docs/KEY_DERIVATION.md).
 
 ```
-# Standard VPS
-OPERATOR_PRIVATE_KEY=0x... pnpm start:prod
-
-# Phala TEE (auto-injects secrets)
-NODE_ENV=production
-
-# Cloud KMS (AWS/GCP/Azure)
-KMS_URL=https://kms.example.com/secrets
+docker compose up   # docker-compose.yml mounts /var/run/dstack.sock
 ```
-
-The operator private key is never written to disk. See [TEE_SETUP.md](docs/TEE_SETUP.md) and [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) for production configurations. Running in a TEE is strongly recommended for any deployment serving users other than yourself — it's what lets users trust the operator without trusting you personally.
+ See [TEE_SETUP.md](docs/TEE_SETUP.md) and [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) for production configurations. Running in a TEE is strongly recommended for any deployment serving users other than yourself — it's what lets users trust the operator without trusting you personally.
 
 ## Add your own provider
 
@@ -159,6 +151,7 @@ The provider layer is an abstraction — OpenAI, Stripe, and custom APIs plug in
 
 **Deployment**
 - [TEE_SETUP.md](docs/TEE_SETUP.md) — production TEE deployment
+- [KEY_DERIVATION.md](docs/KEY_DERIVATION.md) — enclave-derived keys and the key manifest
 - [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) — Phala Cloud setup
 - [DOCKER.md](docs/DOCKER.md) — Docker environment
 

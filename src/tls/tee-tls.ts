@@ -11,7 +11,7 @@
  * Key material resolution order in production:
  *   1. TLS_KEY_PATH / TLS_CERT_PATH — operator-provisioned files that must
  *      live in enclave-only storage (non-dstack TEE platforms).
- *   2. dstack/tappd getTlsKey() — key derived by the dstack KMS *inside* the
+ *   2. dstack getTlsKey() — key derived by the dstack KMS *inside* the
  *      CVM; it exists only in enclave memory and never touches the host.
  *   3. ALLOW_EXTERNAL_TLS_TERMINATION=true — explicit, loudly-logged opt-out
  *      that restores the old plain-HTTP-behind-proxy behavior.
@@ -29,7 +29,7 @@
 import * as fs from 'fs';
 import { X509Certificate } from 'crypto';
 import { Logger } from '@nestjs/common';
-import { DstackClient, TappdClient } from '@phala/dstack-sdk';
+import { DstackClient } from '@phala/dstack-sdk';
 
 import { setTlsLeafCertificate } from './tls-context';
 
@@ -59,55 +59,43 @@ function registerLeafCertificate(certPem: string | Buffer): X509Certificate {
  * The private key is derived inside the CVM and never leaves enclave memory.
  */
 async function loadFromDstack(): Promise<TlsMaterial | null> {
-  // DstackClient (dstack.sock) first, TappdClient (tappd.sock) for legacy
-  // deployments — both sockets are mounted in docker-compose.yml.
-  // (Only getTlsKey is used, which both clients share.)
-  type TlsKeyClient = Pick<DstackClient, 'getTlsKey'>;
-  const clients: Array<() => TlsKeyClient> = [
-    () => new DstackClient(),
-    () => new TappdClient(),
-  ];
-
-  for (const createClient of clients) {
-    let client: TlsKeyClient;
-    try {
-      client = createClient(); // throws when the socket does not exist
-    } catch {
-      continue;
-    }
-
-    try {
-      const subject = process.env.TLS_CERT_SUBJECT || 'longjing';
-      const altNames = process.env.TLS_CERT_ALT_NAMES
-        ? process.env.TLS_CERT_ALT_NAMES.split(',').map((n) => n.trim())
-        : undefined;
-
-      const result = await client.getTlsKey({
-        subject,
-        altNames,
-        usageServerAuth: true,
-      });
-
-      if (!result.key || result.certificate_chain.length === 0) {
-        throw new Error('dstack returned empty TLS key material');
-      }
-
-      registerLeafCertificate(result.certificate_chain[0]);
-      return {
-        httpsOptions: {
-          key: result.key,
-          cert: result.certificate_chain.join('\n'),
-        },
-        source: 'dstack',
-      };
-    } catch (error) {
-      logger.warn(
-        `dstack getTlsKey failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+  let client: DstackClient;
+  try {
+    client = new DstackClient(); // throws when /var/run/dstack.sock is missing
+  } catch {
+    return null;
   }
 
-  return null;
+  try {
+    const subject = process.env.TLS_CERT_SUBJECT || 'longjing';
+    const altNames = process.env.TLS_CERT_ALT_NAMES
+      ? process.env.TLS_CERT_ALT_NAMES.split(',').map((n) => n.trim())
+      : undefined;
+
+    const result = await client.getTlsKey({
+      subject,
+      altNames,
+      usageServerAuth: true,
+    });
+
+    if (!result.key || result.certificate_chain.length === 0) {
+      throw new Error('dstack returned empty TLS key material');
+    }
+
+    registerLeafCertificate(result.certificate_chain[0]);
+    return {
+      httpsOptions: {
+        key: result.key,
+        cert: result.certificate_chain.join('\n'),
+      },
+      source: 'dstack',
+    };
+  } catch (error) {
+    logger.warn(
+      `dstack getTlsKey failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
 }
 
 /**
@@ -167,8 +155,8 @@ export async function loadTlsMaterial(isProd: boolean): Promise<TlsMaterial> {
   // 4. Fail closed
   throw new Error(
     'FATAL: Cannot start in production without in-enclave TLS termination. ' +
-      'Provide key material via dstack (mount /var/run/dstack.sock or ' +
-      '/var/run/tappd.sock) or TLS_KEY_PATH/TLS_CERT_PATH in enclave storage. ' +
+      'Provide key material via dstack (mount /var/run/dstack.sock) or ' +
+      'TLS_KEY_PATH/TLS_CERT_PATH in enclave storage. ' +
       'To explicitly accept an external TLS terminator (NOT recommended), ' +
       'set ALLOW_EXTERNAL_TLS_TERMINATION=true.',
   );

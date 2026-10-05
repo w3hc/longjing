@@ -59,18 +59,16 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - /var/run/dstack.sock:/var/run/dstack.sock  # Required for TEE attestation
+      - /var/run/dstack.sock:/var/run/dstack.sock  # Key derivation, TLS key and quotes
     environment:
-      - NODE_ENV=${NODE_ENV}
+      - NODE_ENV=production  # Literal, so the compose hash commits to it
       - KMS_URL=${KMS_URL}
-      - ADMIN_MLKEM_PUBLIC_KEY=${ADMIN_MLKEM_PUBLIC_KEY}
-      - ADMIN_MLKEM_PRIVATE_KEY=${ADMIN_MLKEM_PRIVATE_KEY}
     restart: unless-stopped
 ```
 
 **Important**:
 - The image is pinned by digest, so the attested compose hash commits to the code that runs. Never use a mutable tag such as `latest`
-- The `/var/run/dstack.sock` volume mount is **required** for TEE attestation to work - without it, your app will run in mock mode
+- The `/var/run/dstack.sock` volume mount is **required**: the ML-KEM, refund signer, identity and TLS keys are derived through it with dstack v1 `GetKey` (dstack ≥ 0.6.0), and production refuses to start without it. See [KEY_DERIVATION.md](KEY_DERIVATION.md)
 
 ### .env.prod
 
@@ -85,11 +83,9 @@ ZK_CONTRACT_ADDRESS=<your-contract-address>
 # Comma-separated list of Ethereum mainnet RPC URLs (API will randomly pick one)
 ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,https://rpc.mevblocker.io/noreverts,https://rpc.mevblocker.io/fast,https://rpc.mevblocker.io,https://rpc.flashbots.net/fast,https://rpc.flashbots.net,https://mainnet.gateway.tenderly.co,https://ethereum-rpc.publicnode.com
 ANVIL_PRIVATE_KEY=<your-private-key-for-slashing-txs>
-
-# Optional ML-KEM keys
-ADMIN_MLKEM_PUBLIC_KEY=<your-public-key>
-ADMIN_MLKEM_PRIVATE_KEY=<your-private-key>
 ```
+
+Leave out `ADMIN_MLKEM_*` and `OPERATOR_PRIVATE_KEY`: the keys are derived inside the enclave, and production refuses to start with them in env.
 
 **Important**: Add `.env.prod` to [.gitignore](../.gitignore) to prevent committing secrets.
 

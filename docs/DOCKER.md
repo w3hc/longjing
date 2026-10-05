@@ -82,16 +82,10 @@ Production mode uses a multi-stage build to create an optimized image.
 
    Configure production settings:
    ```bash
-   NODE_ENV=production
    KMS_URL=https://your-kms.example.com/release
-   ADMIN_MLKEM_PUBLIC_KEY=<your-public-key>
-   ADMIN_MLKEM_PRIVATE_KEY=<your-private-key>
    ```
 
-2. **Generate ML-KEM keypair** (if not already done):
-   ```bash
-   pnpm ts-node scripts/generate-admin-keypair.ts
-   ```
+   No key material: the keys are derived inside the enclave, and production refuses to start with it in env. See [KEY_DERIVATION.md](KEY_DERIVATION.md).
 
    Copy the generated keys to `.env.prod`.
 
@@ -218,16 +212,14 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - /var/run/dstack.sock:/var/run/dstack.sock  # Required for TEE attestation on Phala
+      - /var/run/dstack.sock:/var/run/dstack.sock  # Key derivation, TLS key and quotes
     environment:
-      - NODE_ENV=${NODE_ENV}
+      - NODE_ENV=production  # Literal, so the compose hash commits to it
       - KMS_URL=${KMS_URL}
-      - ADMIN_MLKEM_PUBLIC_KEY=${ADMIN_MLKEM_PUBLIC_KEY}
-      - ADMIN_MLKEM_PRIVATE_KEY=${ADMIN_MLKEM_PRIVATE_KEY}
     restart: unless-stopped
 ```
 
-**Note**: The `/var/run/dstack.sock` volume mount is required when deploying to Phala Network or other DStack-based TEE infrastructure. Without it, the application will run in mock mode.
+**Note**: The `/var/run/dstack.sock` volume mount is required: the keys are derived through it, and production refuses to start without it. `NODE_ENV` is a literal rather than `${NODE_ENV}`, so the operator cannot switch production checks off. See [KEY_DERIVATION.md](KEY_DERIVATION.md#production-policy).
 
 ## Releases
 
