@@ -1,18 +1,22 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { buildBabyjub, buildEddsa, buildPoseidon } from 'circomlibjs';
 import { RefundTicketDto } from './dto/api-response.dto';
-import { SecretsService } from '../config/secrets.service';
+import { KeyDerivationService } from '../keys/key-derivation.service';
 
 /**
  * Service for signing refund tickets using EdDSA with Babyjubjub curve
  * Compatible with circomlib EdDSA circuits
  *
+ * The private key is derived from the dstack KMS (see docs/KEY_DERIVATION.md).
+ * Outside production, without dstack, it falls back to OPERATOR_PRIVATE_KEY
+ * or a deterministic dev key.
+ *
  * Note: circomlibjs does not provide TypeScript types, so we must use any types
  * and disable eslint rules for unsafe operations with circomlibjs objects.
  */
 @Injectable()
-export class RefundSignerService {
+export class RefundSignerService implements OnModuleInit {
   private readonly logger = new Logger(RefundSignerService.name);
   private privateKey: Buffer;
   private publicKey: { x: string; y: string };
@@ -23,13 +27,13 @@ export class RefundSignerService {
 
   private poseidon: any;
   private initialized = false;
-  private initPromise: Promise<void>;
+  private initPromise: Promise<void> | null = null;
 
-  constructor(
-    @Inject(SecretsService)
-    private readonly secretsService: SecretsService,
-  ) {
-    this.initPromise = this.initialize();
+  constructor(private readonly keyDerivation: KeyDerivationService) {}
+
+  // Waits for onModuleInit so KeyDerivationService has derived the key
+  async onModuleInit() {
+    await this.ensureInitialized();
   }
 
   private async initialize() {
@@ -42,39 +46,7 @@ export class RefundSignerService {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.poseidon = await buildPoseidon();
 
-      // Load private key from SecretsService which handles:
-      // - Local dev: Falls back to process.env (or generates dev key)
-      // - Phala TEE: Loads from encrypted environment variables
-      // - Cloud with KMS: Fetches from KMS using TEE attestation
-      let privateKeyHex: string;
-      try {
-        privateKeyHex = this.secretsService.get('OPERATOR_PRIVATE_KEY');
-      } catch {
-        // In production, OPERATOR_PRIVATE_KEY must be set
-        const isProduction = process.env.NODE_ENV === 'production';
-
-        if (isProduction) {
-          this.logger.error(
-            'OPERATOR_PRIVATE_KEY not found in production environment',
-          );
-          throw new Error(
-            'OPERATOR_PRIVATE_KEY must be configured in production. ' +
-              'Refusing to use deterministic fallback key.',
-          );
-        }
-
-        // Development-only fallback
-        privateKeyHex =
-          process.env.OPERATOR_PRIVATE_KEY || this.generatePrivateKey();
-        this.logger.warn(
-          'OPERATOR_PRIVATE_KEY not found in SecretsService, using DEV-ONLY fallback',
-        );
-      }
-
-      // Convert hex string to Buffer (remove 0x prefix if present)
-      // Private key must be exactly 32 bytes for Babyjubjub
-      const cleanHex = privateKeyHex.replace(/^0x/, '');
-      this.privateKey = Buffer.from(cleanHex.padStart(64, '0'), 'hex');
+      this.privateKey = this.loadPrivateKey();
 
       // Derive public key using Babyjubjub
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
@@ -116,6 +88,7 @@ export class RefundSignerService {
 
   private async ensureInitialized() {
     if (!this.initialized) {
+      this.initPromise ??= this.initialize();
       await this.initPromise;
     }
   }
@@ -173,6 +146,30 @@ export class RefundSignerService {
   }
 
   // ============ Private Methods ============
+
+  private loadPrivateKey(): Buffer {
+    const derived = this.keyDerivation.getRefundSignerPrivateKey();
+    if (derived) {
+      return derived;
+    }
+
+    // KeyDerivationService already refuses to start in production without
+    // dstack; this guards against reaching the dev fallback there anyway
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'Refund signer key not derived from dstack. Refusing to use a fallback key in production.',
+      );
+    }
+
+    this.logger.warn(
+      'Refund signer key not derived from dstack, using OPERATOR_PRIVATE_KEY or the DEV-ONLY fallback',
+    );
+    const privateKeyHex =
+      process.env.OPERATOR_PRIVATE_KEY || this.generatePrivateKey();
+    // Private key must be exactly 32 bytes for Babyjubjub
+    const cleanHex = privateKeyHex.replace(/^0x/, '');
+    return Buffer.from(cleanHex.padStart(64, '0'), 'hex');
+  }
 
   private generatePrivateKey(): string {
     // Generate deterministic private key for development

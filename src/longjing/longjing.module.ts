@@ -20,8 +20,10 @@ import { PricingRepository } from '../pricing/pricing.repository';
 import { PricingOracleService } from '../pricing/pricing-oracle.service';
 import { CostEstimationService } from './cost-estimation.service';
 import { ClaudeProvider } from '../providers/claude';
+import { KeysModule } from '../keys/keys.module';
 
 @Module({
+  imports: [KeysModule],
   controllers: [LongjingController],
   providers: [
     LongjingService,

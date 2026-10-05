@@ -17,6 +17,7 @@ import { SlashingService } from './slashing.service';
 import { SlashingProofService } from './slashing-proof.service';
 import { LongjingRequestDto } from './dto/api-request.dto';
 import { SecretsService } from '../config/secrets.service';
+import { KeyDerivationService } from '../keys/key-derivation.service';
 import { TeePlatformService } from '../attestation/tee-platform.service';
 import { payloadToSignalX } from './utils/payload-signal.util';
 
@@ -63,6 +64,10 @@ describe('LongjingService', () => {
         SnarkjsProofService,
         EthRateOracleService,
         RefundSignerService,
+        {
+          provide: KeyDerivationService,
+          useValue: { getRefundSignerPrivateKey: () => null },
+        },
         SecretsService,
         TeePlatformService,
         {
