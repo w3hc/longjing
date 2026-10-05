@@ -1,10 +1,9 @@
 #!/usr/bin/env ts-node
 /**
- * Generates withdrawal and refund redemption proofs on the client, so the
- * secret key never leaves the user's machine.
+ * Generates refund redemption proofs on the client, so the secret key never
+ * leaves the user's machine. Withdrawal proving is tracked in #119.
  *
  * Usage:
- *   pnpm prove withdrawal <secretKey> <ticketIndex> [payload]
  *   pnpm prove refund <input.json>
  *
  * The refund input file holds:
@@ -43,36 +42,8 @@ interface RefundInput {
 const toHex = (v: bigint | number | string) => '0x' + BigInt(v).toString(16);
 
 function usage(): never {
-  console.error('Usage:');
-  console.error('  pnpm prove withdrawal <secretKey> <ticketIndex> [payload]');
-  console.error('  pnpm prove refund <input.json>');
+  console.error('Usage: pnpm prove refund <input.json>');
   process.exit(1);
-}
-
-async function proveWithdrawal(prover: ProofGenService, args: string[]) {
-  if (args.length < 2) usage();
-  const secretKey = BigInt(args[0]);
-  const ticketIndex = BigInt(args[1]);
-  const signalX = payloadToSignalX(args[2] ?? '');
-
-  const { proof, publicSignals } = await prover.generateWithdrawalProof({
-    secretKey,
-    ticketIndex,
-    signalX,
-  });
-  const idCommitment = await prover.generateIdCommitment(secretKey);
-  const { nullifier } = await prover.generateRLNSignal(
-    secretKey,
-    ticketIndex,
-    signalX,
-  );
-
-  return {
-    proof: proof.map(toHex),
-    publicSignals: publicSignals.map(toHex),
-    idCommitment: toHex(idCommitment),
-    nullifier: toHex(nullifier),
-  };
 }
 
 async function proveRefund(prover: ProofGenService, args: string[]) {
@@ -120,10 +91,8 @@ async function main() {
   const [kind, ...args] = process.argv.slice(2);
   const prover = new ProofGenService();
 
-  let result: object;
-  if (kind === 'withdrawal') result = await proveWithdrawal(prover, args);
-  else if (kind === 'refund') result = await proveRefund(prover, args);
-  else usage();
+  if (kind !== 'refund') usage();
+  const result = await proveRefund(prover, args);
 
   console.log(JSON.stringify(result, null, 2));
   // snarkjs keeps worker threads alive
