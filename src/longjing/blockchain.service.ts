@@ -99,6 +99,15 @@ export class BlockchainService implements OnModuleInit {
     }
   }
 
+  /** The connected transaction signer, or null when read-only. */
+  getSigner(): ethers.Wallet | null {
+    return this.contract ? this.wallet : null;
+  }
+
+  getContractAddress(): string | null {
+    return this.contract ? (this.contract.target as string) : null;
+  }
+
   /**
    * prod signs with the enclave-derived identity key, local with
    * ANVIL_PRIVATE_KEY. Neither falls back to the other.

@@ -403,9 +403,11 @@ describe('BlockchainService', () => {
     }
 
     it('signs with the identity key in prod, never ANVIL_PRIVATE_KEY', () => {
-      const identity = ethers.Wallet.createRandom().connect(provider);
+      const identity = ethers.Wallet.createRandom().connect(
+        provider,
+      ) as unknown as ethers.Wallet;
 
-      const { signer, get } = signerFor(true, identity as ethers.Wallet);
+      const { signer, get } = signerFor(true, identity);
 
       expect(signer?.address).toBe(identity.address);
       expect(get).not.toHaveBeenCalledWith('ANVIL_PRIVATE_KEY');

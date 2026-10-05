@@ -1,115 +1,81 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
+import { ethers } from 'ethers';
+import { BlockchainService } from './blockchain.service';
 import { SlashingService } from './slashing.service';
 
 describe('SlashingService', () => {
-  let service: SlashingService;
-  let configService: ConfigService;
+  const contractAddress = '0x1111111111111111111111111111111111111111';
+  const signer = ethers.Wallet.createRandom() as unknown as ethers.Wallet;
 
-  const mockConfigService = {
-    get: jest.fn(),
-  };
-
-  beforeEach(async () => {
-    jest.clearAllMocks();
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        SlashingService,
-        {
-          provide: ConfigService,
-          useValue: mockConfigService,
-        },
-      ],
-    }).compile();
-
-    service = module.get<SlashingService>(SlashingService);
-    configService = module.get<ConfigService>(ConfigService);
-  });
-
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
+  const create = (
+    wallet: ethers.Wallet | null,
+    address: string | null = contractAddress,
+  ) =>
+    new SlashingService({
+      getSigner: () => wallet,
+      getContractAddress: () => address,
+    } as unknown as BlockchainService);
 
   describe('isEnabled', () => {
-    it('should return false when contract is not configured', () => {
-      mockConfigService.get.mockReturnValue(undefined);
-      const unconfiguredService = new SlashingService(configService);
-      expect(unconfiguredService.isEnabled()).toBe(false);
+    it('is enabled with a contract and a signer', () => {
+      expect(create(signer).isEnabled()).toBe(true);
     });
 
-    it('should return true when contract is configured', () => {
-      mockConfigService.get
-        .mockReturnValueOnce('http://127.0.0.1:8545') // ANVIL_RPC_URL
-        .mockReturnValueOnce(
-          '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
-        ) // ANVIL_PRIVATE_KEY
-        .mockReturnValueOnce('0x5FbDB2315678afecb367f032d93F642f64180aa3'); // ZK_CONTRACT_ADDRESS
+    it('is disabled without a signer', () => {
+      expect(create(null).isEnabled()).toBe(false);
+    });
 
-      const configuredService = new SlashingService(configService);
-      expect(configuredService.isEnabled()).toBe(true);
+    it('is disabled without a contract', () => {
+      expect(create(signer, null).isEnabled()).toBe(false);
     });
   });
 
   describe('getContractAddress', () => {
-    it('should return null when not configured', () => {
-      mockConfigService.get.mockReturnValue(undefined);
-      const unconfiguredService = new SlashingService(configService);
-      expect(unconfiguredService.getContractAddress()).toBeNull();
+    it("returns BlockchainService's contract address", () => {
+      expect(create(signer).getContractAddress()).toBe(contractAddress);
     });
 
-    it('should return contract address when configured', () => {
-      const contractAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
-      mockConfigService.get
-        .mockReturnValueOnce('http://127.0.0.1:8545') // ANVIL_RPC_URL
-        .mockReturnValueOnce(
-          '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
-        ) // ANVIL_PRIVATE_KEY
-        .mockReturnValueOnce(contractAddress); // ZK_CONTRACT_ADDRESS
-
-      const configuredService = new SlashingService(configService);
-      expect(configuredService.getContractAddress()).toBe(contractAddress);
+    it('returns null when not configured', () => {
+      expect(create(null, null).getContractAddress()).toBeNull();
     });
   });
 
   describe('getSlasherAddress', () => {
-    it('should return null when not configured', () => {
-      mockConfigService.get.mockReturnValue(undefined);
-      const unconfiguredService = new SlashingService(configService);
-      expect(unconfiguredService.getSlasherAddress()).toBeNull();
+    it("returns BlockchainService's signer address", () => {
+      expect(create(signer).getSlasherAddress()).toBe(signer.address);
     });
 
-    it('should return slasher address when configured', () => {
-      mockConfigService.get
-        .mockReturnValueOnce('http://127.0.0.1:8545') // ANVIL_RPC_URL
-        .mockReturnValueOnce(
-          '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
-        ) // ANVIL_PRIVATE_KEY
-        .mockReturnValueOnce('0x5FbDB2315678afecb367f032d93F642f64180aa3'); // ZK_CONTRACT_ADDRESS
-
-      const configuredService = new SlashingService(configService);
-      const slasherAddress = configuredService.getSlasherAddress();
-      expect(slasherAddress).toBeTruthy();
-      expect(slasherAddress).toMatch(/^0x[a-fA-F0-9]{40}$/); // Valid Ethereum address
+    it('returns null without a signer', () => {
+      expect(create(null).getSlasherAddress()).toBeNull();
     });
   });
 
   describe('slashDoubleSpend', () => {
-    it('should return null when contract is not configured', async () => {
-      mockConfigService.get.mockReturnValue(undefined);
-      const unconfiguredService = new SlashingService(configService);
-
-      const result = await unconfiguredService.slashDoubleSpend(
-        '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-        '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+    it('returns null when slashing is disabled', async () => {
+      const result = await create(null).slashDoubleSpend(
+        '0x' + '12'.repeat(32),
+        '0x' + 'ab'.repeat(32),
+        '0x' + 'cd'.repeat(32),
         { x: '1', y: '2' },
         { x: '3', y: '4' },
+        '0',
+        [],
+        [],
       );
 
       expect(result).toBeNull();
     });
+  });
 
-    // Integration tests with actual contract would go here
-    // These would require a running Anvil instance and deployed contract
+  describe('slashPolicyViolation', () => {
+    it('returns null when slashing is disabled', async () => {
+      const result = await create(null).slashPolicyViolation(
+        '0x' + 'ab'.repeat(32),
+        '0x' + 'cd'.repeat(32),
+        [],
+        [],
+      );
+
+      expect(result).toBeNull();
+    });
   });
 });

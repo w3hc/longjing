@@ -9,7 +9,8 @@ import {
   validateSync,
 } from 'class-validator';
 import { assertNoKeyMaterialInEnv } from '../keys/key-policy';
-import { findPlaceholders, profile, PROFILES, Profile } from './profile';
+import { findPlaceholders, profile, PROFILES } from './profile';
+import type { Profile } from './profile';
 
 /**
  * Environment configuration schema.
