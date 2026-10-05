@@ -7,6 +7,7 @@ import {
 import Database from 'better-sqlite3';
 import { join } from 'path';
 import { mkdirSync, existsSync } from 'fs';
+import { isProd } from '../config/profile';
 
 interface StoredSignal {
   x: string;
@@ -271,7 +272,7 @@ export class NullifierStoreService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.logger.error('Migration failed:', error);
       // In production, throw the error to prevent service from starting with corrupted database
-      if (process.env.NODE_ENV === 'production') {
+      if (isProd()) {
         throw error;
       }
     }

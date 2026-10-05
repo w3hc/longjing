@@ -286,32 +286,30 @@ describe('SnarkjsProofService', () => {
       process.env = { ...env };
     });
 
-    const withEnv = (nodeEnv: string, circuit?: string) => {
-      process.env.NODE_ENV = nodeEnv;
+    const withEnv = (profile: string, circuit?: string) => {
+      process.env.PROFILE = profile;
       if (circuit) process.env.ZK_CIRCUIT = circuit;
       else delete process.env.ZK_CIRCUIT;
       return new SnarkjsProofService();
     };
 
     it('defaults to the test circuit outside production', () => {
-      expect(withEnv('development').getCircuit()).toBe('api_credit_proof_test');
+      expect(withEnv('local').getCircuit()).toBe('api_credit_proof_test');
     });
 
     it('defaults to the request circuit in production', () => {
-      const info = withEnv('production').getCircuitInfo();
+      const info = withEnv('prod').getCircuitInfo();
 
       expect(info.circuit).toBe('api_request');
       expect(info.vKeyPath).toMatch(/api_request_verification_key\.json$/);
     });
 
     it('honours ZK_CIRCUIT', () => {
-      expect(withEnv('development', 'api_request').getCircuit()).toBe(
-        'api_request',
-      );
+      expect(withEnv('local', 'api_request').getCircuit()).toBe('api_request');
     });
 
     it('rejects an unknown ZK_CIRCUIT', () => {
-      expect(() => withEnv('development', 'nope')).toThrow(
+      expect(() => withEnv('local', 'nope')).toThrow(
         'Unknown ZK_CIRCUIT: nope',
       );
     });
@@ -331,7 +329,7 @@ describe('SnarkjsProofService', () => {
     });
 
     const production = (circuit?: string) => {
-      process.env.NODE_ENV = 'production';
+      process.env.PROFILE = 'prod';
       if (circuit) process.env.ZK_CIRCUIT = circuit;
       else delete process.env.ZK_CIRCUIT;
       const prod = new SnarkjsProofService();
@@ -365,7 +363,7 @@ describe('SnarkjsProofService', () => {
     });
 
     it('keeps running outside production without the verification key', async () => {
-      process.env.NODE_ENV = 'development';
+      process.env.PROFILE = 'local';
       (fs.existsSync as jest.Mock).mockReturnValue(false);
       jest.spyOn(service['logger'], 'warn').mockImplementation();
 

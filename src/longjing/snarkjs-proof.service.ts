@@ -7,6 +7,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { isProd } from '../config/profile';
 
 export type ZkCircuit = 'api_request' | 'api_credit_proof_test';
 
@@ -45,10 +46,9 @@ export class SnarkjsProofService implements OnModuleInit {
   private isSetup = false;
 
   constructor() {
-    const isProduction = process.env.NODE_ENV === 'production';
     const circuit =
       process.env.ZK_CIRCUIT ||
-      (isProduction ? 'api_request' : 'api_credit_proof_test');
+      (isProd() ? 'api_request' : 'api_credit_proof_test');
 
     if (!(circuit in CIRCUIT_ARTIFACTS)) {
       throw new Error(`Unknown ZK_CIRCUIT: ${circuit}`);
@@ -65,7 +65,7 @@ export class SnarkjsProofService implements OnModuleInit {
    * NestJS lifecycle hook - initialize the service when module loads
    */
   async onModuleInit() {
-    if (process.env.NODE_ENV !== 'production') {
+    if (!isProd()) {
       await this.initialize();
       return;
     }

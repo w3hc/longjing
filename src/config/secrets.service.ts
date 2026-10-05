@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { AttestationService } from '../attestation/attestation.service';
+import { isProd } from './profile';
 
 /**
  * Manages application secrets, loading them from KMS in production
@@ -16,7 +17,7 @@ export class SecretsService implements OnModuleInit {
   constructor(private readonly attestation: AttestationService) {}
 
   async onModuleInit(): Promise<void> {
-    if (process.env.NODE_ENV === 'production') {
+    if (isProd()) {
       // In Phala Cloud TEE, encrypted secrets are injected as env vars
       // Only fetch from KMS if explicitly configured
       if (process.env.KMS_URL && !process.env.ADMIN_MLKEM_PUBLIC_KEY) {
