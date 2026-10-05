@@ -17,7 +17,5 @@ services:
       # ALLOW_KEYS_OUTSIDE_ENCLAVE=true here.
       - NODE_ENV=production
       - KMS_URL=${KMS_URL}
-      # TEE platform override (auto-detect by default)
-      # Options: auto | phala | intel-tdx | amd-sev-snp | aws-nitro | mock
-      - TEE_PLATFORM=${TEE_PLATFORM:-auto}
+      # No TEE_PLATFORM: production attests only through dstack
     restart: unless-stopped
