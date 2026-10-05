@@ -13,7 +13,6 @@ import { SnarkjsProofService } from './snarkjs-proof.service';
 import { SlashingService } from './slashing.service';
 import { SlashingProofService } from './slashing-proof.service';
 import { SecretsService } from '../config/secrets.service';
-import { TeePlatformService } from '../attestation/tee-platform.service';
 import { ProviderRegistryService } from '../providers';
 import { DatabaseService } from '../database/database.service';
 import { PricingRepository } from '../pricing/pricing.repository';
@@ -21,9 +20,10 @@ import { PricingOracleService } from '../pricing/pricing-oracle.service';
 import { CostEstimationService } from './cost-estimation.service';
 import { ClaudeProvider } from '../providers/claude';
 import { KeysModule } from '../keys/keys.module';
+import { AttestationModule } from '../attestation/attestation.module';
 
 @Module({
-  imports: [KeysModule],
+  imports: [KeysModule, AttestationModule],
   controllers: [LongjingController],
   providers: [
     LongjingService,
@@ -38,7 +38,6 @@ import { KeysModule } from '../keys/keys.module';
     SlashingService,
     SlashingProofService,
     SecretsService,
-    TeePlatformService,
     ProviderRegistryService,
     DatabaseService,
     PricingRepository,

@@ -2,7 +2,6 @@ import { Test } from '@nestjs/testing';
 import { AppModule } from './app.module';
 import { SecretsService } from './config/secrets.service';
 import { AttestationController } from './attestation/attestation.controller';
-import { TeePlatformService } from './attestation/tee-platform.service';
 import { HealthController } from './health/health.controller';
 import { AuthController } from './auth/auth.controller';
 import { SiweService } from './auth/siwe.service';
@@ -32,7 +31,6 @@ describe('AppModule', () => {
     }).compile();
 
     expect(module.get(SecretsService)).toBeDefined();
-    expect(module.get(TeePlatformService)).toBeDefined();
     expect(module.get(SiweService)).toBeDefined();
   });
 });

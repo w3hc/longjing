@@ -1,13 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SecretsService } from './secrets.service';
-import { TeePlatformService } from '../attestation/tee-platform.service';
+import { AttestationService } from '../attestation/attestation.service';
 
 // Mock fetch globally
 global.fetch = jest.fn();
 
 describe('SecretsService', () => {
   let service: SecretsService;
-  let teePlatformService: TeePlatformService;
+  let attestationService: AttestationService;
   const originalEnv = process.env;
 
   beforeEach(async () => {
@@ -18,16 +18,16 @@ describe('SecretsService', () => {
       providers: [
         SecretsService,
         {
-          provide: TeePlatformService,
+          provide: AttestationService,
           useValue: {
-            generateAttestationReport: jest.fn(),
+            getAttestation: jest.fn(),
           },
         },
       ],
     }).compile();
 
     service = module.get<SecretsService>(SecretsService);
-    teePlatformService = module.get<TeePlatformService>(TeePlatformService);
+    attestationService = module.get<AttestationService>(AttestationService);
 
     // Prevent onModuleInit from auto-running in tests
     jest.spyOn(service, 'onModuleInit').mockResolvedValue(undefined);
@@ -75,14 +75,15 @@ describe('SecretsService', () => {
       process.env.KMS_URL = 'https://kms.example.com/secrets';
 
       const mockAttestationReport = {
-        platform: 'amd-sev-snp' as const,
-        report: 'mock-attestation-report',
+        platform: 'phala' as const,
+        quote: 'mock-attestation-report',
+        reportData: '',
         measurement: 'mock-measurement',
         timestamp: '2026-03-17T00:00:00.000Z',
       };
 
       jest
-        .spyOn(teePlatformService, 'generateAttestationReport')
+        .spyOn(attestationService, 'getAttestation')
         .mockResolvedValue(mockAttestationReport);
 
       (global.fetch as jest.Mock).mockResolvedValue({
@@ -98,7 +99,7 @@ describe('SecretsService', () => {
 
       expect(
         jest
-          .spyOn(teePlatformService, 'generateAttestationReport')
+          .spyOn(attestationService, 'getAttestation')
           .getMockImplementation(),
       ).toBeDefined();
       expect(global.fetch).toHaveBeenCalledWith(
@@ -139,8 +140,8 @@ describe('SecretsService', () => {
       // Should not call KMS
       expect(global.fetch).not.toHaveBeenCalled();
       const generateAttestationSpy = jest.spyOn(
-        teePlatformService,
-        'generateAttestationReport',
+        attestationService,
+        'getAttestation',
       );
       expect(generateAttestationSpy).not.toHaveBeenCalled();
 
@@ -153,14 +154,13 @@ describe('SecretsService', () => {
       process.env.NODE_ENV = 'production';
       process.env.KMS_URL = 'https://kms.example.com/secrets';
 
-      jest
-        .spyOn(teePlatformService, 'generateAttestationReport')
-        .mockResolvedValue({
-          platform: 'none',
-          report: 'mock-report',
-          measurement: 'mock',
-          timestamp: '2026-03-17T00:00:00.000Z',
-        });
+      jest.spyOn(attestationService, 'getAttestation').mockResolvedValue({
+        platform: 'phala',
+        quote: 'mock-report',
+        reportData: '',
+        measurement: 'mock',
+        timestamp: '2026-03-17T00:00:00.000Z',
+      });
 
       (global.fetch as jest.Mock).mockResolvedValue({
         ok: false,
