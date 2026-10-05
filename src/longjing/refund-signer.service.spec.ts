@@ -2,7 +2,7 @@ import { KeyDerivationService } from '../keys/key-derivation.service';
 import { RefundSignerService } from './refund-signer.service';
 
 describe('RefundSignerService', () => {
-  const originalNodeEnv = process.env.NODE_ENV;
+  const originalProfile = process.env.PROFILE;
   const originalOperatorKey = process.env.OPERATOR_PRIVATE_KEY;
 
   const create = (key: Buffer | null) =>
@@ -18,7 +18,7 @@ describe('RefundSignerService', () => {
   };
 
   afterEach(() => {
-    process.env.NODE_ENV = originalNodeEnv;
+    process.env.PROFILE = originalProfile;
     if (originalOperatorKey === undefined) {
       delete process.env.OPERATOR_PRIVATE_KEY;
     } else {
@@ -42,10 +42,17 @@ describe('RefundSignerService', () => {
   }, 30000);
 
   it('refuses to fall back in production without a derived key', async () => {
-    process.env.NODE_ENV = 'production';
+    process.env.PROFILE = 'prod';
 
     await expect(create(null).onModuleInit()).rejects.toThrow(
       'Refund signer key not derived from dstack',
     );
+  }, 30000);
+
+  it('uses the dev fallback key only in local', async () => {
+    process.env.PROFILE = 'local';
+    delete process.env.OPERATOR_PRIVATE_KEY;
+
+    await expect(create(null).getPublicKey()).resolves.toBeDefined();
   }, 30000);
 });

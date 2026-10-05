@@ -57,7 +57,7 @@ describe('AttestationService', () => {
 
   describe('in production', () => {
     beforeEach(() => {
-      process.env.NODE_ENV = 'production';
+      process.env.PROFILE = 'prod';
       delete process.env.DSTACK_SIMULATOR_ENDPOINT;
     });
 
@@ -152,7 +152,7 @@ describe('AttestationService', () => {
 
   describe('in development', () => {
     beforeEach(() => {
-      process.env.NODE_ENV = 'development';
+      process.env.PROFILE = 'local';
     });
 
     it('allows the mock platform', async () => {

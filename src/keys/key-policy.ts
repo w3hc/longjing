@@ -1,3 +1,5 @@
+import { isProd } from '../config/profile';
+
 /**
  * In production, every key is derived inside the enclave from the dstack KMS
  * (see docs/KEY_DERIVATION.md), so key material in env is refused.
@@ -27,7 +29,7 @@ export function keysOutsideEnclaveAllowed(
 export function assertNoKeyMaterialInEnv(
   env: Record<string, unknown> = process.env,
 ): void {
-  if (env.NODE_ENV !== 'production' || keysOutsideEnclaveAllowed(env)) {
+  if (!isProd(env) || keysOutsideEnclaveAllowed(env)) {
     return;
   }
   const set = KEY_MATERIAL_ENV.filter((name) => env[name]);

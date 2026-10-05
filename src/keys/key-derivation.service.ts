@@ -14,6 +14,7 @@ import { createMlKem1024 } from 'mlkem';
 import { getTlsLeafCertificate } from '../tls/tls-context';
 import { DstackV1Client } from './dstack-v1.client';
 import { keysOutsideEnclaveAllowed } from './key-policy';
+import { isProd } from '../config/profile';
 
 export const MLKEM_DOMAIN = 'longjing/mlkem-1024/v1';
 export const REFUND_SIGNER_DOMAIN = 'longjing/refund-signer/babyjub/v1';
@@ -78,8 +79,7 @@ export class KeyDerivationService implements OnModuleInit {
   constructor(private readonly dstack: DstackV1Client) {}
 
   async onModuleInit(): Promise<void> {
-    const production =
-      process.env.NODE_ENV === 'production' && !keysOutsideEnclaveAllowed();
+    const production = isProd() && !keysOutsideEnclaveAllowed();
 
     if (production && this.dstack.isSimulator()) {
       throw new Error(

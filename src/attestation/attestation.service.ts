@@ -34,6 +34,7 @@ import {
 } from './report-data';
 import { KeyDerivationService } from '../keys/key-derivation.service';
 import { getTlsLeafCertificate } from '../tls/tls-context';
+import { isProd } from '../config/profile';
 
 @Injectable()
 export class AttestationService
@@ -52,7 +53,7 @@ export class AttestationService
     // Check if TEE_PLATFORM is explicitly set in environment
     const forcedPlatform = this.configService.get<string>('TEE_PLATFORM');
 
-    if (process.env.NODE_ENV === 'production') {
+    if (isProd()) {
       this.platform = await this.selectProductionPlatform(forcedPlatform);
       this.logger.log('✅ TEE platform: dstack');
       return;
@@ -122,7 +123,7 @@ export class AttestationService
    * it carries the requested report_data.
    */
   async onApplicationBootstrap() {
-    if (process.env.NODE_ENV !== 'production') {
+    if (!isProd()) {
       return;
     }
 

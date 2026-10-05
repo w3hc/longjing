@@ -4,6 +4,7 @@ import { buildBabyjub, buildEddsa, buildPoseidon } from 'circomlibjs';
 import { RefundTicketDto } from './dto/api-response.dto';
 import { KeyDerivationService } from '../keys/key-derivation.service';
 import { keysOutsideEnclaveAllowed } from '../keys/key-policy';
+import { isProd } from '../config/profile';
 
 /**
  * Service for signing refund tickets using EdDSA with Babyjubjub curve
@@ -158,7 +159,7 @@ export class RefundSignerService implements OnModuleInit {
     // dstack; this guards against reaching the dev fallback there anyway.
     // Under the compose opt-out, production needs an explicit key.
     if (
-      process.env.NODE_ENV === 'production' &&
+      isProd() &&
       (!keysOutsideEnclaveAllowed() || !process.env.OPERATOR_PRIVATE_KEY)
     ) {
       throw new Error(
