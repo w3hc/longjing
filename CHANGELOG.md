@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `pnpm check:verifiers` fails on any pinned verification key where `vk_delta_2` equals `vk_gamma_2`, which would let anyone forge proofs from the public key alone. A fixture under `scripts/testing/fixtures/` shows it failing. Jest now also runs specs under `scripts/` ([#152](https://github.com/w3hc/longjing/issues/152)).
 
+### Removed
+
+- **Breaking:** `policy_violation.circom`, `PolicyViolationVerifier.sol`, `policyVerifier` and `Target.PolicyVerifier`. The circuit only passed its public inputs through, so anyone could prove any `(nullifier, idCommitment)` (LJ-08). `Target.ServerAddress` is now index 3 ([#133](https://github.com/w3hc/longjing/issues/133)).
+
+### Changed
+
+- **Breaking:** `slashPolicyStake(nullifier, idCommitment)` replaces `slashPolicyViolation`. It takes no proof and burns the policy stake, as in the paper. It is a trusted-operator action, and its only guard is the 7-day timelock on `serverAddress`. `PolicyStakeSlashed` replaces `PolicyViolationSlashed`, without `evidenceHash` ([#133](https://github.com/w3hc/longjing/issues/133)).
+
 ### Fixed
 
 - `slashDoubleSpend` pays the policy stake to the slasher along with the RLN stake. It used to stay in the inactive deposit, where nobody could reach it (LJ-17) ([#129](https://github.com/w3hc/longjing/issues/129)).

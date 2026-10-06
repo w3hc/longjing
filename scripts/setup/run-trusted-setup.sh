@@ -11,7 +11,6 @@ mkdir -p circuits/build
 # - Withdrawal: 11,749 constraints (needs 2^15 = 32,768)
 # - Refund Redemption: 11,156 constraints (needs 2^15 = 32,768)
 # - Double-Spend Slashing: 1,357 constraints (needs 2^12 = 4,096)
-# - Policy Violation: ~500 constraints (needs 2^10 = 1,024)
 
 # We'll use 2^15 to handle the largest circuits
 POWER=15
@@ -158,38 +157,6 @@ else
     echo "✓ Double-spend slashing circuit already set up"
 fi
 
-# Policy Violation Circuit
-echo ""
-echo "4️⃣  Policy Violation Circuit (~500 constraints)"
-if [ ! -f "circuits/build/policy_violation_final.zkey" ]; then
-    echo "  - Initial setup..."
-    npx snarkjs groth16 setup \
-        circuits/build/policy_violation.r1cs \
-        ${PTAU_FILE} \
-        circuits/build/policy_violation_0000.zkey \
-        > /dev/null
-
-    echo "  - Contributing randomness..."
-    npx snarkjs zkey contribute \
-        circuits/build/policy_violation_0000.zkey \
-        circuits/build/policy_violation_final.zkey \
-        --name="Production contribution" \
-        -e="$(openssl rand -base64 64)" \
-        > /dev/null
-
-    echo "  - Exporting verification key..."
-    npx snarkjs zkey export verificationkey \
-        circuits/build/policy_violation_final.zkey \
-        circuits/build/policy_violation_verification_key.json
-
-    # Cleanup
-    rm -f circuits/build/policy_violation_0000.zkey
-
-    echo "✓ Policy violation circuit setup complete"
-else
-    echo "✓ Policy violation circuit already set up"
-fi
-
 echo ""
 echo "🎉 Trusted Setup Ceremony Complete!"
 echo ""
@@ -201,8 +168,6 @@ echo "  - circuits/build/refund_redemption_final.zkey"
 echo "  - circuits/build/refund_redemption_verification_key.json"
 echo "  - circuits/build/double_spend_slashing_final.zkey"
 echo "  - circuits/build/double_spend_slashing_verification_key.json"
-echo "  - circuits/build/policy_violation_final.zkey"
-echo "  - circuits/build/policy_violation_verification_key.json"
 echo ""
 echo "⚠️  SECURITY NOTE:"
 echo "This is a development ceremony with 2 contributions."

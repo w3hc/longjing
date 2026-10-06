@@ -5,9 +5,9 @@ import { BlockchainService } from './blockchain.service';
 // Smart contract ABI for slashing functions
 const SLASHING_ABI = [
   'function slashDoubleSpend(bytes32 _secretKey, bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[4] _publicSignals) external',
-  'function slashPolicyViolation(bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[5] _publicSignals) external',
+  'function slashPolicyStake(bytes32 _nullifier, bytes32 _idCommitment) external',
   'event DoubleSpendSlashed(bytes32 indexed secretKey, bytes32 indexed nullifier, address indexed slasher, uint256 reward)',
-  'event PolicyViolationSlashed(bytes32 indexed nullifier, bytes32 indexed idCommitment, uint256 amountBurned, bytes32 evidenceHash)',
+  'event PolicyStakeSlashed(bytes32 indexed nullifier, bytes32 indexed idCommitment, uint256 amountBurned)',
 ];
 
 interface RlnSignal {
@@ -169,18 +169,15 @@ export class SlashingService {
   }
 
   /**
-   * Submit a slashing transaction for policy violation
+   * Burn a user's policy stake for a ToS violation. No proof backs it: the
+   * contract trusts the server address, guarded only by the change timelock.
    * @param nullifier The nullifier from the violating request
    * @param idCommitment The user's identity commitment
-   * @param proof ZK proof components [pA, pB, pC]
-   * @param publicSignals Public signals in snarkjs order [evidenceHash, nullifier, idCommitment, nullifierExpected, idCommitmentExpected]
    * @returns Transaction hash if successful
    */
-  async slashPolicyViolation(
+  async slashPolicyStake(
     nullifier: string,
     idCommitment: string,
-    proof: bigint[],
-    publicSignals: bigint[],
   ): Promise<string | null> {
     const contract = this.slashingContract();
     if (!contract) {
@@ -197,12 +194,7 @@ export class SlashingService {
 
       // Submit transaction
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const tx = await contract.slashPolicyViolation(
-        nullifier,
-        idCommitment,
-        proof,
-        publicSignals,
-      );
+      const tx = await contract.slashPolicyStake(nullifier, idCommitment);
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const txHash = tx.hash as string;

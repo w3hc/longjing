@@ -9,7 +9,7 @@ The LongjingCredits contract implements:
 - **Dual staking** mechanism (RLN + Policy stakes)
 - **Merkle tree** anonymity set using Poseidon hashing
 - **Double-spend slashing** via RLN secret key extraction
-- **Policy violation slashing** for ToS enforcement
+- **Policy stake slashing** for ToS enforcement, a trusted-operator action
 - **Refund ticket redemption** with EdDSA signatures
 
 ## Contracts
@@ -21,7 +21,7 @@ Main contract implementing the RLN-based usage-credits protocol.
 - `deposit(bytes32 idCommitment)` - Deposit ETH with anonymous identity
 - `withdraw(bytes32 idCommitment, address payable recipient, uint256[8] proof, uint256[7] publicSignals)` - Withdraw funds with ZK proof
 - `slashDoubleSpend(bytes32 secretKey, bytes32 nullifier, bytes32 idCommitment, uint256[8] proof, uint256[4] publicSignals)` - Slash double-spenders and reward reporters
-- `slashPolicyViolation(bytes32 nullifier, bytes32 idCommitment, uint256[8] proof, uint256[5] publicSignals)` - Slash ToS violators (server only)
+- `slashPolicyStake(bytes32 nullifier, bytes32 idCommitment)` - Burn a ToS violator's policy stake (server only, no proof: trusted, guarded only by the 7-day timelock on the server address)
 - `redeemRefund(bytes32 idCommitment, bytes32 nullifier, uint256 refundValue, address payable recipient, uint256[8] proof, uint256[8] publicSignals)` - Redeem server-signed refund tickets
 
 `publicSignals` are passed in the order snarkjs emits them: the circuit's outputs first, then its public inputs, each group in declaration order. `pnpm check:verifiers` checks that each verifier contract embeds its circuit's current verification key.
@@ -38,7 +38,6 @@ Baby Jubjub elliptic curve operations for EdDSA signature verification. Implemen
 - `WithdrawalVerifier.sol` - Groth16 verifier for withdrawal proofs
 - `RefundRedemptionVerifier.sol` - Groth16 verifier for refund redemption proofs
 - `DoubleSpendSlashingVerifier.sol` - Groth16 verifier for double-spend slashing proofs
-- `PolicyViolationVerifier.sol` - Groth16 verifier for policy violation proofs
 
 **Critical:** All contracts use Poseidon hashing to maintain compatibility with the ZK circuits. Using Keccak256 would break proof verification.
 
@@ -96,7 +95,7 @@ forge coverage
 ✅ Merkle proof generation verified for >2 leaves
 ✅ Refund redemption with EdDSA signature verification
 ✅ Double-spend slashing with secret key extraction
-✅ Policy violation slashing (server-only)
+✅ Policy stake slashing (server-only, trusted)
 ```
 
 ## Hash Function Compatibility ⚠️
@@ -244,14 +243,12 @@ contracts/
 │   ├── BabyJubJub.sol                      # EdDSA curve operations
 │   ├── WithdrawalVerifier.sol              # Withdrawal proof verifier (auto-generated)
 │   ├── RefundRedemptionVerifier.sol        # Refund proof verifier (auto-generated)
-│   ├── DoubleSpendSlashingVerifier.sol     # Slashing proof verifier (auto-generated)
-│   └── PolicyViolationVerifier.sol         # Policy proof verifier (auto-generated)
+│   └── DoubleSpendSlashingVerifier.sol     # Slashing proof verifier (auto-generated)
 ├── test/
 │   ├── LongjingCredits.t.sol                  # Foundry tests (24 tests)
 │   ├── MockWithdrawalVerifier.sol          # Mock verifier for testing
 │   ├── MockRefundVerifier.sol              # Mock verifier for testing
-│   ├── MockSlashingVerifier.sol            # Mock verifier for testing
-│   └── MockPolicyVerifier.sol              # Mock verifier for testing
+│   └── MockSlashingVerifier.sol            # Mock verifier for testing
 ├── script/
 │   └── DeployLongjingCredits.s.sol           # Deployment script
 ├── lib/                                    # Foundry dependencies

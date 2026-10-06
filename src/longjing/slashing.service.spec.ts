@@ -66,13 +66,11 @@ describe('SlashingService', () => {
     });
   });
 
-  describe('slashPolicyViolation', () => {
+  describe('slashPolicyStake', () => {
     it('returns null when slashing is disabled', async () => {
-      const result = await create(null).slashPolicyViolation(
+      const result = await create(null).slashPolicyStake(
         '0x' + 'ab'.repeat(32),
         '0x' + 'cd'.repeat(32),
-        [],
-        [],
       );
 
       expect(result).toBeNull();

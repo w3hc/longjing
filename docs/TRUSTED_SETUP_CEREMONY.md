@@ -210,7 +210,6 @@ When implementing the trusted setup ceremony for production:
      - [withdrawal.circom](../circuits/withdrawal.circom) - Merkle tree membership proof
      - [refund_redemption.circom](../circuits/refund_redemption.circom) - EdDSA signature verification
      - [double_spend_slashing.circom](../circuits/double_spend_slashing.circom) - RLN secret key extraction
-     - [policy_violation.circom](../circuits/policy_violation.circom) - Policy violation evidence binding
    - Generate larger Powers of Tau (2^16 or higher)
    - Multiple rounds of contributions
    - At least 1 airgapped contributor
