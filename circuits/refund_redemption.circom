@@ -84,6 +84,11 @@ template RefundRedemptionProof() {
     signatureVerifier.R8y <== refundSignatureR8y;
     signatureVerifier.S <== refundSignatureS;
     signatureVerifier.M <== messageHash.out;
+
+    // Bind recipient with an explicit constraint rather than relying on the
+    // setup giving every public input an IC point
+    signal recipientSquare;
+    recipientSquare <== recipient * recipient;
 }
 
 component main {public [signalX, refundValueClaimed, serverPublicKeyX, serverPublicKeyY, recipient]} = RefundRedemptionProof();
