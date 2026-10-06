@@ -144,8 +144,6 @@ Deploys the real contract and verifiers, and submits one real proof per circuit:
 - Refund: signs a ticket with the dev refund-signer key, redeems it with a `refund_redemption.circom` proof, and checks that a second redemption reverts with `RefundAlreadyRedeemed`
 - Double spend: proves `double_spend_slashing.circom` from two signals with the same nullifier, and checks that the slasher gets the RLN stake
 
-`policy_violation` has no zkey, so it has no real-proof test. [#133](https://github.com/w3hc/longjing/issues/133) removes it.
-
 ### Proof Generation Test (`test/proof-generation.e2e-spec.ts`)
 
 Tests ZK proof generation internals:

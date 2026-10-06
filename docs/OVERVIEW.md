@@ -40,7 +40,7 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
 | **Nullifier construction** | RLN line: `y = k + a·x` with `a = Poseidon(k, i)`; two signals on the same ticket index reveal `k` | One-time state anchor: each request consumes the current private state and emits one nullifier |
 | **Double-spend response** | Anyone who recovers `k` slashes the RLN stake onchain | The server keeps every seen nullifier; a replayed old state is challenged during the escape-hatch window |
 | **Balance tracking** | Refund tickets (EdDSA) accumulate client-side; the request circuit proves the solvency formula over them | Private balance commitment inside a server-signed state (Schnorr); no ticket indices or refund history |
-| **Stakes and policy** | Separate RLN stake (claimable) and policy stake (burnable via a policy-violation proof) | No policy stake; a policy penalty is an optional bounded deduction from the private balance |
+| **Stakes and policy** | Separate RLN stake (claimable) and policy stake (burnable by the operator, no proof) | No policy stake; a policy penalty is an optional bounded deduction from the private balance |
 | **Settlement** | Refunds redeemed onchain; withdrawal is a direct ZK proof with no server involvement; once a note's 365-day TTL has passed, the operator can claim what's left, and time spent paused doesn't count toward it | Net settlement in gwei when the note closes: instant mutual close with a server signature, or an escape hatch with a 24h challenge window; expired notes can be claimed by the server |
 | **Merkle tree** | 20 levels | 32 levels, note-bound commitments |
 
@@ -98,7 +98,7 @@ The smart contract manages the economic guarantees and serves as the source of t
 - **Merkle Tree**: Maintains an onchain Merkle tree of all identity commitments (anonymity set)
 - **Dual Staking Mechanism**:
   - 50% RLN stake: Claimable by anyone who proves double-spending
-  - 50% Policy stake: Burnable by operator for ToS violations (not claimable to prevent false accusations)
+  - 50% Policy stake: Burnable by the operator for ToS violations. No proof backs the accusation: it is a trusted-operator action, and burning instead of paying the operator removes any profit from a false one
 - **Refund Redemption**: Users can redeem server-signed refund tickets onchain
 - **Slashing**: Automatic punishment when someone proves you reused a ticket
 
@@ -107,12 +107,12 @@ The smart contract manages the economic guarantees and serves as the source of t
 - `withdraw(address recipient, uint256 amount)`: Withdraw available balance
 - `redeemRefund(...)`: Redeem server-signed refund ticket
 - `slashDoubleSpend(...)`: Submit proof of double-spending to claim RLN stake
-- `slashPolicy(...)`: Operator burns policy stake for ToS violations
+- `slashPolicyStake(nullifier, idCommitment)`: Operator burns policy stake for ToS violations
 - `claimExpired(bytes32 identityCommitment)`: Operator claims what's left on a note once `noteExpiry()` has passed
 
 ### 2. Zero-Knowledge Circuit Layer
 
-The system uses four specialized ZK circuits (Groth16) for different operations:
+The system uses four ZK circuits (Groth16) for different operations:
 
 **Production Circuits**:
 
@@ -139,13 +139,6 @@ The system uses four specialized ZK circuits (Groth16) for different operations:
    - 1,357 constraints, 1,361 wires
    - Proves secret key extraction from dual RLN signals
    - Verifier: [DoubleSpendSlashingVerifier.sol](../contracts/src/DoubleSpendSlashingVerifier.sol)
-
-5. **Policy Violation Circuit** ([policy_violation.circom](../circuits/policy_violation.circom))
-   - 837 constraints, 843 wires
-   - Proves server knows RLN signal from actual request
-   - Binds nullifier ↔ idCommitment ↔ violation evidence
-   - Prevents arbitrary policy stake burning (C-4 security fix)
-   - Verifier: [PolicyViolationVerifier.sol](../contracts/src/PolicyViolationVerifier.sol)
 
 **Test Circuit**: `api_credit_proof_test`, whose artifacts come from `pnpm circuits:fetch` (opt-in with `ZK_CIRCUIT`; production refuses to start with it)
 
@@ -404,7 +397,7 @@ The server signs refund tickets with EdDSA (verifiable in ZK circuits):
 | **Balance draining** | ZK proof ensures balance ≥ maxCost before request |
 | **Server refusing refunds** | Overpayment is minor per request, accumulate and redeem onchain |
 | **Sybil attacks** | Each deposit requires real ETH stake |
-| **ToS violations** | Policy stake can be burned (separate from RLN stake) |
+| **ToS violations** | The operator can burn the policy stake (separate from RLN stake). It is trusted to do so honestly |
 
 ### Privacy Limitations & Best Practices
 
@@ -562,7 +555,7 @@ This relies on economic incentives:
 **Trust Assumptions**:
 
 - `getMerkleProof()` is public onchain (no server dependency for withdrawals)
-- **Admin control**: Contract owner can change verifiers and the server address (which can slash policy stakes), but only 7 days after a public `ChangeProposed` event, so users can withdraw first
+- **Admin control**: Contract owner can change verifiers and the server address (which can burn any policy stake without a proof), but only 7 days after a public `ChangeProposed` event, so users can withdraw first
 - **Deposit linkability**: First deposit publicly links wallet address to identity commitment
 
 ## Roadmap

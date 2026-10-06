@@ -83,7 +83,7 @@ This commitment is stored in the Merkle tree anonymity set onchain, allowing use
 │  │  - withdraw()        : Reclaim unused funds         │   │
 │  │  - redeemRefund()    : Claim refund tickets         │   │
 │  │  - slashDoubleSpend(): Extract k, reward slasher    │   │
-│  │  - slashPolicy()     : Burn policy stake            │   │
+│  │  - slashPolicyStake(): Burn policy stake (trusted)  │   │
 │  │  - Merkle Tree       : Identity anonymity set       │   │
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
@@ -208,14 +208,8 @@ function slashDoubleSpend(
     uint256[4] calldata publicSignals
 ) external
 
-// Slash a policy violator (server only)
-// publicSignals: evidenceHash, nullifier, idCommitment, nullifierExpected, idCommitmentExpected
-function slashPolicyViolation(
-    bytes32 nullifier,
-    bytes32 idCommitment,
-    uint256[8] calldata proof,
-    uint256[5] calldata publicSignals
-) external
+// Burn a policy violator's policy stake (server only, no proof)
+function slashPolicyStake(bytes32 nullifier, bytes32 idCommitment) external
 
 // Check if nullifier has been used (double-spend or refund redemption)
 function isNullifierUsed(bytes32 nullifier) external view returns (bool)
@@ -223,7 +217,7 @@ function isNullifierUsed(bytes32 nullifier) external view returns (bool)
 
 **Dual Staking**:
 - **RLN Stake**: Claimable by anyone who proves double-spending
-- **Policy Stake**: Burned (not transferred) by server for ToS violations
+- **Policy Stake**: Burned (not transferred) by the server for ToS violations. No proof backs it: the server address is trusted, and the 7-day timelock on changing it is the only guard
 
 ## Backend Services
 
@@ -429,7 +423,7 @@ Assuming ETH = $2,000:
 3. **Nullifier Uniqueness**: Each ticket index can only be used once
 4. **Merkle Proof Freshness**: Clients must use the current onchain Merkle root. In production, the server rejects a request with 503 when it can't read that root or the nullifier's slashed status
 5. **Proof Replay**: Nullifiers are tracked onchain to prevent replay attacks
-6. **Server Accountability**: Policy stake is burned (not claimed) to prevent profit from false bans
+6. **Server Accountability**: Policy stake is burned (not claimed), so the operator can't profit from a false ban. It can still burn any stake without a proof
 
 ## Privacy Guarantees
 
@@ -515,11 +509,10 @@ This implementation follows the [original ZK API Credits proposal](https://ethre
 
 ### Circuit Architecture
 - **Original**: Single large circuit for all operations
-- **Current**: Four domain-specific circuits
+- **Current**: Three domain-specific circuits
   - `withdrawal.circom` - Merkle membership + identity ownership
   - `refund_redemption.circom` - EdDSA signature batch verification
   - `double_spend_slashing.circom` - RLN secret key extraction
-  - `policy_violation.circom` - Policy violation evidence binding (C-4 security fix)
   - Benefits: Smaller trusted setups, faster proving, modular upgrades
 
 ### Merkle Tree
