@@ -1,10 +1,27 @@
 #!/usr/bin/env ts-node
 /**
- * Generates refund redemption proofs on the client, so the secret key never
- * leaves the user's machine. Withdrawal proving is tracked in #119.
+ * Generates request and refund redemption proofs on the client, so the secret
+ * key never leaves the user's machine. Withdrawal proving is tracked in #119.
  *
  * Usage:
+ *   pnpm prove request <input.json>
  *   pnpm prove refund <input.json>
+ *
+ * The request input file holds:
+ *   {
+ *     "secretKey": "0x...",
+ *     "ticketIndex": "0x00",
+ *     "payload": "<the request payload>",
+ *     "maxCost": "<wei, at least the server's worst-case cost>",
+ *     "rpcUrl": "http://127.0.0.1:8545",
+ *     "contract": "0x<LongjingCredits address>",
+ *     "serverPublicKey": { "x": "0x...", "y": "0x..." },
+ *     "circuit": "api_request" (default) or "api_request_local"
+ *   }
+ *
+ * It reads the Merkle path, the root and the deposit from the contract, and
+ * prints the body for POST /longjing/request. It counts no refund tickets
+ * toward the balance yet: the deposit alone must cover (i + 1) · maxCost.
  *
  * The refund input file holds:
  *   {
@@ -21,9 +38,36 @@
  */
 
 import * as fs from 'fs';
+import { ethers } from 'ethers';
 import { Logger } from '@nestjs/common';
 import { ProofGenService } from '../../src/longjing/proof-gen.service';
 import { payloadToSignalX } from '../../src/longjing/utils/payload-signal.util';
+
+// snarkjs ships no type declarations
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const snarkjs = require('snarkjs');
+
+interface RequestInput {
+  secretKey: string;
+  ticketIndex: string;
+  payload: string;
+  maxCost: string;
+  rpcUrl: string;
+  contract: string;
+  serverPublicKey: { x: string; y: string };
+  circuit?: RequestCircuit;
+}
+
+// Refund slots per circuit, the second argument of ApiRequestProof
+const REFUND_SLOTS = { api_request: 10, api_request_local: 2 } as const;
+type RequestCircuit = keyof typeof REFUND_SLOTS;
+
+const CONTRACT_ABI = [
+  'function merkleRoot() view returns (bytes32)',
+  'function getAllIdentityCommitments() view returns (bytes32[])',
+  'function getMerkleProof(uint256 _leafIndex) view returns (bytes32[20] pathElements, uint8[20] pathIndices)',
+  'function getDeposit(bytes32 _idCommitment) view returns (tuple(bytes32 idCommitment, uint256 rlnStake, uint256 policyStake, uint256 timestamp, bool active))',
+];
 
 interface RefundInput {
   secretKey: string;
@@ -42,8 +86,99 @@ interface RefundInput {
 const toHex = (v: bigint | number | string) => '0x' + BigInt(v).toString(16);
 
 function usage(): never {
-  console.error('Usage: pnpm prove refund <input.json>');
+  console.error('Usage: pnpm prove <request|refund> <input.json>');
   process.exit(1);
+}
+
+async function proveRequest(prover: ProofGenService, args: string[]) {
+  if (args.length < 1) usage();
+  const input = JSON.parse(fs.readFileSync(args[0], 'utf8')) as RequestInput;
+  const circuit = input.circuit ?? 'api_request';
+  if (!(circuit in REFUND_SLOTS)) {
+    throw new Error(`Unknown circuit: ${circuit}`);
+  }
+  const secretKey = BigInt(input.secretKey);
+  const idCommitment = ethers.toBeHex(
+    await prover.generateIdCommitment(secretKey),
+    32,
+  );
+
+  const contract = new ethers.Contract(
+    input.contract,
+    CONTRACT_ABI,
+    new ethers.JsonRpcProvider(input.rpcUrl),
+  );
+  const [commitments, root, deposit] = (await Promise.all([
+    contract.getAllIdentityCommitments(),
+    contract.merkleRoot(),
+    contract.getDeposit(idCommitment),
+  ])) as [
+    string[],
+    string,
+    { rlnStake: bigint; policyStake: bigint; active: boolean },
+  ];
+  const leafIndex = commitments.indexOf(idCommitment);
+  if (leafIndex < 0 || !deposit.active) {
+    throw new Error(`No active deposit for this secret key (${idCommitment})`);
+  }
+  const [pathElements, pathIndices] = (await contract.getMerkleProof(
+    leafIndex,
+  )) as [string[], bigint[]];
+  const initialDeposit = deposit.rlnStake + deposit.policyStake;
+
+  const slots = REFUND_SLOTS[circuit];
+  const zeros = Array<string>(slots).fill('0');
+  const dec = (v: bigint | number | string) => BigInt(v).toString();
+  const signalX = payloadToSignalX(input.payload);
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    {
+      secretKey: dec(secretKey),
+      ticketIndex: dec(input.ticketIndex),
+      initialDeposit: dec(initialDeposit),
+      merklePathElements: pathElements.map(dec),
+      merklePathIndices: pathIndices.map(dec),
+      numRefunds: '0',
+      refundValues: zeros,
+      refundTimestamps: zeros,
+      refundSignaturesR8x: zeros,
+      refundSignaturesR8y: zeros,
+      refundSignaturesS: zeros,
+      refundNullifiers: zeros,
+      serverPublicKeyX: dec(input.serverPublicKey.x),
+      serverPublicKeyY: dec(input.serverPublicKey.y),
+      merkleRootExpected: dec(root),
+      maxCost: dec(input.maxCost),
+      signalX: dec(signalX),
+    },
+    `circuits/build/${circuit}_js/${circuit}.wasm`,
+    `circuits/build/${circuit}.zkey`,
+  );
+  // [nullifier, signalY, idCommitment, merkleRoot, merkleRootExpected, maxCost, signalX, serverPublicKeyX, serverPublicKeyY]
+  const [nullifier, signalY] = publicSignals;
+
+  // Wire format: projective coordinates, pi_b pairs swapped
+  const wire = {
+    pi_a: [proof.pi_a[0], proof.pi_a[1], '1'],
+    pi_b: [
+      [proof.pi_b[0][1], proof.pi_b[0][0], '1'],
+      [proof.pi_b[1][1], proof.pi_b[1][0], '1'],
+    ],
+    pi_c: [proof.pi_c[0], proof.pi_c[1], '1'],
+    protocol: 'groth16',
+  };
+
+  return {
+    payload: input.payload,
+    nullifier: toHex(nullifier),
+    signal: { x: toHex(signalX), y: toHex(signalY) },
+    proof: JSON.stringify(wire),
+    maxCost: input.maxCost,
+    merkleRoot: root,
+    initialDeposit: initialDeposit.toString(),
+    ticketIndex: toHex(input.ticketIndex),
+    idCommitment,
+    idCommitmentExpected: idCommitment,
+  };
 }
 
 async function proveRefund(prover: ProofGenService, args: string[]) {
@@ -91,8 +226,9 @@ async function main() {
   const [kind, ...args] = process.argv.slice(2);
   const prover = new ProofGenService();
 
-  if (kind !== 'refund') usage();
-  const result = await proveRefund(prover, args);
+  const provers = { request: proveRequest, refund: proveRefund };
+  if (kind !== 'request' && kind !== 'refund') usage();
+  const result = await provers[kind](prover, args);
 
   console.log(JSON.stringify(result, null, 2));
   // snarkjs keeps worker threads alive
