@@ -1,7 +1,7 @@
 pragma circom 2.0.0;
 
 include "../node_modules/circomlib/circuits/poseidon.circom";
-include "../node_modules/circomlib/circuits/eddsamimc.circom";
+include "../node_modules/circomlib/circuits/eddsaposeidon.circom";
 include "../node_modules/circomlib/circuits/comparators.circom";
 include "../node_modules/circomlib/circuits/mux1.circom";
 
@@ -206,7 +206,7 @@ template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
         refundMessageHashers[i].inputs[2] <== refundValues[i];
         refundMessageHashers[i].inputs[3] <== refundTimestamps[i];
 
-        refundSignatureVerifiers[i] = EdDSAMiMCVerifier();
+        refundSignatureVerifiers[i] = EdDSAPoseidonVerifier();
         refundSignatureVerifiers[i].enabled <== refundActive[i].out;
         refundSignatureVerifiers[i].Ax <== serverPublicKeyX;
         refundSignatureVerifiers[i].Ay <== serverPublicKeyY;
