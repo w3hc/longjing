@@ -243,6 +243,18 @@ On dstack, the attestation commits to the compose file, not to the image content
    ```
 3. Deploy. The compose hash, which dstack extends into RTMR3, now commits to that exact image.
 
+### Why the pin lags one release
+
+A commit can't contain the digest of an image built from itself: the digest exists only once CI has built the tagged commit. So the `docker-compose.yml` at a release tag still pins the **previous** release's image. At `v0.4.0`, for example, it pins the `v0.3.0` digest.
+
+The new digest is pinned in a follow-up commit on `main`, after the release:
+
+1. Wait for `release.yml` to finish, and copy the digest from the release notes.
+2. Check it, as described in [Checking a digest](#checking-a-digest).
+3. Open a pull request that changes only the `image:` line of `docker-compose.yml` to `ghcr.io/w3hc/longjing@sha256:<new digest>`, and merge it.
+
+Until that commit lands, don't deploy the compose file from the release tag expecting the new release: it boots the previous image, and its attested compose hash is the previous release's. Deploy from the follow-up commit instead, or set the digest from the release notes yourself, knowing the compose hash then differs from any committed one. Before trusting a deployment, check that the digest in its compose file matches the release you expect.
+
 ### Checking a digest
 
 The build is reproducible: the base image is pinned by digest, pnpm comes from corepack at the version and hash in `package.json`, dependencies come from the lockfile, circuit artifacts are checked against the sha256 in `circuits/artifacts.json`, pnpm's timestamped state files are removed, and file timestamps are clamped to the tagged commit's time. CI builds every pull request twice and fails if the digests differ. To check a release yourself:
