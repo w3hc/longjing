@@ -44,12 +44,12 @@ describe('ClaudeProvider', () => {
       // Check input token pricing
       const inputRate = pricing.rates.find((r) => r.unit === 'input_token');
       expect(inputRate).toBeDefined();
-      expect(inputRate?.rate).toBe(0.003);
+      expect(inputRate?.rate).toBe(0.01);
 
       // Check output token pricing
       const outputRate = pricing.rates.find((r) => r.unit === 'output_token');
       expect(outputRate).toBeDefined();
-      expect(outputRate?.rate).toBe(0.015);
+      expect(outputRate?.rate).toBe(0.05);
     });
   });
 
@@ -79,6 +79,23 @@ describe('ClaudeProvider', () => {
     });
   });
 
+  describe('getPricingConfig for a model', () => {
+    it('derives every rate from the shared pricing table', () => {
+      const rates = Object.fromEntries(
+        provider
+          .getPricingConfig('claude-haiku-4-5')
+          .rates.map((r): [string, number] => [r.unit ?? '', r.rate]),
+      );
+
+      expect(rates).toEqual({
+        input_token: 0.001,
+        output_token: 0.005,
+        cache_creation_input_token: 0.00125,
+        cache_read_input_token: 0.0001,
+      });
+    });
+  });
+
   describe('validateRequest', () => {
     beforeEach(async () => {
       await provider.initialize({ apiKey: 'test-key' });
@@ -90,7 +107,7 @@ describe('ClaudeProvider', () => {
         method: 'POST' as const,
         body: {
           messages: [{ role: 'user', content: 'Hello' }],
-          model: 'claude-sonnet-4-5-20250929',
+          model: 'claude-sonnet-4-6',
           maxTokens: 1024,
         },
       };
@@ -101,12 +118,26 @@ describe('ClaudeProvider', () => {
       expect(result.errors).toBeUndefined();
     });
 
+    it('should reject a model with no pricing', async () => {
+      const result = await provider.validateRequest({
+        endpoint: '/v1/messages',
+        method: 'POST' as const,
+        body: {
+          messages: [{ role: 'user', content: 'Hello' }],
+          model: 'claude-3-opus-20240229',
+        },
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.errors?.[0]).toMatch(/^model must be one of/);
+    });
+
     it('should reject request without messages', async () => {
       const request = {
         endpoint: '/v1/messages',
         method: 'POST' as const,
         body: {
-          model: 'claude-sonnet-4-5-20250929',
+          model: 'claude-sonnet-4-6',
         },
       };
 
@@ -165,7 +196,7 @@ describe('ClaudeProvider', () => {
         type: 'message',
         role: 'assistant',
         content: [{ type: 'text', text: 'Hello!' }],
-        model: 'claude-sonnet-4-5-20250929',
+        model: 'claude-sonnet-4-6',
         stop_reason: 'end_turn',
         stop_sequence: null,
         usage: {
@@ -182,7 +213,7 @@ describe('ClaudeProvider', () => {
         method: 'POST' as const,
         body: {
           messages: [{ role: 'user', content: 'Hello' }],
-          model: 'claude-sonnet-4-5-20250929',
+          model: 'claude-sonnet-4-6',
           maxTokens: 1024,
         },
       };
@@ -204,7 +235,7 @@ describe('ClaudeProvider', () => {
         type: 'message',
         role: 'assistant',
         content: [{ type: 'text', text: 'Hello!' }],
-        model: 'claude-sonnet-4-5-20250929',
+        model: 'claude-sonnet-4-6',
         stop_reason: 'end_turn',
         stop_sequence: null,
         usage: {
@@ -221,14 +252,14 @@ describe('ClaudeProvider', () => {
         method: 'POST' as const,
         body: {
           messages: [{ role: 'user', content: 'Hello' }],
+          model: 'claude-sonnet-4-6',
         },
       };
 
       const response = await provider.execute(request);
 
-      // Expected cost: (1000 * 0.003 + 500 * 0.015) / 1_000_000
-      // = (3 + 7.5) / 1_000_000 = 0.0000105
-      const expectedCost = (1000 * 0.003 + 500 * 0.015) / 1_000_000;
+      // Sonnet 4.6: $3 / $15 per million tokens
+      const expectedCost = (1000 * 3 + 500 * 15) / 1_000_000;
 
       expect(response.usage.costUSD).toBeCloseTo(expectedCost, 10);
     });
@@ -239,7 +270,7 @@ describe('ClaudeProvider', () => {
         type: 'message',
         role: 'assistant',
         content: [{ type: 'text', text: 'Hello!' }],
-        model: 'claude-sonnet-4-5-20250929',
+        model: 'claude-sonnet-4-6',
         stop_reason: 'end_turn',
         stop_sequence: null,
         usage: {
@@ -258,6 +289,7 @@ describe('ClaudeProvider', () => {
         method: 'POST' as const,
         body: {
           messages: [{ role: 'user', content: 'Hello' }],
+          model: 'claude-sonnet-4-6',
         },
       };
 
@@ -268,7 +300,7 @@ describe('ClaudeProvider', () => {
 
       // Cost should include cache pricing
       const expectedCost =
-        (100 * 0.003 + 50 * 0.015 + 200 * 0.00375 + 300 * 0.0003) / 1_000_000;
+        (100 * 3 + 50 * 15 + 200 * 3.75 + 300 * 0.3) / 1_000_000;
       expect(response.usage.costUSD).toBeCloseTo(expectedCost, 10);
     });
 
@@ -326,6 +358,30 @@ describe('ClaudeProvider', () => {
       expect(estimate.breakdown).toBeDefined();
       expect(estimate.breakdown?.input).toBeGreaterThan(0);
       expect(estimate.breakdown?.output).toBeGreaterThan(0);
+    });
+
+    it('should price the estimate with the requested model', async () => {
+      const estimate = await provider.estimateCost({
+        endpoint: '/v1/messages',
+        method: 'POST' as const,
+        body: {
+          messages: [],
+          maxTokens: 1_000_000,
+          model: 'claude-haiku-4-5',
+        },
+      });
+
+      expect(estimate.breakdown?.output).toBeCloseTo(5, 10);
+    });
+
+    it('should reject an estimate for a model with no pricing', async () => {
+      await expect(
+        provider.estimateCost({
+          endpoint: '/v1/messages',
+          method: 'POST' as const,
+          body: { messages: [], model: 'claude-3-opus-20240229' },
+        }),
+      ).rejects.toThrow('model must be one of');
     });
   });
 
