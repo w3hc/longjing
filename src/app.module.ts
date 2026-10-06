@@ -8,7 +8,6 @@ import { HealthController } from './health/health.controller';
 import { validateEnvironment } from './config/env.validation';
 import { AuthModule } from './auth/auth.module';
 import { LongjingModule } from './longjing/longjing.module';
-import { ThrottlerMetadataGuard } from './guards/throttler-metadata-guard';
 import { RequestFingerprintThrottler } from './guards/request-fingerprint-throttler.guard';
 import { TimingProtectionInterceptor } from './interceptors/timing-protection.interceptor';
 import { MetadataSanitizerInterceptor } from './interceptors/metadata-sanitizer.interceptor';
@@ -39,14 +38,10 @@ import { isProd } from './config/profile';
   controllers: [HealthController],
   providers: [
     SecretsService,
-    // Hybrid rate limiting with privacy protection
+    // Content-based rate limiting, never IP-keyed (req.ip is always 0.0.0.0)
     {
       provide: APP_GUARD,
-      useClass: RequestFingerprintThrottler, // Request content-based rate limiting
-    },
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerMetadataGuard, // Metadata protection for rate limiting
+      useClass: RequestFingerprintThrottler,
     },
     // Global metadata leakage protection
     {
