@@ -11,7 +11,6 @@ interface ProofMetadata {
   idCommitment: string;
   nullifier: string;
   timestamp: number;
-  secretKey?: string;
 }
 
 interface ProofResponse {
@@ -234,10 +233,26 @@ describe('Proof Generation Integration (e2e)', () => {
       expect(body).toHaveProperty('publicSignals');
       expect(body).toHaveProperty('metadata');
 
-      // Verify metadata includes revealed secretKey for slashing
-      expect(body.metadata).toHaveProperty('secretKey');
-      expect(body.metadata.secretKey).toMatch(/^0x[0-9a-f]+$/i);
+      // The caller already holds the key, so it is not echoed back
+      expect(body.metadata).not.toHaveProperty('secretKey');
       expect(body.metadata).toHaveProperty('nullifier');
+    });
+
+    it('should reject a malformed body before proving', async () => {
+      const proveSpy = jest.spyOn(proofGenService, 'generateDoubleSpendProof');
+
+      await request(app.getHttpServer())
+        .post('/longjing/proofs/slashing')
+        .send({
+          secretKey: 'not-a-field-element',
+          ticketIndex: '0x01',
+          signal1: { x: '0x1', y: '0x2' },
+          signal2: { x: '0x3', y: '0x4' },
+        })
+        .expect(400);
+
+      expect(proveSpy).not.toHaveBeenCalled();
+      proveSpy.mockRestore();
     });
 
     it(

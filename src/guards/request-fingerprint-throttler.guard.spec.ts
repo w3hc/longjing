@@ -2,6 +2,7 @@
 
 import { RequestFingerprintThrottler } from './request-fingerprint-throttler.guard';
 import { ThrottlerException } from '@nestjs/throttler';
+import { ExecutionContext } from '@nestjs/common';
 
 describe('RequestFingerprintThrottler', () => {
   let guard: RequestFingerprintThrottler;
@@ -97,6 +98,17 @@ describe('RequestFingerprintThrottler', () => {
       expect(tracker1).not.toEqual(tracker2);
     });
 
+    it('should not share a bucket between clients with different bodies', async () => {
+      // RequestSanitizerMiddleware pins every client to the same IP
+      const req1 = { ip: '0.0.0.0', body: { nullifier: '0x1' } };
+      const req2 = { ip: '0.0.0.0', body: { nullifier: '0x2' } };
+
+      const tracker1 = await guard['getTracker'](req1);
+      const tracker2 = await guard['getTracker'](req2);
+
+      expect(tracker1).not.toEqual(tracker2);
+    });
+
     it('should handle empty body', async () => {
       const req = { body: {} };
 
@@ -144,8 +156,50 @@ describe('RequestFingerprintThrottler', () => {
       );
 
       expect(() => guard['throwThrottlingException']()).toThrow(
-        'Too many requests with similar content. Please wait before retrying.',
+        'Request temporarily unavailable',
       );
+    });
+  });
+
+  describe('canActivate', () => {
+    const makeContext = (removeHeader: jest.Mock): ExecutionContext =>
+      ({
+        switchToHttp: () => ({ getResponse: () => ({ removeHeader }) }),
+      }) as unknown as ExecutionContext;
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should remove rate limit headers when the request passes', async () => {
+      const removeHeader = jest.fn();
+      jest
+        .spyOn(
+          Object.getPrototypeOf(RequestFingerprintThrottler.prototype),
+          'canActivate',
+        )
+        .mockResolvedValue(true);
+
+      await expect(guard.canActivate(makeContext(removeHeader))).resolves.toBe(
+        true,
+      );
+      expect(removeHeader).toHaveBeenCalledWith('X-RateLimit-Remaining');
+      expect(removeHeader).toHaveBeenCalledWith('Retry-After');
+    });
+
+    it('should remove rate limit headers when the request is throttled', async () => {
+      const removeHeader = jest.fn();
+      jest
+        .spyOn(
+          Object.getPrototypeOf(RequestFingerprintThrottler.prototype),
+          'canActivate',
+        )
+        .mockRejectedValue(new ThrottlerException());
+
+      await expect(
+        guard.canActivate(makeContext(removeHeader)),
+      ).rejects.toThrow(ThrottlerException);
+      expect(removeHeader).toHaveBeenCalledWith('Retry-After');
     });
   });
 });

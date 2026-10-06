@@ -6,6 +6,8 @@ import {
   IsOptional,
   IsEthereumAddress,
   IsIn,
+  IsInt,
+  Min,
   validateSync,
 } from 'class-validator';
 import { assertNoKeyMaterialInEnv } from '../keys/key-policy';
@@ -45,6 +47,16 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   ANVIL_PRIVATE_KEY?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  MAX_CONCURRENT_VERIFICATIONS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  MAX_CONCURRENT_PROOFS?: number;
 }
 
 const PROD_REQUIRED = ['ETHEREUM_RPC_URLS', 'ZK_CONTRACT_ADDRESS'] as const;

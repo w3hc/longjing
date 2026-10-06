@@ -7,19 +7,24 @@ import {
   IsArray,
   ArrayMinSize,
   ArrayMaxSize,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsFieldElement } from './field-element';
+
+// A snarkjs Groth16 proof serializes to about 800 characters
+export const MAX_PROOF_LENGTH = 4096;
+// Matches the default Express JSON body limit (100 kB)
+export const MAX_PAYLOAD_LENGTH = 100_000;
 
 export class RlnSignalDto {
   @ApiProperty({ description: 'RLN signal x value' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   x: string;
 
   @ApiProperty({ description: 'RLN signal y value' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   y: string;
 }
 
@@ -27,11 +32,11 @@ export class LongjingRequestDto {
   @ApiProperty({ description: 'Request payload for external API service' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(MAX_PAYLOAD_LENGTH)
   payload: string;
 
   @ApiProperty({ description: 'RLN nullifier (prevents double-spend)' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   nullifier: string;
 
   @ApiProperty({
@@ -46,39 +51,34 @@ export class LongjingRequestDto {
   @ApiProperty({ description: 'ZK-SNARK proof (Groth16)' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(MAX_PROOF_LENGTH)
   proof: string;
 
   @ApiProperty({ description: 'Maximum cost user is willing to pay (in wei)' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   maxCost: string;
 
   @ApiProperty({ description: 'Merkle root from on-chain state' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   merkleRoot: string;
 
   @ApiProperty({ description: 'Initial deposit amount (in wei)' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   initialDeposit: string;
 
   @ApiProperty({ description: 'Ticket index for this request' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   ticketIndex: string;
 
   @ApiProperty({ description: 'Identity commitment (Hash of secret key)' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   idCommitment: string;
 
   @ApiProperty({
     description:
       'Expected identity commitment (public input for circuit constraint)',
   })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   idCommitmentExpected: string;
 
   @ApiProperty({
@@ -87,6 +87,7 @@ export class LongjingRequestDto {
   })
   @IsString()
   @IsOptional()
+  @MaxLength(64)
   model?: string;
 }
 
@@ -109,18 +110,15 @@ export class RefundSignatureDto {
 
 export class RedeemRefundRequestDto {
   @ApiProperty({ description: 'Identity commitment (Hash of secret key)' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   idCommitment: string;
 
   @ApiProperty({ description: 'Nullifier from the API request' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   nullifier: string;
 
   @ApiProperty({ description: 'Refund value in wei' })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   value: string;
 
   @ApiProperty({ description: 'Recipient address for the refund' })
@@ -146,6 +144,7 @@ export class RedeemRefundRequestDto {
   @ArrayMinSize(8)
   @ArrayMaxSize(8)
   @IsString({ each: true })
+  @MaxLength(80, { each: true })
   proof: string[];
 
   @ApiProperty({
@@ -167,5 +166,6 @@ export class RedeemRefundRequestDto {
   @ArrayMinSize(8)
   @ArrayMaxSize(8)
   @IsString({ each: true })
+  @MaxLength(80, { each: true })
   publicSignals: string[];
 }

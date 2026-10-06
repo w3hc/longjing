@@ -18,6 +18,7 @@ import { DatabaseService } from '../database/database.service';
 import { PricingRepository } from '../pricing/pricing.repository';
 import { PricingOracleService } from '../pricing/pricing-oracle.service';
 import { CostEstimationService } from './cost-estimation.service';
+import { ComputeLimiterService } from './compute-limiter.service';
 import { ClaudeProvider } from '../providers/claude';
 import { KeysModule } from '../keys/keys.module';
 import { AttestationModule } from '../attestation/attestation.module';
@@ -43,6 +44,7 @@ import { AttestationModule } from '../attestation/attestation.module';
     PricingRepository,
     PricingOracleService,
     CostEstimationService,
+    ComputeLimiterService,
     ClaudeProvider,
   ],
   exports: [

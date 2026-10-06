@@ -1,6 +1,7 @@
-import { IsString, IsNotEmpty, ValidateNested } from 'class-validator';
+import { IsObject, ValidateNested } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { IsFieldElement } from './field-element';
 
 /**
  * Signal DTO for double-spend slashing
@@ -10,16 +11,14 @@ class RLNSignalDto {
     description: 'Signal X value (as hex string)',
     example: '0xabcdef...',
   })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   x!: string;
 
   @ApiProperty({
     description: 'Signal Y value (as hex string)',
     example: '0x123456...',
   })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   y!: string;
 }
 
@@ -31,22 +30,21 @@ export class GenerateSlashingProofDto {
     description: 'Secret key extracted from double-spend (as hex string)',
     example: '0x1234567890abcdef...',
   })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   secretKey!: string;
 
   @ApiProperty({
     description: 'Ticket index (as hex string)',
     example: '0x01',
   })
-  @IsString()
-  @IsNotEmpty()
+  @IsFieldElement()
   ticketIndex!: string;
 
   @ApiProperty({
     description: 'First RLN signal',
     type: RLNSignalDto,
   })
+  @IsObject()
   @ValidateNested()
   @Type(() => RLNSignalDto)
   signal1!: RLNSignalDto;
@@ -55,6 +53,7 @@ export class GenerateSlashingProofDto {
     description: 'Second RLN signal (with different x value)',
     type: RLNSignalDto,
   })
+  @IsObject()
   @ValidateNested()
   @Type(() => RLNSignalDto)
   signal2!: RLNSignalDto;

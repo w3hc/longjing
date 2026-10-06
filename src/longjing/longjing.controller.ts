@@ -21,6 +21,7 @@ import {
   CostEstimateResponseDto,
 } from './dto/cost-estimate.dto';
 import { ProofGenService } from './proof-gen.service';
+import { ComputeLimiterService } from './compute-limiter.service';
 import {
   GenerateSlashingProofDto,
   ProofResponseDto,
@@ -35,6 +36,7 @@ export class LongjingController {
     private readonly nullifierStore: NullifierStoreService,
     private readonly costEstimationService: CostEstimationService,
     private readonly proofGenService: ProofGenService,
+    private readonly computeLimiter: ComputeLimiterService,
   ) {}
 
   @Post('request')
@@ -205,8 +207,18 @@ export class LongjingController {
     status: 400,
     description: 'Invalid input parameters or signals do not reveal secret key',
   })
+  @ApiResponse({
+    status: 503,
+    description: 'Too many proofs being generated, retry later',
+  })
   async generateSlashingProof(
     @Body() body: GenerateSlashingProofDto,
+  ): Promise<ProofResponseDto> {
+    return this.computeLimiter.proving.run(() => this.proveSlashing(body));
+  }
+
+  private async proveSlashing(
+    body: GenerateSlashingProofDto,
   ): Promise<ProofResponseDto> {
     const secretKey = BigInt(body.secretKey);
     const ticketIndex = BigInt(body.ticketIndex);
@@ -241,7 +253,6 @@ export class LongjingController {
       metadata: {
         idCommitment: '0x' + idCommitment.toString(16),
         nullifier: '0x' + nullifier.toString(16),
-        secretKey: '0x' + secretKey.toString(16),
         timestamp: Date.now(),
       },
     };

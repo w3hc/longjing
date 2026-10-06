@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { LongjingService } from './longjing.service';
 import { NullifierStoreService } from './nullifier-store.service';
 import { ProofVerifierService } from './proof-verifier.service';
+import { ComputeLimiterService } from './compute-limiter.service';
 import { ProofGenService } from './proof-gen.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 import { EthRateOracleService } from './eth-rate-oracle.service';
@@ -60,6 +61,7 @@ describe('LongjingService', () => {
         LongjingService,
         NullifierStoreService,
         ProofVerifierService,
+        ComputeLimiterService,
         ProofGenService,
         SnarkjsProofService,
         EthRateOracleService,

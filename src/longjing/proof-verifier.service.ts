@@ -10,7 +10,19 @@ import { BlockchainService } from './blockchain.service';
 import { ProofGenService } from './proof-gen.service';
 import { RefundSignerService } from './refund-signer.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
+import { ComputeLimiterService } from './compute-limiter.service';
 import { isProd } from '../config/profile';
+
+type ApiRequestPublicInputs = {
+  merkleRoot: string;
+  maxCost: string;
+  initialDeposit: string;
+  signalX: string;
+  nullifier: string;
+  signalY: string;
+  idCommitment: string;
+  idCommitmentExpected: string;
+};
 
 /** Compares two roots by value, so hex and decimal encodings match. */
 function sameFieldElement(a: string, b: string): boolean {
@@ -39,6 +51,7 @@ export class ProofVerifierService {
     private readonly proofGenService: ProofGenService,
     private readonly snarkjsProofService: SnarkjsProofService,
     private readonly refundSignerService: RefundSignerService,
+    private readonly computeLimiter: ComputeLimiterService,
   ) {}
 
   /**
@@ -74,16 +87,7 @@ export class ProofVerifierService {
    */
   async verify(
     proof: string,
-    publicInputs: {
-      merkleRoot: string;
-      maxCost: string;
-      initialDeposit: string;
-      signalX: string;
-      nullifier: string;
-      signalY: string;
-      idCommitment: string;
-      idCommitmentExpected: string;
-    },
+    publicInputs: ApiRequestPublicInputs,
   ): Promise<boolean> {
     // CRITICAL: Production mode requires real cryptographic verification
     if (isProd() && !this.snarkjsProofService.isAvailable()) {
@@ -146,6 +150,16 @@ export class ProofVerifierService {
 
     this.logger.debug('Proof structure validated');
 
+    // Steps 2-3 cost an RPC round-trip and a pairing check, so they are capped
+    return this.computeLimiter.verification.run(() =>
+      this.verifyAgainstChainAndCircuit(proofData, publicInputs),
+    );
+  }
+
+  private async verifyAgainstChainAndCircuit(
+    proofData: any,
+    publicInputs: ApiRequestPublicInputs,
+  ): Promise<boolean> {
     // 2. Verify against blockchain state
     const chain = await this.readChainState(publicInputs.nullifier);
     if (chain) {
