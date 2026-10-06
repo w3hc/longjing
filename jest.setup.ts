@@ -1,8 +1,5 @@
 // Global Jest setup to suppress expected circomlibjs teardown errors
 
-// PROFILE is required at startup; specs that test prod set it themselves
-process.env.PROFILE ??= 'local';
-
 // Specs set up their own chain; one from the shell (a sourced .env.local)
 // would point the app at another contract
 for (const name of [

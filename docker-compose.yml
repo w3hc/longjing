@@ -12,12 +12,11 @@ services:
       - /var/run/dstack.sock:/var/run/dstack.sock
     environment:
       # Literals, so the attested compose hash commits to production mode.
-      # PROFILE=prod refuses chain 31337, placeholders and the dstack
+      # NODE_ENV=production refuses chain 31337, placeholders and the dstack
       # simulator, and requires the RPC and contract address below.
       # Keys are derived from the dstack KMS, see docs/KEY_DERIVATION.md.
       # The only opt-out, which changes the hash, is adding a literal
       # ALLOW_KEYS_OUTSIDE_ENCLAVE=true here.
-      - PROFILE=prod
       - NODE_ENV=production
       - KMS_URL=${KMS_URL}
       - ETHEREUM_RPC_URLS=${ETHEREUM_RPC_URLS}

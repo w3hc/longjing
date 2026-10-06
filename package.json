@@ -22,6 +22,7 @@
     "test:proof": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPatterns \"circuit\\.spec|proof\\.spec\"",
     "verify:attestation": "ts-node scripts/testing/verify-attestation.ts",
     "prove": "ts-node scripts/client/prove.ts",
+    "demo": "ts-node -T scripts/demo/demo.ts",
     "governance:propose-release": "ts-node scripts/governance/propose-release.ts",
     "circuits:fetch": "ts-node scripts/setup/fetch-circuits.ts",
     "check:verifiers": "ts-node scripts/testing/check-verifier-keys.ts"

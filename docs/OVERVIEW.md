@@ -123,7 +123,7 @@ The system uses four specialized ZK circuits (Groth16) for different operations:
    - 20-level tree, max 10 refund tickets
    - ~110K constraints; the server's refund-signing key is a public input, filled in by the server
    - The server verifies every request with it in production (`ZK_CIRCUIT=api_request`)
-   - [api_request_local.circom](../circuits/api_request_local.circom), with 2 refund tickets and ~32K constraints, is the default for `PROFILE=local`
+   - [api_request_local.circom](../circuits/api_request_local.circom), with 2 refund tickets and ~32K constraints, is the default outside production
 
 2. **Withdrawal Circuit** ([withdrawal.circom](../circuits/withdrawal.circom))
    - 11,750 constraints, the extra one binding `recipient`

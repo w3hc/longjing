@@ -34,7 +34,7 @@ export class BlockchainService implements OnModuleInit {
     if (!rpcUrl || !contractAddress) {
       if (prod) {
         throw new Error(
-          'PROFILE=prod requires ETHEREUM_RPC_URLS and ZK_CONTRACT_ADDRESS',
+          'NODE_ENV=production requires ETHEREUM_RPC_URLS and ZK_CONTRACT_ADDRESS',
         );
       }
       this.logger.warn(

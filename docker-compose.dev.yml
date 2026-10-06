@@ -8,7 +8,6 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - PROFILE=local
       - NODE_ENV=development
       - KMS_URL=https://your-kms.example.com/release
       # ML-KEM keys - generate with: pnpm ts-node scripts/generate-admin-keypair.ts

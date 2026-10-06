@@ -123,16 +123,16 @@ The circuit uses `circomlib/Poseidon`, and the contract uses `poseidon-solidity`
 anvil
 
 # Terminal 2: Deploy contract with Anvil account #0 and the dev refund-signer key
-PROFILE=local forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://127.0.0.1:8545 --broadcast
+NODE_ENV=development forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://127.0.0.1:8545 --broadcast
 ```
 
-`PROFILE=local` deploys to chain 31337 only.
+`NODE_ENV=development` (or `test`) deploys to chain 31337 only.
 
 ### Testnet and mainnet
 
 ```bash
 # Set environment variables, all required
-export PROFILE=prod
+export NODE_ENV=production
 export PRIVATE_KEY=0x...
 export SERVER_ADDRESS=0x...
 # The enclave's refund signer, refundSigner.x / .y from GET /attestation/manifest
@@ -228,7 +228,7 @@ forge doc
 forge coverage
 
 # Deploy to local testnet
-PROFILE=local forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://localhost:8545 --broadcast
+NODE_ENV=development forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://localhost:8545 --broadcast
 
 # Interact with contract
 cast call <CONTRACT_ADDRESS> "merkleRoot()" --rpc-url http://localhost:8545

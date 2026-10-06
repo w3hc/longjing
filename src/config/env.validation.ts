@@ -1,6 +1,5 @@
 import { plainToInstance } from 'class-transformer';
 import {
-  IsEnum,
   IsUrl,
   IsString,
   IsOptional,
@@ -11,19 +10,16 @@ import {
   validateSync,
 } from 'class-validator';
 import { assertNoKeyMaterialInEnv } from '../keys/key-policy';
-import { findPlaceholders, profile, PROFILES } from './profile';
-import type { Profile } from './profile';
+import { findPlaceholders, isProd, NODE_ENVS } from './profile';
+import type { NodeEnv } from './profile';
 
 /**
  * Environment configuration schema.
  * All required environment variables must be defined here and validated on startup.
  */
 export class EnvironmentVariables {
-  @IsEnum(['development', 'production', 'test'])
-  NODE_ENV: 'development' | 'production' | 'test' = 'development';
-
-  @IsIn(PROFILES)
-  PROFILE!: Profile;
+  @IsIn(NODE_ENVS)
+  NODE_ENV!: NodeEnv;
 
   @IsUrl({ require_tld: false })
   KMS_URL?: string;
@@ -74,27 +70,24 @@ const PROD_REFUSED = [
 function profileErrors(config: Record<string, unknown>): string[] {
   const errors: string[] = [];
 
-  if (profile(config) === 'local') {
-    if (config.NODE_ENV === 'production') {
-      errors.push('NODE_ENV=production requires PROFILE=prod');
-    }
+  if (!isProd(config)) {
     return errors;
   }
 
   const missing = PROD_REQUIRED.filter((name) => !config[name]);
   if (missing.length > 0) {
-    errors.push(`PROFILE=prod requires ${missing.join(', ')}`);
+    errors.push(`NODE_ENV=production requires ${missing.join(', ')}`);
   }
 
   const refused = PROD_REFUSED.filter((name) => config[name]);
   if (refused.length > 0) {
-    errors.push(`PROFILE=prod refuses ${refused.join(', ')}`);
+    errors.push(`NODE_ENV=production refuses ${refused.join(', ')}`);
   }
 
   const placeholders = findPlaceholders(config);
   if (placeholders.length > 0) {
     errors.push(
-      `PROFILE=prod refuses placeholder values in ${placeholders.join(', ')}`,
+      `NODE_ENV=production refuses placeholder values in ${placeholders.join(', ')}`,
     );
   }
 

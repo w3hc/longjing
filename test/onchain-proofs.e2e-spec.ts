@@ -49,8 +49,6 @@ describe('Real proofs on chain (e2e)', () => {
   };
 
   beforeAll(async () => {
-    process.env.PROFILE = 'local';
-
     // No request cache, so balances read right after a transaction are fresh
     provider = new ethers.JsonRpcProvider(RPC_URL, undefined, {
       cacheTimeout: -1,
@@ -64,7 +62,7 @@ describe('Real proofs on chain (e2e)', () => {
     }
 
     const { stdout } = await execAsync(
-      `cd contracts && PROFILE=local forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url ${RPC_URL} --broadcast 2>&1`,
+      `cd contracts && NODE_ENV=test forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url ${RPC_URL} --broadcast 2>&1`,
     );
     const address = /LongjingCredits deployed at: (0x[a-fA-F0-9]{40})/.exec(
       stdout,

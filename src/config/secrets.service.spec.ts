@@ -43,7 +43,7 @@ describe('SecretsService', () => {
 
   describe('onModuleInit - development mode', () => {
     it('should load secrets from environment variables in dev mode', async () => {
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
       process.env.TEST_SECRET = 'test-value';
       process.env.ANOTHER_SECRET = 'another-value';
 
@@ -56,7 +56,7 @@ describe('SecretsService', () => {
     });
 
     it('should not load undefined environment variables', async () => {
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
       process.env.DEFINED_VAR = 'value';
 
       jest.spyOn(service, 'onModuleInit').mockRestore();
@@ -71,7 +71,7 @@ describe('SecretsService', () => {
 
   describe('onModuleInit - production mode', () => {
     it('should load secrets from KMS in production', async () => {
-      process.env.PROFILE = 'prod';
+      process.env.NODE_ENV = 'production';
       process.env.KMS_URL = 'https://kms.example.com/secrets';
 
       const mockAttestationReport = {
@@ -124,7 +124,7 @@ describe('SecretsService', () => {
     });
 
     it('should load from environment variables when KMS_URL is not set in production', async () => {
-      process.env.PROFILE = 'prod';
+      process.env.NODE_ENV = 'production';
       delete process.env.KMS_URL;
       process.env.TEST_SECRET = 'prod-env-value';
 
@@ -136,7 +136,7 @@ describe('SecretsService', () => {
     });
 
     it('should skip KMS and load from TEE environment when ADMIN_MLKEM_PUBLIC_KEY is set', async () => {
-      process.env.PROFILE = 'prod';
+      process.env.NODE_ENV = 'production';
       process.env.KMS_URL = 'https://kms.example.com/secrets';
       process.env.ADMIN_MLKEM_PUBLIC_KEY = 'mock-public-key';
       process.env.TEE_SECRET = 'tee-injected-value';
@@ -158,7 +158,7 @@ describe('SecretsService', () => {
     });
 
     it('should throw error if KMS refuses attestation', async () => {
-      process.env.PROFILE = 'prod';
+      process.env.NODE_ENV = 'production';
       process.env.KMS_URL = 'https://kms.example.com/secrets';
 
       jest.spyOn(attestationService, 'getAttestation').mockResolvedValue({
@@ -191,7 +191,7 @@ describe('SecretsService', () => {
 
   describe('get', () => {
     it('should return secret value if it exists', async () => {
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
       process.env.MY_SECRET = 'secret-value';
 
       jest.spyOn(service, 'onModuleInit').mockRestore();
@@ -207,7 +207,7 @@ describe('SecretsService', () => {
     });
 
     it('should handle multiple gets for same secret', async () => {
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
       process.env.REPEATED_SECRET = 'value';
 
       jest.spyOn(service, 'onModuleInit').mockRestore();

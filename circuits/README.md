@@ -71,7 +71,7 @@ Proves that a user double-spent a ticket, allowing anyone to extract and verify 
 
 ### Local Request Circuit ([api_request_local.circom](api_request_local.circom))
 
-The API request circuit with 2 refund slots instead of 10 (~32K constraints), the default `ZK_CIRCUIT` for `PROFILE=local`. Production refuses it.
+The API request circuit with 2 refund slots instead of 10 (~32K constraints), the default `ZK_CIRCUIT` outside production. Production refuses it.
 
 ### Test Circuit (`api_credit_proof_test`)
 

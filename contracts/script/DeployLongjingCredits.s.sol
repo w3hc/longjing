@@ -4,12 +4,14 @@ pragma solidity 0.8.35;
 import {Script, console} from "forge-std/Script.sol";
 import {LongjingCredits} from "../src/LongjingCredits.sol";
 
-/// @notice Deploys LongjingCredits for a PROFILE, like the server.
-/// @dev PROFILE=local: Anvil only (chain 31337), with Anvil account #0 and the
-///      dev refund-signer key (sha256('longjing-refund-signer-dev-key')).
-///      PROFILE=prod: never chain 31337, and PRIVATE_KEY, SERVER_ADDRESS,
-///      SERVER_PUBKEY_X and SERVER_PUBKEY_Y are required. Placeholders are
-///      refused: the dev refund-signer key would let anyone sign refunds.
+/// @notice Deploys LongjingCredits for a NODE_ENV, like the server.
+/// @dev NODE_ENV=development or test: Anvil only (chain 31337), with Anvil
+///      account #0 and the dev refund-signer key
+///      (sha256('longjing-refund-signer-dev-key')).
+///      NODE_ENV=production: never chain 31337, and PRIVATE_KEY,
+///      SERVER_ADDRESS, SERVER_PUBKEY_X and SERVER_PUBKEY_Y are required.
+///      Placeholders are refused: the dev refund-signer key would let anyone
+///      sign refunds.
 contract DeployLongjingCredits is Script {
     struct Config {
         uint256 deployerPrivateKey;
@@ -49,9 +51,9 @@ contract DeployLongjingCredits is Script {
     }
 
     function config() public view returns (Config memory) {
-        string memory profile = vm.envOr("PROFILE", string(""));
+        string memory nodeEnv = vm.envOr("NODE_ENV", string(""));
         Config memory fromEnv;
-        if (keccak256(bytes(profile)) == keccak256("prod")) {
+        if (keccak256(bytes(nodeEnv)) == keccak256("production")) {
             fromEnv = Config(
                 vm.envUint("PRIVATE_KEY"),
                 vm.envAddress("SERVER_ADDRESS"),
@@ -59,28 +61,28 @@ contract DeployLongjingCredits is Script {
                 vm.envBytes32("SERVER_PUBKEY_Y")
             );
         }
-        return resolve(profile, block.chainid, fromEnv);
+        return resolve(nodeEnv, block.chainid, fromEnv);
     }
 
-    function resolve(string memory profile, uint256 chainId, Config memory fromEnv)
+    function resolve(string memory nodeEnv, uint256 chainId, Config memory fromEnv)
         public
         pure
         returns (Config memory)
     {
-        bytes32 p = keccak256(bytes(profile));
+        bytes32 e = keccak256(bytes(nodeEnv));
 
-        if (p == keccak256("local")) {
-            require(chainId == ANVIL_CHAIN_ID, "PROFILE=local deploys to Anvil only (chain 31337)");
+        if (e == keccak256("development") || e == keccak256("test")) {
+            require(chainId == ANVIL_CHAIN_ID, "NODE_ENV=development or test deploys to Anvil only (chain 31337)");
             return Config(ANVIL_PRIVATE_KEY, ANVIL_ADDRESS, DEV_PUBKEY_X, DEV_PUBKEY_Y);
         }
 
-        require(p == keccak256("prod"), "PROFILE must be local or prod");
-        require(chainId != ANVIL_CHAIN_ID, "PROFILE=prod refuses chain 31337");
-        require(fromEnv.deployerPrivateKey != ANVIL_PRIVATE_KEY, "PROFILE=prod refuses the Anvil PRIVATE_KEY");
-        require(fromEnv.serverAddress != ANVIL_ADDRESS, "PROFILE=prod refuses the Anvil SERVER_ADDRESS");
+        require(e == keccak256("production"), "NODE_ENV must be development, test or production");
+        require(chainId != ANVIL_CHAIN_ID, "NODE_ENV=production refuses chain 31337");
+        require(fromEnv.deployerPrivateKey != ANVIL_PRIVATE_KEY, "NODE_ENV=production refuses the Anvil PRIVATE_KEY");
+        require(fromEnv.serverAddress != ANVIL_ADDRESS, "NODE_ENV=production refuses the Anvil SERVER_ADDRESS");
         require(
             fromEnv.serverPubKeyX != DEV_PUBKEY_X || fromEnv.serverPubKeyY != DEV_PUBKEY_Y,
-            "PROFILE=prod refuses the dev refund-signer key"
+            "NODE_ENV=production refuses the dev refund-signer key"
         );
         return fromEnv;
     }

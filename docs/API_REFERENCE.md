@@ -250,7 +250,7 @@ curl -k -X POST https://localhost:3000/longjing/redeem-refund \
 - Refund tickets can only be redeemed once
 - The smart contract verifies the Groth16 proof, which checks the EdDSA signature in-circuit and binds the recipient
 - If the nullifier was slashed for double-spending, redemption will fail
-- The server relays the transaction and its wallet pays the gas: the enclave-derived identity key with `PROFILE=prod`, `ANVIL_PRIVATE_KEY` with `PROFILE=local`. The caller pays nothing onchain
+- The server relays the transaction and its wallet pays the gas: the enclave-derived identity key with `NODE_ENV=production`, `ANVIL_PRIVATE_KEY` otherwise. The caller pays nothing onchain
 
 ---
 
@@ -801,6 +801,12 @@ async function generateProof(
     idCommitment,
   };
 }
+```
+
+`pnpm prove request` does this from a JSON file holding the secret key, the ticket index, the payload, `maxCost`, the RPC URL, the contract address and the server public key (see [scripts/client/prove.ts](../scripts/client/prove.ts)). It reads the Merkle path, the root and the deposit from the contract, and prints the body for `POST /longjing/request`. It counts no refund tickets toward the balance yet.
+
+```bash
+pnpm prove request request-input.json > request.json
 ```
 
 ### 4. Make API Request
