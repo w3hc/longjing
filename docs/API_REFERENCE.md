@@ -108,11 +108,12 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
 
 **Status Codes:**
 - `200 OK` - Request processed successfully
-- `400 Bad Request` - Invalid request parameters, or `signal.x` does not match the payload hash
+- `400 Bad Request` - Invalid request parameters (a field element that isn't hex or decimal, an oversized `proof` or `payload`), or `signal.x` does not match the payload hash
 - `401 Unauthorized` - Invalid ZK proof
 - `403 Forbidden` - Nullifier already used, double-spend detected, or rate limit exceeded
 - `429 Too Many Requests` - Rate limit exceeded (generic message for privacy)
 - `500 Internal Server Error` - Server error
+- `503 Service Unavailable` - Too many proof verifications in flight, or the onchain state can't be read in production
 
 **Example:**
 
@@ -172,10 +173,11 @@ curl -k -X POST https://localhost:3000/longjing/request \
 
 3. **Cost Protection**: Set `maxCost` to protect against unexpected price changes
 
-4. **Rate Limiting**: Three layers of protection (see [`src/guards/`](../src/guards/)):
-   - **Request fingerprint**: 10 requests/minute per unique request content (privacy-preserving)
-   - **Per-nullifier**: 3 requests/minute per user identity
-   - **Metadata hiding**: Rate limit details concealed to prevent tracking
+4. **Rate Limiting**: Nothing is keyed on the client's IP, which `RequestSanitizerMiddleware` hides (see [`src/guards/`](../src/guards/)):
+   - **Shape checks**: malformed bodies get a 400 before any RPC or Groth16 work
+   - **Request fingerprint**: 10 requests/minute per unique request content, without rate limit headers
+   - **Per-nullifier**: 3 requests/minute per nullifier
+   - **Concurrency caps**: at most `MAX_CONCURRENT_VERIFICATIONS` (default 8) proofs verified at once; over the cap, a 503
 
 **See Also:** [ZK System Guide](ZK.md), [Testing Guide](TESTING_GUIDE.md)
 
@@ -380,11 +382,14 @@ Longjing has no endpoint that proves withdrawals or refund redemptions: they nee
   metadata: {
     idCommitment: string;
     nullifier: string;
-    secretKey: string;
     timestamp: number;
   };
 }
 ```
+
+**Status Codes:**
+- `400 Bad Request` - A secret key, ticket index or signal that isn't a field element
+- `503 Service Unavailable` - `MAX_CONCURRENT_PROOFS` (default 2) proofs already in flight
 
 ---
 
@@ -590,7 +595,7 @@ All endpoints return consistent error responses:
 | 404 | Not Found | Resource does not exist |
 | 429 | Too Many Requests | Request fingerprint rate limit exceeded |
 | 500 | Internal Server Error | Unexpected server error |
-| 503 | Service Unavailable | Blockchain or external API unavailable |
+| 503 | Service Unavailable | Blockchain or external API unavailable, or a concurrency cap is full |
 
 **Example Error:**
 

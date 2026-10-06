@@ -478,7 +478,7 @@ While the system provides strong cryptographic privacy guarantees, users should 
 - API endpoints with HTTPS/TLS
 - Refund ticket signing (EdDSA, in-circuit verification)
 - ETH/USD oracle (Kraken + Chainlink fallback)
-- Rate limiting (hybrid: fingerprint + per-nullifier)
+- Rate limiting without IP tracking: shape checks, request fingerprint, per-nullifier limits and concurrency caps on verification and proving
 - Comprehensive test suite
 
 **Provider Abstraction**

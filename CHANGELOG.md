@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pnpm check:verifiers` checks each pinned verification key against its zkey, and each Solidity verifier against that key, IC count included. CI runs it in the proof job (LJ-13) ([#128](https://github.com/w3hc/longjing/issues/128)).
 - `test/onchain-proofs.e2e-spec.ts` submits a real withdrawal, refund redemption and double-spend slashing proof to the real contract on Anvil, and checks that a refund can't be redeemed twice (LJ-05) ([#128](https://github.com/w3hc/longjing/issues/128)).
 - `api_request_local.circom`, `ApiRequestProof(20, 2)` with about 32K constraints instead of 110K, is the default `ZK_CIRCUIT` for `PROFILE=local`. Production still accepts only `api_request` ([#132](https://github.com/w3hc/longjing/issues/132)).
+- Concurrency caps on proof verification and on proving for `POST /longjing/proofs/slashing`, set by `MAX_CONCURRENT_VERIFICATIONS` (default 8) and `MAX_CONCURRENT_PROOFS` (default 2). Work over a cap gets a 503 right away instead of being queued (LJ-07, LJ-19) ([#124](https://github.com/w3hc/longjing/issues/124)).
+- Request DTOs check field elements (hex or decimal, bounded length) and cap `proof` and `payload` lengths, so malformed bodies get a 400 before any RPC or Groth16 work (LJ-07) ([#124](https://github.com/w3hc/longjing/issues/124)).
 
 ### Changed
 
@@ -47,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api_request` requires the nullifiers of active refund tickets to be strictly increasing: one ticket could fill all 10 slots and count 10 times toward the balance (LJ-06) ([#132](https://github.com/w3hc/longjing/issues/132)).
 - `api_request` verifies refund tickets with `EdDSAPoseidonVerifier`, the variant `RefundSignerService` signs with: it used `EdDSAMiMCVerifier`, so no server-issued refund could count toward solvency. The circuit tests now get their tickets from `RefundSignerService` (LJ-10) ([#132](https://github.com/w3hc/longjing/issues/132)).
 - `withdrawal` and `refund_redemption` constrain `recipient` explicitly. The binding relied on snarkjs adding a constraint per public input (LJ-23) ([#132](https://github.com/w3hc/longjing/issues/132)).
+- One client can no longer lock out the rest. `ThrottlerMetadataGuard` keyed on `req.ip`, which `RequestSanitizerMiddleware` pins to `0.0.0.0`, so every client shared one bucket of 10 requests per minute. It is removed, without bringing back IP tracking, and `RequestFingerprintThrottler` strips the rate limit headers instead, on 429s too (LJ-07) ([#124](https://github.com/w3hc/longjing/issues/124)).
+- `POST /longjing/proofs/slashing` no longer echoes `secretKey` back in `metadata` (LJ-19) ([#124](https://github.com/w3hc/longjing/issues/124)).
 
 ## [0.4.0] - 2026-10-05
 
