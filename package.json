@@ -25,7 +25,9 @@
     "demo": "ts-node -T scripts/demo/demo.ts",
     "governance:propose-release": "ts-node scripts/governance/propose-release.ts",
     "circuits:fetch": "ts-node scripts/setup/fetch-circuits.ts",
-    "check:verifiers": "ts-node scripts/testing/check-verifier-keys.ts"
+    "check:verifiers": "ts-node scripts/testing/check-verifier-keys.ts",
+    "check:slither": "ts-node scripts/testing/check-static-analysis.ts slither",
+    "check:circomspect": "ts-node scripts/testing/check-static-analysis.ts circomspect"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

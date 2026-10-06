@@ -1,0 +1,6 @@
+{
+  "filter_paths": "lib/,test/,script/,node_modules/",
+  "exclude_dependencies": true,
+  "exclude_informational": true,
+  "exclude_optimization": true
+}
