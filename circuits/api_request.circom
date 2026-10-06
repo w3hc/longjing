@@ -21,7 +21,8 @@ include "../node_modules/circomlib/circuits/mux1.circom";
  * 1. User knows secretKey for idCommitment
  * 2. idCommitment is in Merkle tree (anonymity set)
  * 3. User has sufficient balance for this request: (i+1)·C_max ≤ D + R
- * 4. All refund tickets have valid EdDSA signatures from server
+ * 4. All refund tickets have valid EdDSA signatures from server, and their
+ *    nullifiers are strictly increasing, so no ticket is counted twice
  * 5. RLN signal generation (prevents double-spending)
  *
  * WITHOUT revealing secret key, balance, or request history
@@ -64,6 +65,57 @@ template MerkleTreeChecker(levels) {
     }
 
     root <== levelHashes[levels];
+}
+
+/**
+ * Splits a field element into a canonical 127-bit low half and high half,
+ * so that two field elements can be compared with 127-bit comparators
+ */
+template FieldHalves() {
+    signal input in;
+    signal output hi;
+    signal output lo;
+
+    component bits = Num2Bits_strict();
+    bits.in <== in;
+
+    var loSum = 0;
+    for (var i = 0; i < 127; i++) {
+        loSum += bits.out[i] * (1 << i);
+    }
+    var hiSum = 0;
+    for (var i = 127; i < 254; i++) {
+        hiSum += bits.out[i] * (1 << (i - 127));
+    }
+    lo <== loSum;
+    hi <== hiSum;
+}
+
+/**
+ * out = 1 iff a < b, for any two field elements given as FieldHalves
+ */
+template FieldLessThan() {
+    signal input aHi;
+    signal input aLo;
+    signal input bHi;
+    signal input bLo;
+    signal output out;
+
+    component hiLess = LessThan(127);
+    hiLess.in[0] <== aHi;
+    hiLess.in[1] <== bHi;
+
+    component hiEqual = IsEqual();
+    hiEqual.in[0] <== aHi;
+    hiEqual.in[1] <== bHi;
+
+    component loLess = LessThan(127);
+    loLess.in[0] <== aLo;
+    loLess.in[1] <== bLo;
+
+    signal tieBreak;
+    tieBreak <== hiEqual.out * loLess.out;
+    out <== hiLess.out + tieBreak;
 }
 
 template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
@@ -168,6 +220,24 @@ template ApiRequestProof(TREE_DEPTH, MAX_REFUNDS) {
 
     signal totalRefunds;
     totalRefunds <== refundSum[MAX_REFUNDS];
+
+    // Active refund nullifiers must be strictly increasing, so a ticket cannot
+    // fill several slots. Slot i + 1 active implies slot i active.
+    component nullifierHalves[MAX_REFUNDS];
+    for (var i = 0; i < MAX_REFUNDS; i++) {
+        nullifierHalves[i] = FieldHalves();
+        nullifierHalves[i].in <== refundNullifiers[i];
+    }
+
+    component nullifierOrder[MAX_REFUNDS - 1];
+    for (var i = 0; i < MAX_REFUNDS - 1; i++) {
+        nullifierOrder[i] = FieldLessThan();
+        nullifierOrder[i].aHi <== nullifierHalves[i].hi;
+        nullifierOrder[i].aLo <== nullifierHalves[i].lo;
+        nullifierOrder[i].bHi <== nullifierHalves[i + 1].hi;
+        nullifierOrder[i].bLo <== nullifierHalves[i + 1].lo;
+        refundActive[i + 1].out * (1 - nullifierOrder[i].out) === 0;
+    }
 
     // ========== 4. SOLVENCY CHECK: (i + 1) · C_max ≤ D + R ==========
     // This is the core formula from the original proposal
