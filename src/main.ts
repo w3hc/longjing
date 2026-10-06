@@ -70,7 +70,6 @@ async function bootstrap() {
       },
       // Additional protections
       frameguard: { action: 'deny' },
-      xssFilter: true,
       ieNoOpen: true,
       noSniff: true,
     }),
@@ -79,7 +78,6 @@ async function bootstrap() {
   // CORS configuration - restrict to trusted origins in production
   app.enableCors({
     origin: prod ? false : '*', // Disable CORS in production by default
-    credentials: true,
   });
 
   // Global validation pipe - validates all incoming requests

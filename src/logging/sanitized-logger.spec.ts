@@ -52,31 +52,32 @@ describe('SanitizedLogger', () => {
   });
 
   describe('error', () => {
-    it('should log error messages without stack traces', () => {
-      logger.error('Something went wrong', 'stack trace here', 'AppService');
+    it('should log error messages from safe contexts without stack traces', () => {
+      logger.error('Something went wrong', 'stack trace here', 'NestFactory');
 
       expect(stdoutSpy).toHaveBeenCalledWith(
-        '[ERR] AppService: Something went wrong\n',
+        '[ERR] NestFactory: Something went wrong\n',
       );
     });
 
-    it('should use default context when not provided', () => {
+    it('should only log first line of multiline error messages', () => {
+      logger.error('Error line 1\nError line 2', '', 'NestApplication');
+
+      expect(stdoutSpy).toHaveBeenCalledWith(
+        '[ERR] NestApplication: Error line 1\n',
+      );
+    });
+
+    it('should not log errors from unsafe contexts', () => {
+      logger.error('nullifier 0x1234 already used', '', 'LongjingService');
+
+      expect(stdoutSpy).not.toHaveBeenCalled();
+    });
+
+    it('should not log when context is undefined', () => {
       logger.error('Error occurred');
 
-      expect(stdoutSpy).toHaveBeenCalledWith('[ERR] App: Error occurred\n');
-    });
-
-    it('should only log first line of multiline error messages', () => {
-      logger.error('Error line 1\nError line 2\nError line 3', '', 'Service');
-
-      expect(stdoutSpy).toHaveBeenCalledWith('[ERR] Service: Error line 1\n');
-    });
-
-    it('should handle undefined error message', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      logger.error(undefined as any, '', 'Service');
-
-      expect(stdoutSpy).toHaveBeenCalledWith('[ERR] Service: undefined\n');
+      expect(stdoutSpy).not.toHaveBeenCalled();
     });
   });
 
