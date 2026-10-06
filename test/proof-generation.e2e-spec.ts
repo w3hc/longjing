@@ -71,7 +71,6 @@ describe('Proof Generation Integration (e2e)', () => {
   beforeAll(async () => {
     // Set test environment variables
     process.env.NODE_ENV = 'test';
-    process.env.PROFILE = 'local';
     process.env.KMS_URL = 'http://localhost:3001';
     process.env.DATA_DIR = ':memory:';
 

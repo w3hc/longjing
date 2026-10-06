@@ -46,7 +46,6 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
   beforeAll(async () => {
     // Set test environment
     process.env.NODE_ENV = 'test';
-    process.env.PROFILE = 'local';
     // generate-proof.ts still proves with the test circuit (#139)
     process.env.ZK_CIRCUIT = 'api_credit_proof_test';
     process.env.KMS_URL = 'http://localhost:3001';
@@ -80,7 +79,7 @@ describe('Main Flow: Deposit -> Service -> Refund (e2e)', () => {
     // Deploy contract
     console.log('\n=== Deploying Contract ===');
     const deployOutput = await execAsync(
-      `cd contracts && PROFILE=local forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url ${RPC_URL} --broadcast --private-key ${PRIVATE_KEY} 2>&1`,
+      `cd contracts && NODE_ENV=test forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url ${RPC_URL} --broadcast --private-key ${PRIVATE_KEY} 2>&1`,
     );
 
     const match = deployOutput.stdout.match(
