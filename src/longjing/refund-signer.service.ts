@@ -195,7 +195,7 @@ export class RefundSignerService implements OnModuleInit {
     // Canonical message format: Poseidon(idCommitment, nullifier, value, timestamp)
     // This MUST match:
     // - refund_redemption.circom line 64-69
-    // - api_credit_proof.circom refund verification
+    // - api_request_proof.circom refund verification
     // - LongjingCredits.sol _hashRefundData
     const idCommitmentBigInt = BigInt(data.idCommitment);
     const nullifierBigInt = BigInt(data.nullifier);

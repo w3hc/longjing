@@ -23,7 +23,6 @@
     "verify:attestation": "ts-node scripts/testing/verify-attestation.ts",
     "prove": "ts-node scripts/client/prove.ts",
     "governance:propose-release": "ts-node scripts/governance/propose-release.ts",
-    "setup:circuit": "ts-node scripts/setup/setup-trusted-setup.ts",
     "circuits:fetch": "ts-node scripts/setup/fetch-circuits.ts",
     "check:verifiers": "ts-node scripts/testing/check-verifier-keys.ts"
   },

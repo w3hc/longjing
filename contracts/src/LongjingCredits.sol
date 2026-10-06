@@ -19,7 +19,7 @@ import {PolicyViolationVerifier} from "./PolicyViolationVerifier.sol";
  *
  * IMPORTANT: Hash Function Compatibility
  * This contract uses Poseidon hash functions to maintain compatibility with the ZK circuit.
- * The circuit (api_credit_proof.circom) uses Poseidon hashing throughout:
+ * The circuits (api_request.circom and friends) use Poseidon hashing throughout:
  * - Identity commitments: Poseidon(secretKey)
  * - Merkle tree: Poseidon(left, right)
  * - Nullifiers: Poseidon(Poseidon(secretKey, ticketIndex))
@@ -740,7 +740,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
      * This MUST match:
      * - refund-signer.service.ts hashRefundData()
      * - refund_redemption.circom signature verification (lines 64-73)
-     * - api_credit_proof.circom refund verification (lines 107-112)
+     * - api_request_proof.circom refund verification
      *
      * Security Note:
      * - The signature covers idCommitment, nullifier, value, and timestamp for complete integrity

@@ -175,7 +175,7 @@ export class ProofVerifierService {
         this.failedVerifications++;
         this.logger.error(
           'CRITICAL: Proof verification requires circuit artifacts. ' +
-            'Run `npm run setup:circuit` to generate proving/verification keys.',
+            'Run `pnpm circuits:fetch` to download proving/verification keys.',
         );
         throw new Error(
           'Proof verification not available. Circuit artifacts not loaded.',
