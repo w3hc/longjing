@@ -30,6 +30,9 @@ import {
   isClaudeModel,
 } from '../pricing/claude-pricing';
 
+// Messages API framing adds a few tokens around the user's payload
+const MESSAGE_OVERHEAD_TOKENS = 32;
+
 /**
  * Main service for handling ZK-based API requests
  * Generic implementation that can be adapted to any API service
@@ -131,7 +134,16 @@ export class LongjingService {
       throw new UnauthorizedException('Invalid ZK proof');
     }
 
-    // 4. Atomically check nullifier and insert if new
+    // 4. Reject before the nullifier is consumed if maxCost can't cover the worst case
+    const maxCost = parseFieldElement(req.maxCost);
+    const worstCaseCost = await this.worstCaseCostInETH(req.payload, model);
+    if (maxCost < worstCaseCost) {
+      throw new BadRequestException(
+        `maxCost is below the worst-case cost of ${worstCaseCost} wei for ${model}`,
+      );
+    }
+
+    // 5. Atomically check nullifier and insert if new
     // This prevents TOCTOU race conditions in concurrent scenarios
     const payloadHash = this.hashPayload(req.payload);
     const existingSignal = this.nullifierStore.checkAndSet(req.nullifier, {
@@ -226,18 +238,18 @@ export class LongjingService {
       throw new ForbiddenException('Nullifier already used');
     }
 
-    // 5. Execute API request (Claude example)
+    // 6. Execute API request (Claude example)
     const response = await this.executeClaudeRequest(req.payload, model);
 
-    // 6. Calculate actual cost in ETH (internal only)
+    // 7. Calculate actual cost in ETH (internal only)
     const actualCost = await this.calculateCostInETH(
       response.usage._internalInputTokens ?? 0,
       response.usage._internalOutputTokens ?? 0,
       model,
     );
 
-    // 7. Generate refund ticket
-    const refundValue = BigInt(req.maxCost) - actualCost;
+    // 8. Generate refund ticket, never negative
+    const refundValue = maxCost > actualCost ? maxCost - actualCost : 0n;
     const refundTicket = await this.refundSigner.signRefund({
       idCommitment: req.idCommitment,
       nullifier: req.nullifier,
@@ -317,6 +329,19 @@ export class LongjingService {
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     return '0x' + F.toObject(k).toString(16).padStart(64, '0');
+  }
+
+  /**
+   * Upper bound on a request's cost in ETH (wei), known before the upstream call.
+   * Every token covers at least one UTF-8 byte, so the byte length bounds the input.
+   */
+  private async worstCaseCostInETH(
+    payload: string,
+    model: ClaudeModel,
+  ): Promise<bigint> {
+    const inputTokens =
+      Buffer.byteLength(payload, 'utf8') + MESSAGE_OVERHEAD_TOKENS;
+    return this.calculateCostInETH(inputTokens, MAX_OUTPUT_TOKENS, model);
   }
 
   /**
