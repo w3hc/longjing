@@ -1,0 +1,91 @@
+name: Static Analysis
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/**'
+      - 'circuits/**'
+      - 'scripts/testing/check-static-analysis.ts'
+      - '.github/workflows/static-analysis.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'contracts/**'
+      - 'circuits/**'
+      - 'scripts/testing/check-static-analysis.ts'
+      - '.github/workflows/static-analysis.yml'
+
+jobs:
+  slither:
+    name: Slither
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install Forge dependencies
+        working-directory: contracts
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts
+          forge install foundry-rs/forge-std
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Slither
+        run: pip install slither-analyzer==0.11.6
+
+      - name: Run Slither against the baseline
+        run: pnpm check:slither
+
+  circomspect:
+    name: circomspect
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      # The circuits include circomlib from node_modules
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Cache circomspect
+        id: cache-circomspect
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/circomspect
+          key: ${{ runner.os }}-circomspect-0.9.0
+
+      - name: Install circomspect
+        if: steps.cache-circomspect.outputs.cache-hit != 'true'
+        run: cargo install circomspect --version 0.9.0 --locked
+
+      - name: Run circomspect against the baseline
+        run: pnpm check:circomspect
