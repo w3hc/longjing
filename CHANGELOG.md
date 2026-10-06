@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `pnpm check:verifiers` fails on any pinned verification key where `vk_delta_2` equals `vk_gamma_2`, which would let anyone forge proofs from the public key alone. A fixture under `scripts/testing/fixtures/` shows it failing. Jest now also runs specs under `scripts/` ([#152](https://github.com/w3hc/longjing/issues/152)).
 
+### Fixed
+
+- `slashDoubleSpend` pays the policy stake to the slasher along with the RLN stake. It used to stay in the inactive deposit, where nobody could reach it (LJ-17) ([#129](https://github.com/w3hc/longjing/issues/129)).
+
 ## [0.4.1] - 2026-10-06
 
 ### Added
