@@ -293,8 +293,13 @@ describe('SnarkjsProofService', () => {
       return new SnarkjsProofService();
     };
 
-    it('defaults to the test circuit outside production', () => {
-      expect(withEnv('local').getCircuit()).toBe('api_credit_proof_test');
+    it('defaults to the local request circuit outside production', () => {
+      const info = withEnv('local').getCircuitInfo();
+
+      expect(info.circuit).toBe('api_request_local');
+      expect(info.vKeyPath).toMatch(
+        /api_request_local_verification_key\.json$/,
+      );
     });
 
     it('defaults to the request circuit in production', () => {
@@ -352,6 +357,14 @@ describe('SnarkjsProofService', () => {
       await expect(production().onModuleInit()).rejects.toThrow(
         /verification key missing/,
       );
+    });
+
+    it('refuses to start in production with the local request circuit', async () => {
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+
+      await expect(
+        production('api_request_local').onModuleInit(),
+      ).rejects.toThrow(/not allowed in production/);
     });
 
     it('refuses to start in production with the test circuit', async () => {
