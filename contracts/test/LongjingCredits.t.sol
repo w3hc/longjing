@@ -9,14 +9,12 @@ import {PoseidonHasher} from "../src/PoseidonHasher.sol";
 import {MockWithdrawalVerifier} from "./MockWithdrawalVerifier.sol";
 import {MockSlashingVerifier} from "./MockSlashingVerifier.sol";
 import {MockRefundVerifier} from "./MockRefundVerifier.sol";
-import {MockPolicyVerifier} from "./MockPolicyVerifier.sol";
 
 contract LongjingCreditsTest is Test {
     LongjingCredits public longjing;
     MockWithdrawalVerifier public mockWithdrawalVerifier;
     MockRefundVerifier public mockRefundVerifier;
     MockSlashingVerifier public mockSlashingVerifier;
-    MockPolicyVerifier public mockPolicyVerifier;
 
     address public owner;
     address public server;
@@ -42,9 +40,7 @@ contract LongjingCreditsTest is Test {
         bytes32 indexed secretKey, bytes32 indexed nullifier, address indexed slasher, uint256 reward
     );
 
-    event PolicyViolationSlashed(
-        bytes32 indexed nullifier, bytes32 indexed idCommitment, uint256 amountBurned, bytes32 evidenceHash
-    );
+    event PolicyStakeSlashed(bytes32 indexed nullifier, bytes32 indexed idCommitment, uint256 amountBurned);
 
     function setUp() public {
         owner = address(this);
@@ -62,18 +58,15 @@ contract LongjingCreditsTest is Test {
         mockWithdrawalVerifier = new MockWithdrawalVerifier();
         mockRefundVerifier = new MockRefundVerifier();
         mockSlashingVerifier = new MockSlashingVerifier();
-        mockPolicyVerifier = new MockPolicyVerifier();
 
         // Replace production verifiers with mocks for testing
         longjing.proposeChange(LongjingCredits.Target.WithdrawalVerifier, address(mockWithdrawalVerifier));
         longjing.proposeChange(LongjingCredits.Target.RefundVerifier, address(mockRefundVerifier));
         longjing.proposeChange(LongjingCredits.Target.SlashingVerifier, address(mockSlashingVerifier));
-        longjing.proposeChange(LongjingCredits.Target.PolicyVerifier, address(mockPolicyVerifier));
         vm.warp(block.timestamp + longjing.ADMIN_DELAY());
         longjing.executeChange(LongjingCredits.Target.WithdrawalVerifier);
         longjing.executeChange(LongjingCredits.Target.RefundVerifier);
         longjing.executeChange(LongjingCredits.Target.SlashingVerifier);
-        longjing.executeChange(LongjingCredits.Target.PolicyVerifier);
 
         // Generate test identity commitments using Poseidon (matching circuit)
         secretKey1 = keccak256(abi.encodePacked("secret1"));
@@ -418,92 +411,53 @@ contract LongjingCreditsTest is Test {
         }
     }
 
-    // ============ Policy Violation Slashing Tests ============
+    // ============ Policy Stake Slashing Tests ============
 
-    function test_PolicyViolationSlashing_Success() public {
-        // First, user makes a deposit
+    function test_PolicyStakeSlashing_Success() public {
         vm.prank(user1);
         longjing.deposit{value: 0.01 ether}(idCommitment1);
 
-        // Verify initial policy stake
-        LongjingCredits.Deposit memory depBefore = longjing.getDeposit(idCommitment1);
-        assertEq(depBefore.policyStake, 0.005 ether);
-
-        // Create mock proof and public signals
-        uint256[8] memory proof;
-        proof[0] = 1; // Non-zero to pass mock verifier
-
         bytes32 nullifier = keccak256("test_nullifier");
-        bytes32 evidenceHash = keccak256("violation_evidence");
-
-        // Public signals in snarkjs order: [evidenceHash, nullifier, idCommitment, nullifierExpected, idCommitmentExpected]
-        uint256[5] memory publicSignals;
-        publicSignals[0] = uint256(evidenceHash);
-        publicSignals[1] = uint256(nullifier);
-        publicSignals[2] = uint256(idCommitment1);
-        publicSignals[3] = uint256(nullifier);
-        publicSignals[4] = uint256(idCommitment1);
-
-        // Server slashes for policy violation
-        vm.startPrank(server);
+        uint256 burnedBefore = address(0).balance;
 
         vm.expectEmit(true, true, false, true);
-        emit PolicyViolationSlashed(nullifier, idCommitment1, 0.005 ether, evidenceHash);
+        emit PolicyStakeSlashed(nullifier, idCommitment1, 0.005 ether);
+        vm.prank(server);
+        longjing.slashPolicyStake(nullifier, idCommitment1);
 
-        longjing.slashPolicyViolation(nullifier, idCommitment1, proof, publicSignals);
-        vm.stopPrank();
-
-        // Verify policy stake was burned
-        LongjingCredits.Deposit memory depAfter = longjing.getDeposit(idCommitment1);
-        assertEq(depAfter.policyStake, 0);
-
-        // Verify nullifier is marked as slashed
+        LongjingCredits.Deposit memory dep = longjing.getDeposit(idCommitment1);
+        assertEq(dep.policyStake, 0);
+        assertEq(dep.rlnStake, 0.005 ether);
+        assertTrue(dep.active);
+        assertEq(address(0).balance - burnedBefore, 0.005 ether);
         assertTrue(longjing.slashedNullifiers(nullifier));
     }
 
-    function test_PolicyViolationSlashing_OnlyServer() public {
+    function test_PolicyStakeSlashing_OnlyServer() public {
         vm.prank(user1);
         longjing.deposit{value: 0.01 ether}(idCommitment1);
 
-        uint256[8] memory proof;
-        proof[0] = 1;
+        vm.prank(user2);
+        vm.expectRevert(LongjingCredits.Unauthorized.selector);
+        longjing.slashPolicyStake(keccak256("test_nullifier"), idCommitment1);
+    }
+
+    function test_PolicyStakeSlashing_RevertsOnSlashedNullifier() public {
+        vm.prank(user1);
+        longjing.deposit{value: 0.01 ether}(idCommitment1);
 
         bytes32 nullifier = keccak256("test_nullifier");
-
-        uint256[5] memory publicSignals;
-        publicSignals[0] = uint256(keccak256("evidence"));
-        publicSignals[1] = uint256(nullifier);
-        publicSignals[2] = uint256(idCommitment1);
-        publicSignals[3] = uint256(nullifier);
-        publicSignals[4] = uint256(idCommitment1);
-
-        // Non-server cannot slash
-        vm.startPrank(user2);
-        vm.expectRevert(LongjingCredits.Unauthorized.selector);
-        longjing.slashPolicyViolation(nullifier, idCommitment1, proof, publicSignals);
+        vm.startPrank(server);
+        longjing.slashPolicyStake(nullifier, idCommitment1);
+        vm.expectRevert(LongjingCredits.AlreadySlashed.selector);
+        longjing.slashPolicyStake(nullifier, idCommitment1);
         vm.stopPrank();
     }
 
-    function test_PolicyViolationSlashing_RequiresProof() public {
-        vm.prank(user1);
-        longjing.deposit{value: 0.01 ether}(idCommitment1);
-
-        uint256[8] memory proof; // All zeros - will fail mock verifier
-
-        bytes32 nullifier = keccak256("test_nullifier");
-
-        uint256[5] memory publicSignals;
-        publicSignals[0] = uint256(keccak256("evidence"));
-        publicSignals[1] = uint256(nullifier);
-        publicSignals[2] = uint256(idCommitment1);
-        publicSignals[3] = uint256(nullifier);
-        publicSignals[4] = uint256(idCommitment1);
-
-        // Should revert due to invalid proof
-        vm.startPrank(server);
-        vm.expectRevert(LongjingCredits.InvalidProof.selector);
-        longjing.slashPolicyViolation(nullifier, idCommitment1, proof, publicSignals);
-        vm.stopPrank();
+    function test_PolicyStakeSlashing_RevertsWithoutDeposit() public {
+        vm.prank(server);
+        vm.expectRevert(LongjingCredits.DepositNotFound.selector);
+        longjing.slashPolicyStake(keccak256("test_nullifier"), idCommitment1);
     }
 
     // ============ Refund Redemption Tests ============

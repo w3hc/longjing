@@ -9,7 +9,6 @@ import {BabyJubJub} from "./BabyJubJub.sol";
 import {WithdrawalVerifier} from "./WithdrawalVerifier.sol";
 import {RefundRedemptionVerifier} from "./RefundRedemptionVerifier.sol";
 import {DoubleSpendSlashingVerifier} from "./DoubleSpendSlashingVerifier.sol";
-import {PolicyViolationVerifier} from "./PolicyViolationVerifier.sol";
 
 /**
  * @title LongjingCredits
@@ -91,7 +90,6 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     WithdrawalVerifier public withdrawalVerifier;
     RefundRedemptionVerifier public refundVerifier;
     DoubleSpendSlashingVerifier public slashingVerifier;
-    PolicyViolationVerifier public policyVerifier;
 
     /// @notice Delay before a proposed verifier or server address change can be executed
     /// @dev Gives users time to exit before a change they disagree with takes effect
@@ -102,7 +100,6 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         WithdrawalVerifier,
         RefundVerifier,
         SlashingVerifier,
-        PolicyVerifier,
         ServerAddress
     }
 
@@ -137,9 +134,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         bytes32 indexed secretKey, bytes32 indexed nullifier, address indexed slasher, uint256 reward
     );
 
-    event PolicyViolationSlashed(
-        bytes32 indexed nullifier, bytes32 indexed idCommitment, uint256 amountBurned, bytes32 evidenceHash
-    );
+    event PolicyStakeSlashed(bytes32 indexed nullifier, bytes32 indexed idCommitment, uint256 amountBurned);
 
     event MerkleRootUpdated(bytes32 indexed newRoot, uint256 leafCount);
 
@@ -191,7 +186,6 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         withdrawalVerifier = new WithdrawalVerifier();
         refundVerifier = new RefundRedemptionVerifier();
         slashingVerifier = new DoubleSpendSlashingVerifier();
-        policyVerifier = new PolicyViolationVerifier();
 
         // Initialize 20-level Merkle tree with zero values
         // zeros[i] = Poseidon(zeros[i-1], zeros[i-1])
@@ -359,57 +353,29 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-     * @notice Slash user for policy violation (ToS breach)
+     * @notice Burn a user's policy stake for a ToS violation
      * @param _nullifier The nullifier from the violating request
      * @param _idCommitment The user's identity commitment
-     * @param _proof ZK proof components [pA, pB, pC] in Groth16 format
-     * @param _publicSignals Public signals in snarkjs order [evidenceHash, nullifier, idCommitment, nullifierExpected, idCommitmentExpected]
-     * @dev Policy stake is BURNED (not transferred to server) to prevent false accusations
-     * @dev The circuit proves:
-     *      1. The nullifier was derived from a valid RLN share
-     *      2. The violation evidence is cryptographically bound to the request
-     *      3. The idCommitment matches the on-chain deposit
+     * @dev Trusted-operator action: no proof backs the accusation, so the server address
+     *      can burn any active deposit's policy stake. Its only guard is the ADMIN_DELAY
+     *      timelock on changing that address. The stake is burned, not paid to the server,
+     *      so the operator gains nothing from a false accusation.
      */
-    function slashPolicyViolation(
-        bytes32 _nullifier,
-        bytes32 _idCommitment,
-        uint256[8] calldata _proof,
-        uint256[5] calldata _publicSignals
-    ) external nonReentrant {
+    function slashPolicyStake(bytes32 _nullifier, bytes32 _idCommitment) external nonReentrant {
         if (msg.sender != serverAddress) revert Unauthorized();
 
         Deposit storage userDeposit = deposits[_idCommitment];
         if (!userDeposit.active) revert DepositNotFound();
         if (slashedNullifiers[_nullifier]) revert AlreadySlashed();
 
-        // Verify ZK proof of policy violation
-        // Public signals, outputs first as snarkjs emits them: [evidenceHash, nullifier, idCommitment, nullifierExpected, idCommitmentExpected]
-        // The proof verifies:
-        // 1. The server knows the RLN signal from the actual request
-        // 2. The evidence hash binds the nullifier to the violation content
-        // 3. The idCommitment matches the expected on-chain value
-        if (!policyVerifier.verifyPolicyProof(_proof, _publicSignals)) {
-            revert InvalidProof();
-        }
-
-        // Verify public signals match expected values
-        // _publicSignals[3] is nullifierExpected (input)
-        require(_publicSignals[3] == uint256(_nullifier), "nullifier mismatch");
-        // _publicSignals[4] is idCommitmentExpected (input)
-        require(_publicSignals[4] == uint256(_idCommitment), "idCommitment mismatch");
-
-        // Extract evidence hash from public signals (output from circuit)
-        bytes32 evidenceHash = bytes32(_publicSignals[0]);
-
         slashedNullifiers[_nullifier] = true;
         uint256 amountToBurn = userDeposit.policyStake;
         userDeposit.policyStake = 0;
 
-        // Burn the policy stake (send to 0x0)
         (bool success,) = address(0).call{value: amountToBurn}("");
         require(success, "Burn failed");
 
-        emit PolicyViolationSlashed(_nullifier, _idCommitment, amountToBurn, evidenceHash);
+        emit PolicyStakeSlashed(_nullifier, _idCommitment, amountToBurn);
     }
 
     /**
@@ -585,8 +551,6 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
             refundVerifier = RefundRedemptionVerifier(change.value);
         } else if (_target == Target.SlashingVerifier) {
             slashingVerifier = DoubleSpendSlashingVerifier(change.value);
-        } else if (_target == Target.PolicyVerifier) {
-            policyVerifier = PolicyViolationVerifier(change.value);
         } else {
             emit ServerAddressUpdated(serverAddress, change.value);
             serverAddress = change.value;
