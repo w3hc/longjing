@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
-import { buildEddsa, buildPoseidon } from 'circomlibjs';
+import { buildPoseidon } from 'circomlibjs';
+import { KeyDerivationService } from '../keys/key-derivation.service';
 import { BlockchainService } from './blockchain.service';
 import { ProofGenService } from './proof-gen.service';
 import { ProofVerifierService } from './proof-verifier.service';
@@ -25,17 +26,20 @@ describe('api_request proof verification', () => {
       jest.spyOn(snarkjsProofService['logger'], level).mockImplementation();
     }
 
-    const eddsa = await buildEddsa();
     const poseidon = await buildPoseidon();
     const str = (x: unknown): string => poseidon.F.toObject(x).toString();
+    const dec = (hex: string): string => BigInt(hex).toString();
 
-    const serverPrvKey = Buffer.alloc(32, 7);
-    const serverPub = eddsa.prv2pub(serverPrvKey);
-    const refundSigner = {
-      getPublicKey: jest
-        .fn()
-        .mockResolvedValue({ x: str(serverPub[0]), y: str(serverPub[1]) }),
-    } as unknown as RefundSignerService;
+    const signerFor = (prvKey: Buffer) => {
+      const signer = new RefundSignerService({
+        getRefundSignerPrivateKey: () => prvKey,
+      } as unknown as KeyDerivationService);
+      for (const level of ['log', 'debug'] as const) {
+        jest.spyOn(signer['logger'], level).mockImplementation();
+      }
+      return signer;
+    };
+    const refundSigner = signerFor(Buffer.alloc(32, 7));
 
     verifier = new ProofVerifierService(
       { isAvailable: () => false } as unknown as BlockchainService,
@@ -52,13 +56,18 @@ describe('api_request proof verification', () => {
     let root = idCommitment;
     for (let i = 0; i < TREE_DEPTH; i++) root = poseidon([root, 0n]);
 
-    const timestamp = 1700000000n;
+    const timestamp = 1700000000;
     const zeros = Array<string>(MAX_REFUNDS - 1).fill('0');
 
     requestFrom = async (prvKey: Buffer) => {
-      const pub = eddsa.prv2pub(prvKey);
-      const msg = poseidon([idCommitment, 1000n, 20n, timestamp]);
-      const sig = eddsa.signMiMC(prvKey, msg);
+      const signer = signerFor(prvKey);
+      const pub = await signer.getPublicKey();
+      const { signature } = await signer.signRefund({
+        idCommitment: str(idCommitment),
+        nullifier: '1000',
+        value: '20',
+        timestamp,
+      });
       const { proof, publicSignals } = await snarkjsProofService.generateProof({
         secretKey: secretKey.toString(),
         ticketIndex: '10',
@@ -68,12 +77,12 @@ describe('api_request proof verification', () => {
         numRefunds: '1',
         refundValues: ['20', ...zeros],
         refundTimestamps: Array<string>(MAX_REFUNDS).fill(timestamp.toString()),
-        refundSignaturesR8x: [str(sig.R8[0]), ...zeros],
-        refundSignaturesR8y: [str(sig.R8[1]), ...zeros],
-        refundSignaturesS: [sig.S.toString(), ...zeros],
+        refundSignaturesR8x: [dec(signature.R8x), ...zeros],
+        refundSignaturesR8y: [dec(signature.R8y), ...zeros],
+        refundSignaturesS: [dec(signature.S), ...zeros],
         refundNullifiers: ['1000', ...zeros],
-        serverPublicKeyX: str(pub[0]),
-        serverPublicKeyY: str(pub[1]),
+        serverPublicKeyX: dec(pub.x),
+        serverPublicKeyY: dec(pub.y),
         merkleRootExpected: str(root),
         maxCost: '10',
         signalX: '42',

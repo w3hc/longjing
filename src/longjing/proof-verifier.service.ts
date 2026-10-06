@@ -219,7 +219,7 @@ export class ProofVerifierService {
 
       try {
         let signals: string[];
-        if (this.snarkjsProofService.getCircuit() === 'api_request') {
+        if (this.snarkjsProofService.getCircuit() !== 'api_credit_proof_test') {
           // Refunds must be signed by this server, so the key never comes from the request
           const serverKey = await this.refundSignerService.getPublicKey();
           // [nullifier, signalY, idCommitment, merkleRoot, merkleRootExpected, maxCost, signalX, serverPublicKeyX, serverPublicKeyY]

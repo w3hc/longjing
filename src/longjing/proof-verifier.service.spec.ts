@@ -258,23 +258,26 @@ describe('ProofVerifierService', () => {
       );
     });
 
-    it('orders request circuit signals with the server key', async () => {
-      snarkjsProofService.getCircuit.mockReturnValue('api_request');
+    it.each(['api_request', 'api_request_local'])(
+      'orders %s signals with the server key',
+      async (circuit) => {
+        snarkjsProofService.getCircuit.mockReturnValue(circuit);
 
-      await expect(signals()).resolves.toEqual(
-        [
-          mockPublicInputs.nullifier,
-          mockPublicInputs.signalY,
-          mockPublicInputs.idCommitment,
-          mockPublicInputs.merkleRoot,
-          mockPublicInputs.merkleRoot,
-          mockPublicInputs.maxCost,
-          mockPublicInputs.signalX,
-          serverKey.x,
-          serverKey.y,
-        ].map((v) => BigInt(v).toString()),
-      );
-    });
+        await expect(signals()).resolves.toEqual(
+          [
+            mockPublicInputs.nullifier,
+            mockPublicInputs.signalY,
+            mockPublicInputs.idCommitment,
+            mockPublicInputs.merkleRoot,
+            mockPublicInputs.merkleRoot,
+            mockPublicInputs.maxCost,
+            mockPublicInputs.signalX,
+            serverKey.x,
+            serverKey.y,
+          ].map((v) => BigInt(v).toString()),
+        );
+      },
+    );
   });
 
   describe('isProductionReady', () => {
