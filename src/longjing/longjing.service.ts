@@ -22,17 +22,13 @@ import {
   parseFieldElement,
   signalXMatchesPayload,
 } from './utils/payload-signal.util';
-
-// Example: Claude API Pricing (USD per million tokens)
-// This can be configured for any API service with similar pricing models
-const CLAUDE_PRICING = {
-  'claude-fable-5-1': { input: 10, output: 50 },
-  'claude-opus-4-6': { input: 5, output: 25 },
-  'claude-sonnet-4-6': { input: 3, output: 15 },
-  'claude-haiku-4-5': { input: 1, output: 5 },
-};
-
-type ClaudeModel = keyof typeof CLAUDE_PRICING;
+import {
+  ClaudeModel,
+  DEFAULT_CLAUDE_MODEL,
+  MAX_OUTPUT_TOKENS,
+  claudeCostUSD,
+  isClaudeModel,
+} from '../pricing/claude-pricing';
 
 /**
  * Main service for handling ZK-based API requests
@@ -102,7 +98,10 @@ export class LongjingService {
    * Implements the full protocol: nullifier check, proof verification, API call, refund
    */
   async handleRequest(req: LongjingRequestDto): Promise<LongjingResponseDto> {
-    const model = (req.model || 'claude-fable-5-1') as ClaudeModel;
+    const model = req.model ?? DEFAULT_CLAUDE_MODEL;
+    if (!isClaudeModel(model)) {
+      throw new BadRequestException(`Unsupported model: ${model}`);
+    }
 
     // 1. Check per-nullifier rate limit (before expensive operations)
     if (!this.nullifierStore.checkRateLimit(req.nullifier)) {
@@ -329,18 +328,7 @@ export class LongjingService {
     outputTokens: number,
     model: ClaudeModel,
   ): Promise<bigint> {
-    const pricing = CLAUDE_PRICING[model];
-
-    if (!pricing) {
-      throw new Error(
-        `Unknown model: ${model}. Valid models: ${Object.keys(CLAUDE_PRICING).join(', ')}`,
-      );
-    }
-
-    // Calculate cost in USD
-    const costUSD =
-      (inputTokens / 1_000_000) * pricing.input +
-      (outputTokens / 1_000_000) * pricing.output;
+    const costUSD = claudeCostUSD(model, inputTokens, outputTokens);
 
     // Convert to ETH (wei)
     const costWei = await this.ethRateOracle.usdToWei(costUSD);
@@ -373,7 +361,7 @@ export class LongjingService {
 
       const message = await this.anthropic.messages.create({
         model: model,
-        max_tokens: 4096,
+        max_tokens: MAX_OUTPUT_TOKENS,
         messages: [{ role: 'user', content: payload }],
       });
 
@@ -388,10 +376,7 @@ export class LongjingService {
       const totalTokens = inputTokens + outputTokens;
 
       // Fixed: Calculate actual cost (internal only)
-      const pricing = CLAUDE_PRICING[model];
-      const actualCostUSD =
-        (inputTokens / 1_000_000) * pricing.input +
-        (outputTokens / 1_000_000) * pricing.output;
+      const actualCostUSD = claudeCostUSD(model, inputTokens, outputTokens);
 
       // Fixed: Quantize units and cost
       const { unitClass } = quantizeUnits(totalTokens);
@@ -437,10 +422,7 @@ export class LongjingService {
     const mockResponse = `This is a mock Claude ${model} response to: "${payload.slice(0, 50)}..."`;
 
     // Fixed: Calculate actual cost (internal only)
-    const pricing = CLAUDE_PRICING[model];
-    const actualCostUSD =
-      (inputTokens / 1_000_000) * pricing.input +
-      (outputTokens / 1_000_000) * pricing.output;
+    const actualCostUSD = claudeCostUSD(model, inputTokens, outputTokens);
 
     // Fixed: Quantize units and cost
     const { unitClass } = quantizeUnits(totalTokens);

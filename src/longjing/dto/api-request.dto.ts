@@ -5,6 +5,7 @@ import {
   ValidateNested,
   IsOptional,
   IsArray,
+  IsIn,
   ArrayMinSize,
   ArrayMaxSize,
   MaxLength,
@@ -12,6 +13,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsFieldElement } from './field-element';
+import { CLAUDE_MODELS } from '../../pricing/claude-pricing';
 
 // A snarkjs Groth16 proof serializes to about 800 characters
 export const MAX_PROOF_LENGTH = 4096;
@@ -82,12 +84,12 @@ export class LongjingRequestDto {
   idCommitmentExpected: string;
 
   @ApiProperty({
-    description: 'Model/service variant to use (example: claude-fable-5-1)',
+    description: 'Model/service variant to use',
+    enum: CLAUDE_MODELS,
     required: false,
   })
-  @IsString()
   @IsOptional()
-  @MaxLength(64)
+  @IsIn(CLAUDE_MODELS)
   model?: string;
 }
 
