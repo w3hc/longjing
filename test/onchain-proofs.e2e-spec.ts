@@ -209,7 +209,9 @@ describe('Real proofs on chain (e2e)', () => {
       signal1,
       signal2,
     });
-    const { rlnStake } = await contract.getDeposit(bytes32(idCommitment));
+    const { rlnStake, policyStake } = await contract.getDeposit(
+      bytes32(idCommitment),
+    );
     const balanceBefore = await provider.getBalance(slasher.address);
 
     const receipt = await (
@@ -224,7 +226,7 @@ describe('Real proofs on chain (e2e)', () => {
 
     const gas = receipt.gasUsed * receipt.gasPrice;
     expect(await provider.getBalance(slasher.address)).toBe(
-      balanceBefore + rlnStake - gas,
+      balanceBefore + rlnStake + policyStake - gas,
     );
     expect((await contract.getDeposit(bytes32(idCommitment))).active).toBe(
       false,
