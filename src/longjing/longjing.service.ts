@@ -238,8 +238,15 @@ export class LongjingService {
       throw new ForbiddenException('Nullifier already used');
     }
 
-    // 6. Execute API request (Claude example)
-    const response = await this.executeClaudeRequest(req.payload, model);
+    // 6. Execute API request (Claude example); if it fails, nothing was served,
+    // so give the ticket index back instead of burning it
+    let response: Awaited<ReturnType<typeof this.executeClaudeRequest>>;
+    try {
+      response = await this.executeClaudeRequest(req.payload, model);
+    } catch (error) {
+      this.nullifierStore.release(req.nullifier, req.signal.x);
+      throw error;
+    }
 
     // 7. Calculate actual cost in ETH (internal only)
     const actualCost = await this.calculateCostInETH(

@@ -224,6 +224,23 @@ describe('LongjingService', () => {
       expect(result.refundTicket.value).toBe('0');
     });
 
+    it('should release the nullifier when the upstream call fails', async () => {
+      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
+      const execute = jest
+        .spyOn(service as any, 'executeClaudeRequest')
+        .mockRejectedValueOnce(new Error('upstream down'));
+
+      await expect(service.handleRequest(validRequest)).rejects.toThrow(
+        'upstream down',
+      );
+      expect(nullifierStore.exists(validRequest.nullifier)).toBe(false);
+
+      execute.mockRestore();
+      const retry = await service.handleRequest(validRequest);
+      expect(retry.refundTicket).toBeDefined();
+    });
+
     it('should reject a model with no pricing', async () => {
       await expect(
         service.handleRequest({
