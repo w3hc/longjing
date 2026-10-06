@@ -18,6 +18,8 @@ export class CostEstimationService {
     { estimate: CostEstimateResponseDto; expiry: number }
   >();
   private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  // Keys come from request contents, so cap the cache against memory exhaustion
+  private readonly MAX_CACHE_ENTRIES = 1000;
 
   constructor(
     private readonly providerRegistry: ProviderRegistryService,
@@ -89,17 +91,29 @@ export class CostEstimationService {
       timestamp: new Date(),
     };
 
-    // Cache the result
-    this.estimateCache.set(cacheKey, {
-      estimate,
-      expiry: Date.now() + this.CACHE_TTL_MS,
-    });
+    this.cacheEstimate(cacheKey, estimate);
 
     this.logger.log(
       `Estimated cost for ${request.provider}: $${costUSD.toFixed(4)} USD (${costWeiBigInt.toString()} wei)`,
     );
 
     return estimate;
+  }
+
+  /**
+   * Stores an estimate, evicting expired entries, then the oldest ones while
+   * the cache is full. Entries share one TTL, so insertion order is expiry order.
+   */
+  private cacheEstimate(key: string, estimate: CostEstimateResponseDto): void {
+    const now = Date.now();
+    this.estimateCache.delete(key);
+    for (const [k, v] of this.estimateCache) {
+      if (v.expiry > now && this.estimateCache.size < this.MAX_CACHE_ENTRIES) {
+        break;
+      }
+      this.estimateCache.delete(k);
+    }
+    this.estimateCache.set(key, { estimate, expiry: now + this.CACHE_TTL_MS });
   }
 
   /**

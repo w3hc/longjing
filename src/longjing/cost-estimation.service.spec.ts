@@ -164,6 +164,30 @@ describe('CostEstimationService', () => {
       expect(mockProvider.estimateCost).toHaveBeenCalledTimes(2);
     });
 
+    it('should evict the oldest estimates once the cache is full', async () => {
+      Object.assign(service, { MAX_CACHE_ENTRIES: 2 });
+
+      for (const estimatedUnits of [1, 2, 3]) {
+        await service.estimateCost({ provider: 'claude', estimatedUnits });
+      }
+
+      const cache = service['estimateCache'];
+      expect(cache.size).toBe(2);
+      expect([...cache.keys()]).toEqual(['claude::2:', 'claude::3:']);
+    });
+
+    it('should evict expired estimates', async () => {
+      const now = Date.now();
+      const spy = jest.spyOn(Date, 'now').mockReturnValue(now);
+      await service.estimateCost({ provider: 'claude', estimatedUnits: 1 });
+
+      spy.mockReturnValue(now + 5 * 60 * 1000 + 1);
+      await service.estimateCost({ provider: 'claude', estimatedUnits: 2 });
+      spy.mockRestore();
+
+      expect([...service['estimateCache'].keys()]).toEqual(['claude::2:']);
+    });
+
     it('should handle requests without endpoint', async () => {
       const requestWithoutEndpoint: CostEstimateRequestDto = {
         provider: 'claude',
