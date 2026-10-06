@@ -82,13 +82,13 @@ describe('assertChainMatchesProfile', () => {
 
   it('refuses any other chain in local', () => {
     expect(() => assertChainMatchesProfile(1n, 'local')).toThrow(
-      'PROFILE=local runs on Anvil only',
+      'NODE_ENV=development or test runs on Anvil only',
     );
   });
 
   it('refuses Anvil in prod', () => {
     expect(() => assertChainMatchesProfile(31337n, 'prod')).toThrow(
-      'PROFILE=prod refuses chain 31337',
+      'NODE_ENV=production refuses chain 31337',
     );
   });
 

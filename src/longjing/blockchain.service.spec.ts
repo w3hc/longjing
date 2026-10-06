@@ -269,7 +269,7 @@ describe('BlockchainService', () => {
     });
   });
 
-  describe('Startup profile', () => {
+  describe('Startup environment', () => {
     const LOCAL = {
       ANVIL_RPC_URL: 'http://127.0.0.1:8545',
       ZK_CONTRACT_ADDRESS: '0x1234567890123456789012345678901234567890',
@@ -279,8 +279,8 @@ describe('BlockchainService', () => {
       ZK_CONTRACT_ADDRESS: '0x1234567890123456789012345678901234567890',
     };
 
-    function startup(profile: string, values: Record<string, string>) {
-      process.env.PROFILE = profile;
+    function startup(nodeEnv: string, values: Record<string, string>) {
+      process.env.NODE_ENV = nodeEnv;
       const config = { get: (key: string) => values[key] } as ConfigService;
       const blockchain = new BlockchainService(
         config,
@@ -300,43 +300,43 @@ describe('BlockchainService', () => {
     }
 
     afterEach(() => {
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
       jest.restoreAllMocks();
     });
 
     it('starts without blockchain config in local', async () => {
-      await expect(startup('local', {})).resolves.toBeUndefined();
+      await expect(startup('test', {})).resolves.toBeUndefined();
     });
 
     it.each(['ETHEREUM_RPC_URLS', 'ZK_CONTRACT_ADDRESS'])(
       'refuses to start in prod without %s',
       async (name) => {
-        await expect(startup('prod', { ...PROD, [name]: '' })).rejects.toThrow(
-          'PROFILE=prod requires',
-        );
+        await expect(
+          startup('production', { ...PROD, [name]: '' }),
+        ).rejects.toThrow('NODE_ENV=production requires');
       },
     );
 
     it('refuses a non-Anvil chain in local', async () => {
       chainId('0x1');
 
-      await expect(startup('local', LOCAL)).rejects.toThrow(
-        'PROFILE=local runs on Anvil only',
+      await expect(startup('test', LOCAL)).rejects.toThrow(
+        'NODE_ENV=development or test runs on Anvil only',
       );
     });
 
     it('refuses Anvil in prod', async () => {
       chainId('0x7a69');
 
-      await expect(startup('prod', PROD)).rejects.toThrow(
-        'PROFILE=prod refuses chain 31337',
+      await expect(startup('production', PROD)).rejects.toThrow(
+        'NODE_ENV=production refuses chain 31337',
       );
     });
 
     it('builds the contract once the chain matches', async () => {
       chainId('0x7a69');
       // A closed port: the merkleRoot read fails after the contract is built
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
       const values: Record<string, string> = {
         ...LOCAL,
         ANVIL_RPC_URL: 'http://127.0.0.1:1',
@@ -362,7 +362,7 @@ describe('BlockchainService', () => {
         .spyOn(global, 'fetch')
         .mockRejectedValue(new TypeError('fetch failed'));
 
-      await expect(startup('local', LOCAL)).resolves.toBeUndefined();
+      await expect(startup('test', LOCAL)).resolves.toBeUndefined();
     });
 
     it('refuses to start when the RPC is unreachable in prod', async () => {
@@ -370,7 +370,7 @@ describe('BlockchainService', () => {
         .spyOn(global, 'fetch')
         .mockRejectedValue(new TypeError('fetch failed'));
 
-      await expect(startup('prod', PROD)).rejects.toThrow(
+      await expect(startup('production', PROD)).rejects.toThrow(
         'Cannot start in production: RPC unreachable',
       );
     });
@@ -383,7 +383,7 @@ describe('BlockchainService', () => {
         ETHEREUM_RPC_URLS: 'http://127.0.0.1:1',
       };
       const get = jest.fn((key: string) => values[key]);
-      process.env.PROFILE = 'prod';
+      process.env.NODE_ENV = 'production';
       const blockchain = new BlockchainService(
         { get } as unknown as ConfigService,
         merkleTreeService,

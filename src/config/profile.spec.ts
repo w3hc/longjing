@@ -1,25 +1,30 @@
 import { findPlaceholders, isProd, profile } from './profile';
 
 describe('profile', () => {
-  it.each(['local', 'prod'])('accepts %s', (value) => {
-    expect(profile({ PROFILE: value })).toBe(value);
+  it.each([
+    ['development', 'local'],
+    ['test', 'local'],
+    ['production', 'prod'],
+  ])('maps NODE_ENV=%s to %s', (value, expected) => {
+    expect(profile({ NODE_ENV: value })).toBe(expected);
   });
 
-  it('refuses a missing PROFILE', () => {
+  it('refuses a missing NODE_ENV', () => {
     expect(() => profile({})).toThrow('got nothing');
   });
 
-  it.each(['production', 'dev', 'LOCAL', ''])('refuses %j', (value) => {
-    expect(() => profile({ PROFILE: value })).toThrow('PROFILE must be');
+  it.each(['prod', 'local', 'PRODUCTION', ''])('refuses %j', (value) => {
+    expect(() => profile({ NODE_ENV: value })).toThrow('NODE_ENV must be');
   });
 
-  it('is prod only for PROFILE=prod', () => {
-    expect(isProd({ PROFILE: 'prod' })).toBe(true);
-    expect(isProd({ PROFILE: 'local' })).toBe(false);
+  it('is prod only for NODE_ENV=production', () => {
+    expect(isProd({ NODE_ENV: 'production' })).toBe(true);
+    expect(isProd({ NODE_ENV: 'development' })).toBe(false);
+    expect(isProd({ NODE_ENV: 'test' })).toBe(false);
   });
 
-  it('does not read NODE_ENV', () => {
-    expect(isProd({ PROFILE: 'local', NODE_ENV: 'production' })).toBe(false);
+  it('does not read PROFILE', () => {
+    expect(isProd({ NODE_ENV: 'development', PROFILE: 'prod' })).toBe(false);
   });
 });
 
@@ -75,7 +80,7 @@ describe('findPlaceholders', () => {
       findPlaceholders({
         ETHEREUM_RPC_URLS: 'https://eth.drpc.org,https://rpc.flashbots.net',
         ZK_CONTRACT_ADDRESS: '0x1111111111111111111111111111111111111111',
-        PROFILE: 'prod',
+        NODE_ENV: 'production',
         NOT_A_STRING: 42,
       }),
     ).toEqual([]);

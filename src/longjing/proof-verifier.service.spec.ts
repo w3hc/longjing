@@ -326,15 +326,15 @@ describe('ProofVerifierService', () => {
     let originalEnv: string | undefined;
 
     beforeEach(() => {
-      originalEnv = process.env.PROFILE;
+      originalEnv = process.env.NODE_ENV;
     });
 
     afterEach(() => {
-      process.env.PROFILE = originalEnv;
+      process.env.NODE_ENV = originalEnv;
     });
 
     it('should throw error in production mode when snarkjs not available', async () => {
-      process.env.PROFILE = 'prod';
+      process.env.NODE_ENV = 'production';
       snarkjsProofService.isAvailable.mockReturnValue(false);
 
       await expect(service.verify(mockProof, mockPublicInputs)).rejects.toThrow(
@@ -343,7 +343,7 @@ describe('ProofVerifierService', () => {
     });
 
     it('should allow verification in production when snarkjs is available', async () => {
-      process.env.PROFILE = 'prod';
+      process.env.NODE_ENV = 'production';
       blockchainService.isAvailable.mockReturnValue(true);
       blockchainService.getMerkleRoot.mockResolvedValue(
         mockPublicInputs.merkleRoot,
@@ -359,7 +359,7 @@ describe('ProofVerifierService', () => {
 
     describe('onchain state unavailable', () => {
       beforeEach(() => {
-        process.env.PROFILE = 'prod';
+        process.env.NODE_ENV = 'production';
         snarkjsProofService.isAvailable.mockReturnValue(true);
         snarkjsProofService.verifyProof.mockResolvedValue(true);
       });
@@ -403,7 +403,7 @@ describe('ProofVerifierService', () => {
     });
 
     it('should throw error even in dev mode when snarkjs not available', async () => {
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
       snarkjsProofService.isAvailable.mockReturnValue(false);
 
       await expect(service.verify(mockProof, mockPublicInputs)).rejects.toThrow(
@@ -415,7 +415,7 @@ describe('ProofVerifierService', () => {
   describe('metrics', () => {
     beforeEach(() => {
       // Reset metrics
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
     });
 
     it('should track successful verifications', async () => {

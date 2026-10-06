@@ -86,7 +86,7 @@ jest.setTimeout(30000);
 
 describe('KeyDerivationService', () => {
   let dstack: FakeDstack;
-  const originalProfile = process.env.PROFILE;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   const create = async () => {
     const service = new KeyDerivationService(
@@ -101,7 +101,7 @@ describe('KeyDerivationService', () => {
   });
 
   afterEach(() => {
-    process.env.PROFILE = originalProfile;
+    process.env.NODE_ENV = originalNodeEnv;
     clearTlsLeafCertificate();
   });
 
@@ -145,7 +145,7 @@ describe('KeyDerivationService', () => {
     });
 
     it('has no transaction signer without derived keys', async () => {
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
       dstack.failing = true;
 
       const service = await create();
@@ -264,7 +264,7 @@ describe('KeyDerivationService', () => {
     });
 
     it('has no manifest without derived keys', async () => {
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
       dstack.failing = true;
 
       const service = await create();
@@ -275,21 +275,21 @@ describe('KeyDerivationService', () => {
 
   describe('failure modes', () => {
     it('refuses the simulator in production', async () => {
-      process.env.PROFILE = 'prod';
+      process.env.NODE_ENV = 'production';
       dstack.simulator = true;
 
       await expect(create()).rejects.toThrow('DSTACK_SIMULATOR_ENDPOINT');
     });
 
     it('fails startup in production when dstack is unreachable', async () => {
-      process.env.PROFILE = 'prod';
+      process.env.NODE_ENV = 'production';
       dstack.failing = true;
 
       await expect(create()).rejects.toThrow('Key derivation');
     });
 
     it('starts without keys in production under the compose opt-out', async () => {
-      process.env.PROFILE = 'prod';
+      process.env.NODE_ENV = 'production';
       process.env.ALLOW_KEYS_OUTSIDE_ENCLAVE = 'true';
       dstack.failing = true;
 
@@ -302,7 +302,7 @@ describe('KeyDerivationService', () => {
     });
 
     it('starts without keys outside production when dstack is unreachable', async () => {
-      process.env.PROFILE = 'local';
+      process.env.NODE_ENV = 'test';
       dstack.failing = true;
 
       const service = await create();

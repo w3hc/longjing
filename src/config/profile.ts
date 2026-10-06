@@ -1,27 +1,31 @@
 /**
- * PROFILE is the single switch between local development and production.
+ * NODE_ENV is the single switch between local development and production.
  *
- * - local: Anvil only (chain 31337), well-known dev keys, the dstack
- *   simulator and relaxed rate limits.
- * - prod: never chain 31337, every key derived in the enclave, the RPC and
- *   contract address required, no placeholder accepted.
+ * - development, test: Anvil only (chain 31337), well-known dev keys, the
+ *   dstack simulator and relaxed rate limits.
+ * - production: never chain 31337, every key derived in the enclave, the RPC
+ *   and contract address required, no placeholder accepted.
  *
- * It is required: an unset or unknown PROFILE is a startup error, never a
- * fallback. NODE_ENV only drives framework behavior.
+ * It is required: an unset or unknown NODE_ENV is a startup error, never a
+ * fallback.
  */
 
-export const PROFILES = ['local', 'prod'] as const;
-export type Profile = (typeof PROFILES)[number];
+export const NODE_ENVS = ['development', 'test', 'production'] as const;
+export type NodeEnv = (typeof NODE_ENVS)[number];
+export type Profile = 'local' | 'prod';
 
 export const LOCAL_CHAIN_ID = 31337n;
 
 export function profile(env: Record<string, unknown> = process.env): Profile {
-  const value = env.PROFILE;
-  if (value === 'local' || value === 'prod') {
-    return value;
+  const value = env.NODE_ENV;
+  if (value === 'production') {
+    return 'prod';
+  }
+  if (value === 'development' || value === 'test') {
+    return 'local';
   }
   throw new Error(
-    `PROFILE must be "local" or "prod", got ${value === undefined ? 'nothing' : JSON.stringify(value)}`,
+    `NODE_ENV must be "development", "test" or "production", got ${value === undefined ? 'nothing' : JSON.stringify(value)}`,
   );
 }
 

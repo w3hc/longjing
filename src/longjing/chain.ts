@@ -60,12 +60,12 @@ export function assertChainMatchesProfile(
 ): void {
   if (current === 'local' && chainId !== LOCAL_CHAIN_ID) {
     throw new Error(
-      `PROFILE=local runs on Anvil only (chain ${LOCAL_CHAIN_ID}), the RPC is on chain ${chainId}`,
+      `NODE_ENV=development or test runs on Anvil only (chain ${LOCAL_CHAIN_ID}), the RPC is on chain ${chainId}`,
     );
   }
   if (current === 'prod' && chainId === LOCAL_CHAIN_ID) {
     throw new Error(
-      `PROFILE=prod refuses chain ${LOCAL_CHAIN_ID}: the RPC is a local Anvil node`,
+      `NODE_ENV=production refuses chain ${LOCAL_CHAIN_ID}: the RPC is a local Anvil node`,
     );
   }
 }
