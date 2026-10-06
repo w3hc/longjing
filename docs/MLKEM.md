@@ -1,6 +1,6 @@
 # ML-KEM Quantum-Resistant Encryption
 
-> **Note:** ML-KEM encryption/decryption utilities are available in the codebase (`src/encryption/mlkem-encryption.service.ts`) but the encryption endpoints are currently not exposed. The ML-KEM public key is served in `keys.mlkemPublicKey` of `GET /attestation`, bound in `report_data`. SIWE authentication (`src/auth/siwe.service.ts`, `src/auth/siwe.guard.ts`) is also available for protecting future endpoints. This documentation is maintained for reference and future use.
+> **Status: attested, but not used by any endpoint.** In v0.4.0, the server derives an ML-KEM-1024 key in the enclave, serves its public key in `keys.mlkemPublicKey` of `GET /attestation` and binds it in `report_data`. No endpoint accepts ML-KEM ciphertext: no controller uses `MlkemEncryptionService` (`src/encryption/mlkem-encryption.service.ts`), and the `/secret/*` endpoints this page describes are not served. Encrypting to this key today protects nothing, because nothing on the server decrypts it. The key exists so that future features, such as the attested onion service in [#99](https://github.com/w3hc/longjing/issues/99), can rely on it. The rest of this page documents that intended design, not current behavior.
 
 ## Overview
 
@@ -325,6 +325,8 @@ export function decryptSecret(encryptedPayload) {
 ## Testing
 
 This section explains how to test the ML-KEM multi-recipient encryption implementation both locally and on Phala Network.
+
+> The walkthroughs below predate v0.4.0. They call `/secret/*` endpoints that the server doesn't serve, and they provision ML-KEM keys through env, which production refuses: the key is derived in the enclave (see [KEY_DERIVATION.md](KEY_DERIVATION.md)). Only the unit tests of `MlkemEncryptionService` apply as written.
 
 ### Local Testing (Development)
 
