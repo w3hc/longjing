@@ -433,11 +433,13 @@ Assuming ETH = $2,000:
 
 ## Privacy Guarantees
 
-- ✅ **Identity Privacy**: Requests cannot be linked to identity commitment
-- ✅ **Request Unlinkability**: Each request uses unique nullifier
-- ✅ **Balance Privacy**: ZK proof hides actual balance
-- ✅ **Cryptographic Enforcement**: No trusted parties required
-- ✅ **Anonymity Set**: Users are indistinguishable within all depositors
+These are the design goals. At v0.4.0, the `api_request` circuit outputs `idCommitment` as a public signal, so the first, second and last are not met, and the balance is not hidden from whoever looks the deposit up. Tracked in [#134](https://github.com/w3hc/longjing/issues/134).
+
+- ⚠️ **Identity Privacy**: Requests cannot be linked to identity commitment (not yet: `idCommitment` is public)
+- ⚠️ **Request Unlinkability**: Each request uses unique nullifier (not yet: every request carries the same `idCommitment`)
+- ⚠️ **Balance Privacy**: ZK proof hides actual balance (the deposit is public onchain under `idCommitment`)
+- ⚠️ **Cryptographic Enforcement**: No trusted parties required, apart from whoever ran the single-party trusted setup ([#135](https://github.com/w3hc/longjing/issues/135))
+- ⚠️ **Anonymity Set**: Users are indistinguishable within all depositors (not yet: `idCommitment` identifies the leaf)
 
 ## Testing
 

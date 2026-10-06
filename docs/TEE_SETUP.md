@@ -516,9 +516,9 @@ EOF
 
 [Phala Network](https://phala.network/) provides TEE-as-a-Service infrastructure through [Phala Cloud](https://cloud.phala.network/) and [Dstack](https://docs.phala.com/dstack/overview), supporting Intel TDX, Intel SGX, AMD SEV, and GPU TEE.
 
-**Why Phala + Longjing?** Phala simplifies TEE deployment (containerized apps, one-click deployment), while Longjing adds cryptographic unlinkability that even Phala's infrastructure cannot violate. Together they provide:
+**Why Phala + Longjing?** Phala simplifies TEE deployment (containerized apps, one-click deployment), while Longjing is designed to add cryptographic unlinkability that even Phala's infrastructure cannot violate. Together they provide:
 - **Phala**: Hardware isolation, remote attestation, decentralized infrastructure
-- **Longjing**: Payment unlinkability that survives regulatory demands
+- **Longjing**: Payment unlinkability that survives regulatory demands, as a design goal: at v0.4.0, requests can still be linked to deposits ([#134](https://github.com/w3hc/longjing/issues/134))
 
 #### Overview
 
