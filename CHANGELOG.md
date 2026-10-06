@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - README badges for CI, NestJS, TypeScript, Solidity, Circom, pnpm, Node.js and the license ([#120](https://github.com/w3hc/longjing/issues/120)).
-- **Breaking:** a required `PROFILE` env var, `local` or `prod`, replaces `NODE_ENV` for every security gate. The server refuses to start without it, and `NODE_ENV=production` requires `PROFILE=prod`. See [LOCAL_SETUP.md](docs/LOCAL_SETUP.md#profiles) ([#122](https://github.com/w3hc/longjing/issues/122)).
+- **Breaking:** a required `PROFILE` env var, `local` or `prod`, replaces `NODE_ENV` for every security gate. The server refuses to start without it, and `NODE_ENV=production` requires `PROFILE=prod`. See [LOCAL_SETUP.md](docs/LOCAL_SETUP.md#node_env) ([#122](https://github.com/w3hc/longjing/issues/122)).
 - `PROFILE=prod` requires `ETHEREUM_RPC_URLS` and `ZK_CONTRACT_ADDRESS`, and refuses `ANVIL_RPC_URL`, `ANVIL_PRIVATE_KEY`, `DSTACK_SIMULATOR_ENDPOINT` and placeholder values: the Anvil keys and addresses, Anvil's first deployment address and `example.*` URLs (LJ-09) ([#122](https://github.com/w3hc/longjing/issues/122)).
 - At startup, the server reads the RPC's `eth_chainId`: `PROFILE=local` refuses any chain but Anvil's 31337, `PROFILE=prod` refuses 31337 and an unreachable RPC ([#122](https://github.com/w3hc/longjing/issues/122)).
 - `DeployLongjingCredits.s.sol` tests in `contracts/test/DeployLongjingCredits.t.sol` ([#122](https://github.com/w3hc/longjing/issues/122)).
@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Concurrency caps on proof verification and on proving for `POST /longjing/proofs/slashing`, set by `MAX_CONCURRENT_VERIFICATIONS` (default 8) and `MAX_CONCURRENT_PROOFS` (default 2). Work over a cap gets a 503 right away instead of being queued (LJ-07, LJ-19) ([#124](https://github.com/w3hc/longjing/issues/124)).
 - Request DTOs check field elements (hex or decimal, bounded length) and cap `proof` and `payload` lengths, so malformed bodies get a 400 before any RPC or Groth16 work (LJ-07) ([#124](https://github.com/w3hc/longjing/issues/124)).
 - `SECURITY.md`: how to report a vulnerability privately, which versions get fixes, and what is in scope ([#126](https://github.com/w3hc/longjing/issues/126)).
+- `pnpm demo` runs one user from deposit to refund against Anvil, with real proofs and the real server, and prints a checklist of asserted checks: the proof's root matches the chain, a replay is rejected, the refund ticket verifies against the server's key, the balance grows by the refund, and a second redemption reverts. It exits non-zero on any failed check. `docs/TESTING_GUIDE.md` opens with it ([#139](https://github.com/w3hc/longjing/issues/139)).
+- `pnpm prove request` builds a request proof on the client from the deposited secret, reading the Merkle path, the root and the deposit from the contract ([#139](https://github.com/w3hc/longjing/issues/139)).
 
 ### Changed
 
@@ -34,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LongjingService` defaults to `claude-fable-5-1`, priced at $10 input and $50 output per million tokens, instead of Sonnet 4.6 ([#138](https://github.com/w3hc/longjing/issues/138)).
 - **Breaking:** circuit artifacts are fetched from the `circuits-v1.2` release. The `api_request`, `api_request_local`, `withdrawal` and `refund_redemption` keys come from a single-party phase 2 on `ppot_0080_17.ptau`, and `WithdrawalVerifier` and `RefundRedemptionVerifier` embed the new keys, so the contract must be redeployed. Run `pnpm circuits:fetch` again ([#132](https://github.com/w3hc/longjing/issues/132)).
 - Claude pricing lives in one table, `src/pricing/claude-pricing.ts`, read by `LongjingService`, the request DTO, `CLAUDE_CONFIG` and `ClaudeProvider`. The provider's supported models are exactly the priced ones, and its rates, cache rates included, come from the requested model (LJ-14) ([#125](https://github.com/w3hc/longjing/issues/125)).
+- **Breaking:** `PROFILE` is merged into `NODE_ENV`, which is now required and is one of `development`, `test` or `production`. `development` and `test` are local, `production` is production, and the startup checks are unchanged. Drop `PROFILE` from your env, and deploy with `NODE_ENV=development` or `NODE_ENV=production` ([#139](https://github.com/w3hc/longjing/issues/139)).
+- `test/app.e2e-spec.ts` runs the same steps as `pnpm demo`: it deploys the contract before the app starts, proves and redeems with the deposited secret, and checks that a replay and a second redemption fail. The mock refund proof and its catch-all are gone ([#139](https://github.com/w3hc/longjing/issues/139)).
 
 ### Removed
 

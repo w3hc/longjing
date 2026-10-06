@@ -233,7 +233,7 @@ pnpm start
 
 ### Request Circuit Setup
 
-The server verifies requests with [api_request.circom](../circuits/api_request.circom) (~110K constraints), or [api_request_local.circom](../circuits/api_request_local.circom) (~32K) with `PROFILE=local`. Its committed keys use the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) for phase 1 and a single local contribution for phase 2, so they are **NOT secure for mainnet** until a multi-party phase 2 ceremony replaces them.
+The server verifies requests with [api_request.circom](../circuits/api_request.circom) (~110K constraints), or [api_request_local.circom](../circuits/api_request_local.circom) (~32K) outside production. Its committed keys use the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) for phase 1 and a single local contribution for phase 2, so they are **NOT secure for mainnet** until a multi-party phase 2 ceremony replaces them.
 
 To regenerate them after changing the circuit:
 

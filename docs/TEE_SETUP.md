@@ -34,7 +34,6 @@ Before deploying to any TEE platform, ensure you have:
    ```bash
    cp .env.template .env
    # Edit .env with production values
-   PROFILE=prod
    NODE_ENV=production
    # No key material: keys are derived from the dstack KMS,
    # see KEY_DERIVATION.md
@@ -55,7 +54,6 @@ The strategies below apply to the remaining secrets, such as `ANTHROPIC_API_KEY`
 **Use when**: Deploying to cloud TEE (AWS Nitro, Azure Confidential VMs, etc.)
 
 ```bash
-PROFILE=prod
 NODE_ENV=production
 KMS_URL=https://kms.your-domain.com/secrets
 ```
@@ -77,7 +75,6 @@ The application will:
 **Use when**: Deploying to Phala Cloud or similar TEE platforms
 
 ```bash
-PROFILE=prod
 NODE_ENV=production
 ANTHROPIC_API_KEY=sk-...     # Encrypted and injected by Phala
 ```
@@ -89,7 +86,6 @@ The platform encrypts secrets and injects them as environment variables. `Secret
 **Use when**: Deploying to basic Ubuntu VPS without TEE. Not in production mode: production attests only through dstack and refuses to start without it.
 
 ```bash
-PROFILE=prod
 NODE_ENV=production
 ALLOW_KEYS_OUTSIDE_ENCLAVE=true
 OPERATOR_PRIVATE_KEY=0x...  # From .env or systemd service
@@ -102,7 +98,7 @@ OPERATOR_PRIVATE_KEY=0x...  # From .env or systemd service
 **Use when**: Local development and testing
 
 ```bash
-PROFILE=local
+NODE_ENV=development
 OPERATOR_PRIVATE_KEY=0x...  # Optional, auto-generates if not set
 ```
 
@@ -192,7 +188,7 @@ AMD Secure Encrypted Virtualization - Secure Nested Paging provides VM-level iso
      -subj "/CN=your-domain.com"
 
    # Start the application
-   PROFILE=prod NODE_ENV=production node dist/main.js
+   NODE_ENV=production node dist/main.js
    ```
 
 #### Attestation Verification
@@ -309,7 +305,7 @@ Intel Trust Domain Extensions provides VM-level isolation with hardware-enforced
      -subj "/CN=your-domain.com"
 
    # Start the application
-   PROFILE=prod NODE_ENV=production node dist/main.js
+   NODE_ENV=production node dist/main.js
    ```
 
 #### Attestation Verification
@@ -432,7 +428,6 @@ AWS Nitro Enclaves provide isolated compute environments on EC2 instances.
        -subj "/CN=enclave.local"
 
    # Set environment
-   ENV PROFILE=prod
    ENV NODE_ENV=production
 
    EXPOSE 443
@@ -620,7 +615,6 @@ If you want to deploy Longjing on Phala's Intel TDX infrastructure using Dstack:
        -days 365 -nodes \
        -subj "/CN=longjing.phala.network"
 
-   ENV PROFILE=prod
    ENV NODE_ENV=production
 
    EXPOSE 443
@@ -724,7 +718,6 @@ For questions about Phala-specific deployment, consult:
 Create a production `.env` file inside the TEE:
 
 ```bash
-PROFILE=prod
 NODE_ENV=production
 PORT=443
 KMS_URL=https://kms.your-domain.com/release  # example.com URLs are refused
@@ -1073,7 +1066,7 @@ phala cvms list                 # List your CVMs
 # Longjing Application
 curl -k https://localhost:443/secret/attestation
 curl -k https://localhost:443/health
-PROFILE=prod NODE_ENV=production node dist/main.js
+NODE_ENV=production node dist/main.js
 
 # Docker (for Phala deployment)
 docker build -t longjing:latest .

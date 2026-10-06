@@ -1,15 +1,34 @@
 # Scripts Directory
 
-Utility scripts organized by purpose: setup, deployment, and testing.
+Utility scripts organized by purpose: client proving, the demo, setup, deployment, and testing.
 
 ## Directory Structure
 
 ```
 scripts/
+├── client/         # Client-side proving
+├── demo/           # One user from deposit to refund
 ├── setup/          # Circuit compilation and trusted setup
 ├── deploy/         # Contract generation and deployment
 └── testing/        # Manual testing and verification utilities
 ```
+
+## Client Scripts
+
+### `client/prove.ts`
+
+Generates proofs on the client, so the secret key never leaves the user's machine:
+
+- `pnpm prove request <input.json>`: a request proof against the on-chain Merkle root, printed as the body for `POST /longjing/request`
+- `pnpm prove refund <input.json>`: a refund redemption proof for a refund ticket
+
+The input formats are in the file's header.
+
+## Demo
+
+### `demo/demo.ts`
+
+`pnpm demo` runs one user, Alice, from deposit to refund against Anvil, and exits non-zero on the first failed check. See [docs/TESTING_GUIDE.md](../docs/TESTING_GUIDE.md#prove-it-in-3-commands).
 
 ## Setup Scripts
 
@@ -67,7 +86,7 @@ See [docs/TEE_SETUP.md](../docs/TEE_SETUP.md) for production verification.
 
 ### `testing/compute-poseidon.ts`
 
-Computes Poseidon hash for identity commitments (used by e2e tests).
+Computes Poseidon hash for identity commitments.
 
 ### `testing/generate-admin-keypair.ts`
 
@@ -75,15 +94,18 @@ Generates ML-KEM-1024 admin keypair for secret management.
 
 ### `testing/generate-proof.ts`
 
-Generates ZK proofs for testing (used by e2e test suite).
+Generates proofs with the simplified `api_credit_proof_test` circuit, against a zero Merkle root. The server refuses them unless it runs with `ZK_CIRCUIT=api_credit_proof_test`. For a proof the server accepts, use `pnpm prove request`.
 
 ## Running Tests
 
-Instead of individual test scripts, use the comprehensive e2e test suite:
+Instead of individual test scripts, use the demo and the e2e test suite:
 
 ```bash
 # Start local blockchain
 anvil
+
+# One user from deposit to refund
+pnpm demo
 
 # Run end-to-end tests
 pnpm test:e2e

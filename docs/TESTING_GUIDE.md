@@ -1,5 +1,38 @@
 # Testing Guide
 
+## Prove it in 3 commands
+
+```bash
+anvil        # terminal 1
+pnpm demo    # terminal 2
+```
+
+Then read the checklist. `pnpm demo` runs one user, Alice, from deposit to refund against Anvil, with real proofs and the real server:
+
+1. Deploy `LongjingCredits` with `NODE_ENV=development`
+2. Start the server pointed at it
+3. Alice deposits 0.2 ETH with her secret
+4. She proves membership with that secret against the on-chain root (`pnpm prove request`)
+5. `POST /longjing/request`, then the same request again
+6. She proves the refund (`pnpm prove refund`), redeems it on chain to a fresh address, then tries again
+
+Each item on the checklist is asserted, and the demo exits non-zero on the first one that fails:
+
+```
+  ✓ the deposit is active on chain
+  ✓ the server's refund key is the one registered on chain
+  ✓ the proof's root matches the chain
+  ✓ the proof is for the deposited secret
+  ✓ the nullifier is accepted once
+  ✓ a replay is rejected
+  ✓ the refund is maxCost minus the actual cost
+  ✓ the refund ticket signature verifies against serverPublicKey
+  ✓ the balance changes by the refund
+  ✓ a second redemption reverts
+```
+
+The server answers with mock responses: `ANTHROPIC_API_KEY` is ignored, so the demo costs nothing.
+
 ## Overview
 
 This guide covers testing for the Longjing system, including:
@@ -15,9 +48,10 @@ This guide covers testing for the Longjing system, including:
 # Unit tests
 pnpm test
 
-# E2E tests (requires Anvil)
+# Demo and E2E tests (require Anvil)
 anvil                      # Terminal 1
-pnpm test:e2e             # Terminal 2
+pnpm demo                  # Terminal 2
+pnpm test:e2e
 
 # Contract tests
 cd contracts && forge test -vv
@@ -74,31 +108,32 @@ Comprehensive integration tests that verify the complete flow from deposit to re
 pnpm test:e2e
 ```
 
-The tests run with `PROFILE=local` and deploy their own contract with it, so they need nothing from your shell:
+Jest sets `NODE_ENV=test`, and the tests deploy their own contract with it, so they need nothing from your shell:
 
 - `ZK_CONTRACT_ADDRESS`, `ANVIL_RPC_URL`, `ANVIL_PRIVATE_KEY` and `ETHEREUM_RPC_URLS` are cleared before the app starts, so a sourced `.env.local` cannot point it at another contract.
-- `ANTHROPIC_API_KEY` is kept: without it the service answers with mock responses, as in CI; with it, requests go to the Claude API. Until [#138](https://github.com/w3hc/longjing/issues/138) is fixed, real requests fail with a 500, so run `env -u ANTHROPIC_API_KEY pnpm test:e2e`.
+- The main flow test clears `ANTHROPIC_API_KEY`, so the service answers with mock responses and the run costs nothing.
 
 ### Main Flow Test (`test/app.e2e-spec.ts`)
 
-Tests the complete user flow:
+The same steps as `pnpm demo`, as Jest assertions. The contract is deployed before the app starts, so the server checks the proof's root against the chain.
 
-**Step 1: Alice deposits 1 ETH**
-- Generates identity commitment using Poseidon hash
-- Deploys contract via Foundry script
-- Makes deposit transaction
-- Verifies deposit onchain
+**Alice deposits with her secret**
+- Deposits 0.2 ETH under `Poseidon(secretKey)` and checks that the deposit is active on chain
 
-**Step 2: Alice uses the service**
-- Generates ZK proof using `generate-proof.ts`
-- Makes API request with proof
-- Receives Claude API response
-- Gets refund ticket with EdDSA signature
+**Proves membership with that secret against the on-chain root**
+- Checks that `GET /longjing/server-pubkey` returns the refund key registered on chain
+- Runs `pnpm prove request` with the deposited secret, and checks that the proof's root is the contract's root
 
-**Step 3: Alice gets refund**
-- Attempts to redeem refund onchain with a mock proof
-- Verifies refund ticket structure
-- Does not yet check that the mock proof is rejected, nor redeem with a real proof: see [#139](https://github.com/w3hc/longjing/issues/139)
+**Accepts the nullifier once and rejects a replay**
+- `POST /longjing/request` answers 200 with a refund ticket worth `maxCost` minus the actual cost
+- The same request again answers 403 `Nullifier already used`
+
+**Signs the refund ticket with serverPublicKey**
+- Verifies the ticket's EdDSA signature on the client, against the server's public key
+
+**Redeems the refund once with a real proof, and rejects a second redemption**
+- Runs `pnpm prove refund`, redeems the ticket on chain to a fresh address, and checks that its balance equals the refund
+- Checks that a second redemption reverts with `RefundAlreadyRedeemed`
 
 The suites share one Anvil chain and deployer, so they run one at a time.
 
@@ -142,13 +177,22 @@ forge test -vv
 
 Helper scripts for manual testing and debugging.
 
-### Generate ZK Proof
+### Prove a Request or a Refund
+
+```bash
+pnpm prove request <input.json>
+pnpm prove refund <input.json>
+```
+
+The client-side provers the demo and the main flow test use. The input formats are in [scripts/client/prove.ts](../scripts/client/prove.ts).
+
+### Generate a Test-Circuit Proof
 
 ```bash
 npx ts-node scripts/testing/generate-proof.ts <secretKey> <ticketIndex> [payload]
 ```
 
-Generates a complete ZK proof for testing API requests, with the signal x bound to `payload`.
+Proves with the simplified `api_credit_proof_test` circuit against a zero Merkle root. The server only accepts it with `ZK_CIRCUIT=api_credit_proof_test`.
 
 ### Compute Poseidon Hash
 
@@ -188,12 +232,18 @@ All tests must pass before merging PRs.
 - ✅ Rate limiting mechanisms
 - ✅ EdDSA signature generation
 
-### E2E Tests Validate:
-- ✅ Complete deposit → service → refund flow
-- ✅ Real blockchain interaction (via Anvil)
-- ✅ Contract deployment and verification
-- ✅ ZK proof generation and API integration
-- ⏳ Mock refund proof rejection and real refund redemption ([#139](https://github.com/w3hc/longjing/issues/139))
+### Demo and Main Flow Test Validate:
+- ✅ A deposit, a request and a refund by the same user, with the same secret
+- ✅ The request proof's Merkle root is the on-chain root
+- ✅ A nullifier is accepted once, and a replay is rejected
+- ✅ The refund ticket signature verifies against the server's public key, which is the one registered on chain
+- ✅ A real refund proof redeems the ticket, and the recipient's balance grows by the refund
+- ✅ A second redemption reverts
+
+### On-chain Proofs Test Validates:
+- ✅ One real proof per circuit accepted by the deployed verifiers: withdrawal, refund redemption, double-spend slashing
+- ✅ A second refund redemption reverts
+- ✅ The slasher receives the RLN stake
 
 ### Contract Tests Validate:
 - ✅ Smart contract state transitions
@@ -293,7 +343,7 @@ The proof generation test includes performance benchmarks:
 ### Security Testing
 
 Key security validations:
-- Mock proofs are rejected (contract tests; e2e coverage tracked in [#139](https://github.com/w3hc/longjing/issues/139))
+- Mock proofs are rejected (contract tests)
 - Nullifier uniqueness enforced
 - Double-spend attempts detected
 - Invalid proof structures rejected
@@ -301,11 +351,10 @@ Key security validations:
 
 ## Test Data Management
 
-E2E tests are stateless:
-- Each test run generates fresh data
+The demo and the E2E tests are stateless:
+- Each run deploys a fresh contract on the running Anvil chain
 - No test artifacts are committed
-- Anvil provides clean blockchain state
-- In-memory database for API server
+- The API server's database lives in memory (E2E) or a temporary directory (demo)
 
 ## Next Steps
 

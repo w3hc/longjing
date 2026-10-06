@@ -61,8 +61,7 @@ services:
     volumes:
       - /var/run/dstack.sock:/var/run/dstack.sock  # Key derivation, TLS key and quotes
     environment:
-      - PROFILE=prod  # Literals, so the compose hash commits to them
-      - NODE_ENV=production
+      - NODE_ENV=production  # A literal, so the compose hash commits to it
       - KMS_URL=${KMS_URL}
       - ETHEREUM_RPC_URLS=${ETHEREUM_RPC_URLS}
       - ZK_CONTRACT_ADDRESS=${ZK_CONTRACT_ADDRESS}
@@ -80,13 +79,13 @@ Create a local file with your production secrets (used during deployment):
 ```bash
 KMS_URL=http://localhost:8001/prpc/PhactoryAPI.GetRuntimeInfo
 
-# Blockchain Configuration, both required with PROFILE=prod
+# Blockchain Configuration, both required with NODE_ENV=production
 ZK_CONTRACT_ADDRESS=<your-contract-address>
 # Comma-separated list of Ethereum mainnet RPC URLs (API will randomly pick one)
 ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,https://rpc.mevblocker.io/noreverts,https://rpc.mevblocker.io/fast,https://rpc.mevblocker.io,https://rpc.flashbots.net/fast,https://rpc.flashbots.net,https://mainnet.gateway.tenderly.co,https://ethereum-rpc.publicnode.com
 ```
 
-`PROFILE` and `NODE_ENV` come from the compose file as literals. Leave out `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY`, `ANVIL_RPC_URL` and `ANVIL_PRIVATE_KEY`: the keys are derived inside the enclave, and `PROFILE=prod` refuses to start with them in env. Contract transactions, slashing included, are signed by the enclave's identity key, so fund its address (`GET /attestation/manifest`) for gas. Placeholder values, such as Anvil addresses or `example.com` URLs, are refused too, see [LOCAL_SETUP.md](LOCAL_SETUP.md#profiles).
+`NODE_ENV` comes from the compose file as a literal. Leave out `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY`, `ANVIL_RPC_URL` and `ANVIL_PRIVATE_KEY`: the keys are derived inside the enclave, and `NODE_ENV=production` refuses to start with them in env. Contract transactions, slashing included, are signed by the enclave's identity key, so fund its address (`GET /attestation/manifest`) for gas. Placeholder values, such as Anvil addresses or `example.com` URLs, are refused too, see [LOCAL_SETUP.md](LOCAL_SETUP.md#node_env).
 
 **Important**: Add `.env.prod` to [.gitignore](../.gitignore) to prevent committing secrets.
 

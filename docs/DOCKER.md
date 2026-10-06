@@ -34,7 +34,6 @@ Development mode uses hot reload and mounts your local code as a volume for live
 
    The dev compose file has sensible defaults, but you can override in `.env`:
    ```bash
-   PROFILE=local
    NODE_ENV=development
    KMS_URL=http://localhost:8001/prpc/PhactoryAPI.GetRuntimeInfo
    ```
@@ -54,7 +53,7 @@ Development mode uses hot reload and mounts your local code as a volume for live
 - Uses [Dockerfile.dev](../Dockerfile.dev)
 - Runs `pnpm start:dev` with hot reload
 - Code changes are reflected immediately (volume mounted)
-- Sets `PROFILE=local` and `NODE_ENV=development`
+- Sets `NODE_ENV=development`
 - Application available at `https://localhost:3000`
 - TLS certificates generated automatically in container
 
@@ -81,7 +80,7 @@ Production mode uses a multi-stage build to create an optimized image.
    cp .env.template .env.prod
    ```
 
-   Configure production settings (`PROFILE=prod` refuses placeholders such as the `example.com` URL):
+   Configure production settings (`NODE_ENV=production` refuses placeholders such as the `example.com` URL):
    ```bash
    KMS_URL=https://kms.your-domain.com/release
    ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.flashbots.net
@@ -163,9 +162,8 @@ Images that get deployed are not built by hand: see [Releases](#releases).
 
 Both modes use the following environment variables (configured in `docker-compose.yml` and `docker-compose.dev.yml`):
 
-- `PROFILE`: `local` or `prod`, required. See [LOCAL_SETUP.md](LOCAL_SETUP.md#profiles)
-- `NODE_ENV`: Set to `development` or `production` (which requires `PROFILE=prod`)
-- `ETHEREUM_RPC_URLS`, `ZK_CONTRACT_ADDRESS`: required with `PROFILE=prod`
+- `NODE_ENV`: `development`, `test` or `production`, required. See [LOCAL_SETUP.md](LOCAL_SETUP.md#node_env)
+- `ETHEREUM_RPC_URLS`, `ZK_CONTRACT_ADDRESS`: required with `NODE_ENV=production`
 - `KMS_URL`: KMS service endpoint (default: `http://localhost:8001/prpc/PhactoryAPI.GetRuntimeInfo`)
 
 To modify these, edit the respective `docker-compose` file before running.
@@ -196,7 +194,6 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - PROFILE=local
       - NODE_ENV=development
       - KMS_URL=http://localhost:8001/prpc/PhactoryAPI.GetRuntimeInfo
     volumes:
@@ -220,15 +217,14 @@ services:
     volumes:
       - /var/run/dstack.sock:/var/run/dstack.sock  # Key derivation, TLS key and quotes
     environment:
-      - PROFILE=prod  # Literals, so the compose hash commits to them
-      - NODE_ENV=production
+      - NODE_ENV=production  # A literal, so the compose hash commits to it
       - KMS_URL=${KMS_URL}
       - ETHEREUM_RPC_URLS=${ETHEREUM_RPC_URLS}
       - ZK_CONTRACT_ADDRESS=${ZK_CONTRACT_ADDRESS}
     restart: unless-stopped
 ```
 
-**Note**: The `/var/run/dstack.sock` volume mount is required: the keys are derived through it, and production refuses to start without it. `PROFILE` is a literal rather than `${PROFILE}`, so the operator cannot switch production checks off. See [KEY_DERIVATION.md](KEY_DERIVATION.md#production-policy).
+**Note**: The `/var/run/dstack.sock` volume mount is required: the keys are derived through it, and production refuses to start without it. `NODE_ENV` is a literal rather than `${NODE_ENV}`, so the operator cannot switch production checks off. See [KEY_DERIVATION.md](KEY_DERIVATION.md#production-policy).
 
 ## Releases
 

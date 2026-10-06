@@ -104,9 +104,12 @@ cp .env.template .env.local
 # Unit tests
 pnpm test
 
-# End-to-end tests (requires Anvil running)
+# One user from deposit to refund, every step asserted (requires Anvil running)
 anvil                      # Terminal 1
-pnpm test:e2e             # Terminal 2
+pnpm demo                  # Terminal 2
+
+# End-to-end tests (requires Anvil running)
+pnpm test:e2e
 
 # Contract tests (Foundry)
 cd contracts && forge test -vv

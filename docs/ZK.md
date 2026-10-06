@@ -117,7 +117,7 @@ The ZK proof system now supports **cryptographically valid Groth16 SNARK verific
 
 **Artifacts**: `circuits/build/api_credit_proof_test*`, fetched with `pnpm circuits:fetch`
 
-A simplified circuit, used only with `ZK_CIRCUIT=api_credit_proof_test`. [scripts/testing/generate-proof.ts](../scripts/testing/generate-proof.ts), the end-to-end flow and `ProofGenService.generateWithdrawalProof` still prove with it. It checks no Merkle membership, solvency or refund signature, so production refuses it.
+A simplified circuit, used only with `ZK_CIRCUIT=api_credit_proof_test`. [scripts/testing/generate-proof.ts](../scripts/testing/generate-proof.ts) and `ProofGenService.generateWithdrawalProof` still prove with it. It checks no Merkle membership, solvency or refund signature, so production refuses it.
 
 **Inputs:**
 - `secretKey` (private) - User's secret key
@@ -164,7 +164,7 @@ The server fills `serverPublicKeyX/Y` with its own refund-signing key, never wit
 
 **File**: [circuits/api_request_local.circom](../circuits/api_request_local.circom)
 
-The same statement and public signals as `api_request`, with `MAX_REFUNDS = 2`: about 32K constraints instead of 110K. It is the default for `PROFILE=local`, where proving and the setup stay fast on a laptop. Production refuses it.
+The same statement and public signals as `api_request`, with `MAX_REFUNDS = 2`: about 32K constraints instead of 110K. It is the default outside production, where proving and the setup stay fast on a laptop. Production refuses it.
 
 ## Smart Contract
 
@@ -555,7 +555,7 @@ The server verifies requests with `api_request`. Its artifacts:
 - `api_request.zkey` - Proving key, for clients
 - `api_request_verification_key.json` - Verification key, the only artifact the server loads and the only one the Docker image ships
 
-`api_request_local` ships the same three files under its own name, for `PROFILE=local`.
+`api_request_local` ships the same three files under its own name, for local development.
 
 The `api_request`, `api_request_local`, `withdrawal` and `refund_redemption` keys come from the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) (`ppot_0080_17.ptau`, sha256 `f807e065…a367c`) plus a single local phase 2 contribution. That is enough for testnets; mainnet needs a multi-party phase 2 ceremony (see [TRUSTED_SETUP_CEREMONY.md](./TRUSTED_SETUP_CEREMONY.md)).
 
