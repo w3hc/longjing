@@ -189,6 +189,17 @@ snarkjs groth16 prove build/api_request.zkey witness.wtns proof.json public.json
 snarkjs groth16 verify build/api_request_verification_key.json public.json proof.json
 ```
 
+## Static Analysis
+
+CI runs [circomspect](https://github.com/trailofbits/circomspect) 0.9.0 on every tracked circuit and fails on any warning missing from [circomspect.baseline.json](circomspect.baseline.json). To run it locally:
+
+```bash
+cargo install circomspect --version 0.9.0 --locked
+pnpm check:circomspect
+```
+
+Fix a new warning if it's real. If it's a false positive or intended, add the entry the check prints to the baseline, with a `reason` saying why. Entries are keyed on the flagged line's text, so an edit to that line makes its entry stale, and a stale entry also fails the check.
+
 ## Security Considerations
 
 1. **Trusted Setup**: The Powers of Tau ceremony must be done securely

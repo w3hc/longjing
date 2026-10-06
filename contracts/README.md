@@ -294,17 +294,26 @@ Foundry linting is disabled during build (`lint_on_build = false`) to suppress w
 import {ReentrancyGuard} from '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
 ```
 
+### Static Analysis
+CI runs [Slither](https://github.com/crytic/slither) 0.11.6 on `src/` with [slither.config.json](./slither.config.json), which gates findings of Low severity and above. It fails on any finding missing from [slither.baseline.json](./slither.baseline.json). To run it locally:
+```bash
+pip install slither-analyzer==0.11.6
+pnpm check:slither
+```
+Fix a new finding if it's real. If it's a false positive or intended, add the entry the check prints to the baseline, with a `reason` saying why. Entries are keyed on the flagged function or variable, so a renamed or deleted one leaves a stale entry, which also fails the check.
+
 ## Contributing
 
 When modifying contracts:
 1. **Maintain Poseidon hash compatibility** - Never replace with Keccak256
 2. **Run all tests** - `forge test`
-3. **Check coverage** - `forge coverage` (aim for >85% on core contracts)
-4. **Check gas usage** - `forge test --gas-report`
-5. **Format code** - `forge fmt`
-6. **Update tests** - Add tests for new functionality
-7. **Update NatSpec** - Keep documentation comprehensive and educational
-8. **Document changes** - Update this README and related docs
+3. **Run Slither** - `pnpm check:slither`
+4. **Check coverage** - `forge coverage` (aim for >85% on core contracts)
+5. **Check gas usage** - `forge test --gas-report`
+6. **Format code** - `forge fmt`
+7. **Update tests** - Add tests for new functionality
+8. **Update NatSpec** - Keep documentation comprehensive and educational
+9. **Document changes** - Update this README and related docs
 
 ## License
 

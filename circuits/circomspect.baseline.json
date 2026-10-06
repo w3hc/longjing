@@ -1,0 +1,44 @@
+[
+  {
+    "check": "CS0014",
+    "file": "circuits/templates/api_request_proof.circom",
+    "location": "hiLess.in[0] <== aHi;",
+    "reason": "False positive: FieldLessThan's only caller feeds it the hi and lo outputs of FieldHalves, each a sum of 127 Num2Bits bits, so every input is below 2^127, far under p/2."
+  },
+  {
+    "check": "CS0014",
+    "file": "circuits/templates/api_request_proof.circom",
+    "location": "hiLess.in[1] <== bHi;",
+    "reason": "False positive: FieldLessThan's only caller feeds it the hi and lo outputs of FieldHalves, each a sum of 127 Num2Bits bits, so every input is below 2^127, far under p/2."
+  },
+  {
+    "check": "CS0014",
+    "file": "circuits/templates/api_request_proof.circom",
+    "location": "loLess.in[0] <== aLo;",
+    "reason": "False positive: FieldLessThan's only caller feeds it the hi and lo outputs of FieldHalves, each a sum of 127 Num2Bits bits, so every input is below 2^127, far under p/2."
+  },
+  {
+    "check": "CS0014",
+    "file": "circuits/templates/api_request_proof.circom",
+    "location": "loLess.in[1] <== bLo;",
+    "reason": "False positive: FieldLessThan's only caller feeds it the hi and lo outputs of FieldHalves, each a sum of 127 Num2Bits bits, so every input is below 2^127, far under p/2."
+  },
+  {
+    "check": "CS0014",
+    "file": "circuits/templates/api_request_proof.circom",
+    "location": "refundActive[i].in[0] <== i;",
+    "reason": "False positive: `i` is a compile-time loop constant between 0 and MAX_REFUNDS - 1, and the other input, numRefunds, is range-checked with Num2Bits(REFUND_BITS)."
+  },
+  {
+    "check": "CS0017",
+    "file": "circuits/withdrawal.circom",
+    "location": "signal recipientSquare;",
+    "reason": "Intended: the Tornado Cash dummy constraint that binds the public `recipient` in the circuit itself instead of relying on snarkjs setup (LJ-23). It needs only one constraint."
+  },
+  {
+    "check": "CS0017",
+    "file": "circuits/refund_redemption.circom",
+    "location": "signal recipientSquare;",
+    "reason": "Intended: the Tornado Cash dummy constraint that binds the public `recipient` in the circuit itself instead of relying on snarkjs setup (LJ-23). It needs only one constraint."
+  }
+]
