@@ -13,8 +13,8 @@ interface StoredSignal {
   x: string;
   y: string;
   timestamp: number;
-  rlnShare_a?: string; // RLN share 'a' for policy violation proofs
-  payloadHash?: string; // Hash of the payload for policy violation evidence
+  rlnShare_a?: string; // RLN share 'a', unused since the policy proof was removed
+  payloadHash?: string; // Hash of the payload, kept as policy-violation evidence
   ticketIndex?: string; // Ticket index for double-spend proof generation
   idCommitment?: string; // Identity commitment for double-spend proof generation
 }
@@ -146,7 +146,7 @@ export class NullifierStoreService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Migration: Add columns for policy violation proof generation
+   * Migration: Add the rln_share_a and payload_hash columns
    */
   private migrateAddPolicyViolationColumns(): void {
     try {
@@ -158,16 +158,12 @@ export class NullifierStoreService implements OnModuleInit, OnModuleDestroy {
       const hasPayloadHash = columns.some((col) => col.name === 'payload_hash');
 
       if (!hasRlnShareA) {
-        this.logger.log(
-          'Adding rln_share_a column for policy violation proofs',
-        );
+        this.logger.log('Adding rln_share_a column');
         this.db.exec('ALTER TABLE nullifiers ADD COLUMN rln_share_a TEXT');
       }
 
       if (!hasPayloadHash) {
-        this.logger.log(
-          'Adding payload_hash column for policy violation proofs',
-        );
+        this.logger.log('Adding payload_hash column');
         this.db.exec('ALTER TABLE nullifiers ADD COLUMN payload_hash TEXT');
       }
     } catch (error) {

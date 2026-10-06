@@ -462,19 +462,6 @@
   },
   {
     "type": "function",
-    "name": "policyVerifier",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract PolicyViolationVerifier"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "proposeChange",
     "inputs": [
       {
@@ -671,7 +658,7 @@
   },
   {
     "type": "function",
-    "name": "slashPolicyViolation",
+    "name": "slashPolicyStake",
     "inputs": [
       {
         "name": "_nullifier",
@@ -682,16 +669,6 @@
         "name": "_idCommitment",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "_proof",
-        "type": "uint256[8]",
-        "internalType": "uint256[8]"
-      },
-      {
-        "name": "_publicSignals",
-        "type": "uint256[5]",
-        "internalType": "uint256[5]"
       }
     ],
     "outputs": [],
@@ -1025,7 +1002,7 @@
   },
   {
     "type": "event",
-    "name": "PolicyViolationSlashed",
+    "name": "PolicyStakeSlashed",
     "inputs": [
       {
         "name": "nullifier",
@@ -1044,12 +1021,6 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "evidenceHash",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
       }
     ],
     "anonymous": false

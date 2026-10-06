@@ -484,7 +484,7 @@ export class LongjingService {
   }
 
   /**
-   * Hash payload for policy violation evidence
+   * Hash payload, kept as evidence for policy slashing
    * Uses SHA256 to create a deterministic hash of the request payload
    */
   private hashPayload(payload: string): string {
