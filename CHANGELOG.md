@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api_request_local.circom`, `ApiRequestProof(20, 2)` with about 32K constraints instead of 110K, is the default `ZK_CIRCUIT` for `PROFILE=local`. Production still accepts only `api_request` ([#132](https://github.com/w3hc/longjing/issues/132)).
 - Concurrency caps on proof verification and on proving for `POST /longjing/proofs/slashing`, set by `MAX_CONCURRENT_VERIFICATIONS` (default 8) and `MAX_CONCURRENT_PROOFS` (default 2). Work over a cap gets a 503 right away instead of being queued (LJ-07, LJ-19) ([#124](https://github.com/w3hc/longjing/issues/124)).
 - Request DTOs check field elements (hex or decimal, bounded length) and cap `proof` and `payload` lengths, so malformed bodies get a 400 before any RPC or Groth16 work (LJ-07) ([#124](https://github.com/w3hc/longjing/issues/124)).
+- `SECURITY.md`: how to report a vulnerability privately, which versions get fixes, and what is in scope ([#126](https://github.com/w3hc/longjing/issues/126)).
 
 ### Changed
 
@@ -56,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /longjing/request` rejects a `maxCost` below the worst-case cost, payload bytes plus 32 tokens in and 4096 tokens out, with a 400 before the nullifier is used, and clamps the refund at zero. The server could sign negative refund tickets (LJ-12) ([#125](https://github.com/w3hc/longjing/issues/125)).
 - A failed upstream call releases the request's nullifier, so the ticket index can be retried: it was burned with no refund (LJ-12) ([#125](https://github.com/w3hc/longjing/issues/125)).
 - `ClaudeProvider` cost estimates divided per-1K rates by a million, so `/longjing/estimate-cost` came out 1000× too low ([#125](https://github.com/w3hc/longjing/issues/125)).
+- The README, `OVERVIEW.md`, `ZK.md`, `TEE_SETUP.md` and `TESTING_GUIDE.md` state request unlinkability as a design goal: every request still publishes `idCommitment`, so the operator can link it to its deposit ([#134](https://github.com/w3hc/longjing/issues/134)). The README threat model adds the single-party trusted setup ([#135](https://github.com/w3hc/longjing/issues/135)) ([#126](https://github.com/w3hc/longjing/issues/126)).
+- `API_REFERENCE.md` documents the quantized `usage` the server returns (`unitClass`, `unitType`, `costClass`) instead of token counts, says the server's wallet pays the gas on `/longjing/redeem-refund`, and shows a full snarkjs proof in the request example ([#126](https://github.com/w3hc/longjing/issues/126)).
+- `SQLITE3.md` shows the real `nullifiers` schema and says the store keeps `id_commitment`, `payload_hash` and `ticket_index` per request ([#126](https://github.com/w3hc/longjing/issues/126)).
+- `MLKEM.md` says no endpoint accepts ML-KEM ciphertext yet: the key is derived and attested for future use ([#126](https://github.com/w3hc/longjing/issues/126)).
+- `.env.template` no longer mentions `/longjing/proofs/*`: only `/longjing/proofs/slashing` remains ([#126](https://github.com/w3hc/longjing/issues/126)).
+- `DOCKER.md` explains why the compose file at a release tag pins the previous release's image, and the follow-up commit that pins the new digest ([#126](https://github.com/w3hc/longjing/issues/126)).
+- `TRUSTED_SETUP_CEREMONY.md` states how the `circuits-v1` keys still in use were produced: both phases on one machine ([#126](https://github.com/w3hc/longjing/issues/126)).
 
 ## [0.4.0] - 2026-10-05
 
