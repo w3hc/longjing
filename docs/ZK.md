@@ -384,6 +384,8 @@ const output = F.toObject(result);
 
 ### Claude API Pricing (October 2026)
 
+Single source: [`src/pricing/claude-pricing.ts`](../src/pricing/claude-pricing.ts). The request DTO, `LongjingService`, `ClaudeProvider` and `/longjing/estimate-cost` all read it, and a model outside it is rejected.
+
 | Model | Input ($/M tokens) | Output ($/M tokens) |
 |-------|-------------------|---------------------|
 | claude-fable-5-1 | $10 | $50 |

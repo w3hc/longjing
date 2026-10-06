@@ -109,13 +109,8 @@ export type YourProviderModel = typeof YOUR_PROVIDER_CONFIG.SUPPORTED_MODELS[num
 
 ```typescript
 export const CLAUDE_CONFIG = {
-  DEFAULT_MODEL: 'claude-sonnet-4-5-20250929',
-  SUPPORTED_MODELS: [
-    'claude-sonnet-4-5-20250929',
-    'claude-opus-4-6',
-    'claude-sonnet-4-6',
-    'claude-haiku-4-5',
-  ] as const,
+  DEFAULT_MODEL: DEFAULT_CLAUDE_MODEL,
+  SUPPORTED_MODELS: CLAUDE_MODELS, // the keys of CLAUDE_PRICING
   DEFAULTS: {
     maxTokens: 8192,
     temperature: 1.0,

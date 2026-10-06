@@ -12,7 +12,7 @@ The provider abstraction layer enables Longjing to support multiple external API
 - Generic usage metering
 - Cost estimation endpoint
 - Hardcoded pricing with auto-seeding
-- **Claude provider implementation** (claude-sonnet-4-5-20250929)
+- **Claude provider implementation** (claude-fable-5-1 by default)
 - Comprehensive test coverage (434 passing tests)
 
 ## Pricing Architecture
@@ -101,17 +101,16 @@ The Claude provider is the reference implementation demonstrating all provider f
 
 **Details:**
 - **Provider ID**: `claude`
-- **Model**: `claude-sonnet-4-5-20250929` (default)
-- **Supported Models**:
-  - claude-sonnet-4-5-20250929
+- **Model**: `claude-fable-5-1` (default)
+- **Supported Models**: exactly the models priced in [`src/pricing/claude-pricing.ts`](../src/pricing/claude-pricing.ts)
+  - claude-fable-5-1
   - claude-opus-4-6
   - claude-sonnet-4-6
   - claude-haiku-4-5
-- **Pricing**:
-  - Input tokens: $3 per million
-  - Output tokens: $15 per million
-  - Cache write: $3.75 per million (25% markup)
-  - Cache read: $0.30 per million (90% discount)
+- **Pricing**: per model, from the same table
+  - Input and output tokens: the model's rates
+  - Cache write: 1.25× the input rate
+  - Cache read: 0.1× the input rate
 - **Rate Limits**:
   - 50 requests/minute
   - 1000 requests/day
@@ -812,9 +811,9 @@ Phase 1 is **100% backwards compatible**. No breaking changes to:
 
 ### Phase 2: Reference Implementation ✅
 - [x] Claude provider using new abstraction
-  - Model: claude-sonnet-4-5-20250929
+  - Model: claude-fable-5-1 by default
   - Full Anthropic SDK integration
-  - Pricing: $3/M input tokens, $15/M output tokens
+  - Pricing: per model, from `src/pricing/claude-pricing.ts`
   - Cache pricing support (90% discount for reads)
   - 16 comprehensive tests
 - [ ] Conversation management (multi-turn chat) - **Future**

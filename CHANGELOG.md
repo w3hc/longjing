@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - E2E suites run one at a time, since they share one Anvil chain and deployer ([#128](https://github.com/w3hc/longjing/issues/128)).
 - `LongjingService` defaults to `claude-fable-5-1`, priced at $10 input and $50 output per million tokens, instead of Sonnet 4.6 ([#138](https://github.com/w3hc/longjing/issues/138)).
 - **Breaking:** circuit artifacts are fetched from the `circuits-v1.2` release. The `api_request`, `api_request_local`, `withdrawal` and `refund_redemption` keys come from a single-party phase 2 on `ppot_0080_17.ptau`, and `WithdrawalVerifier` and `RefundRedemptionVerifier` embed the new keys, so the contract must be redeployed. Run `pnpm circuits:fetch` again ([#132](https://github.com/w3hc/longjing/issues/132)).
+- Claude pricing lives in one table, `src/pricing/claude-pricing.ts`, read by `LongjingService`, the request DTO, `CLAUDE_CONFIG` and `ClaudeProvider`. The provider's supported models are exactly the priced ones, and its rates, cache rates included, come from the requested model (LJ-14) ([#125](https://github.com/w3hc/longjing/issues/125)).
 
 ### Removed
 
@@ -51,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `withdrawal` and `refund_redemption` constrain `recipient` explicitly. The binding relied on snarkjs adding a constraint per public input (LJ-23) ([#132](https://github.com/w3hc/longjing/issues/132)).
 - One client can no longer lock out the rest. `ThrottlerMetadataGuard` keyed on `req.ip`, which `RequestSanitizerMiddleware` pins to `0.0.0.0`, so every client shared one bucket of 10 requests per minute. It is removed, without bringing back IP tracking, and `RequestFingerprintThrottler` strips the rate limit headers instead, on 429s too (LJ-07) ([#124](https://github.com/w3hc/longjing/issues/124)).
 - `POST /longjing/proofs/slashing` no longer echoes `secretKey` back in `metadata` (LJ-19) ([#124](https://github.com/w3hc/longjing/issues/124)).
+- `POST /longjing/request` rejects a `model` with no pricing with a 400: it was forwarded upstream, then billing threw, so the operator paid and no refund was issued (LJ-14) ([#125](https://github.com/w3hc/longjing/issues/125)).
+- `POST /longjing/request` rejects a `maxCost` below the worst-case cost, payload bytes plus 32 tokens in and 4096 tokens out, with a 400 before the nullifier is used, and clamps the refund at zero. The server could sign negative refund tickets (LJ-12) ([#125](https://github.com/w3hc/longjing/issues/125)).
+- A failed upstream call releases the request's nullifier, so the ticket index can be retried: it was burned with no refund (LJ-12) ([#125](https://github.com/w3hc/longjing/issues/125)).
+- `ClaudeProvider` cost estimates divided per-1K rates by a million, so `/longjing/estimate-cost` came out 1000× too low ([#125](https://github.com/w3hc/longjing/issues/125)).
 
 ## [0.4.0] - 2026-10-05
 

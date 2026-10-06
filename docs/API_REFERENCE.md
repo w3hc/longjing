@@ -79,7 +79,7 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
   ticketIndex: string;          // Ticket index for this request
   idCommitment: string;         // Identity commitment (Hash of secret key)
   idCommitmentExpected: string; // Expected identity commitment (circuit public input)
-  model?: string;               // Example: claude-fable-5-1, claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5 (default: claude-fable-5-1)
+  model?: string;               // One of claude-fable-5-1, claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5 (default: claude-fable-5-1); anything else is a 400
 }
 ```
 
@@ -91,7 +91,7 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
   actualCost: string;           // Actual cost in wei
   refundTicket: {
     nullifier: string;          // Nullifier of this request
-    value: string;              // Refund amount (maxCost - actualCost) in wei
+    value: string;              // Refund amount max(0, maxCost - actualCost) in wei
     timestamp: number;          // Unix timestamp
     signature: {
       R8x: string;              // EdDSA signature component
@@ -171,7 +171,7 @@ curl -k -X POST https://localhost:3000/longjing/request \
    - Correct RLN signal generation (nullifier = Hash(a), y = k + a*x)
    - All public inputs are cryptographically bound to the proof
 
-3. **Cost Protection**: Set `maxCost` to protect against unexpected price changes
+3. **Cost Protection**: `maxCost` must cover the request's worst-case cost, priced on the payload's UTF-8 byte length plus 32 tokens of input and 4096 output tokens at the model's rates. A lower `maxCost` gets a 400 before the nullifier is used. If the upstream call fails, the nullifier is released, so the same ticket index can be retried
 
 4. **Rate Limiting**: Nothing is keyed on the client's IP, which `RequestSanitizerMiddleware` hides (see [`src/guards/`](../src/guards/)):
    - **Shape checks**: malformed bodies get a 400 before any RPC or Groth16 work
