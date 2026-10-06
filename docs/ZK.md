@@ -547,7 +547,7 @@ pnpm circuits:fetch
 
 The script skips files that already match, and fails if a download does not match its pinned hash. CI and the Docker build run it.
 
-`pnpm check:verifiers` then checks that each pinned verification key matches its zkey, and that each Solidity verifier embeds that key. CI runs it too.
+`pnpm check:verifiers` then checks that each pinned verification key matches its zkey, that each Solidity verifier embeds that key, and that no key has δ = γ, which would let anyone forge proofs. CI runs it too.
 
 The server verifies requests with `api_request`. Its artifacts:
 

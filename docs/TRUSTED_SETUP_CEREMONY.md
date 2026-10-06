@@ -180,6 +180,8 @@ The artifacts of the [`circuits-v1.2` release](https://github.com/w3hc/longjing/
 
 The sha256 pins in [artifacts.json](../circuits/artifacts.json) guarantee that everyone fetches the same files. They say nothing about whether the setup secrets were destroyed.
 
+A zkey with no phase 2 contribution keeps δ = γ, and then anyone can forge proofs from the verification key alone. Two `circuits-v1` zkeys had this flaw. `pnpm check:verifiers` fails on any pinned key where `vk_delta_2` equals `vk_gamma_2`.
+
 **Current Status:**
 - ⚠️ **NOT secure for production**: one phase 2 participant, who could forge proofs if the entropy was kept
 - ⚠️ `double_spend_slashing` also has a single-party phase 1, so its setup is entirely in one party's hands
