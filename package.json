@@ -100,5 +100,11 @@
       "<rootDir>/../jest.setup.ts"
     ]
   },
-  "packageManager": "pnpm@10.23.0+sha1.b4a44ab0dc2adf2e36371d11d8eb0dc78ffc976c"
+  "packageManager": "pnpm@10.23.0+sha1.b4a44ab0dc2adf2e36371d11d8eb0dc78ffc976c",
+  "pnpm": {
+    "overrides": {
+      "ws@8": "^8.21.0",
+      "jayson": "^5.0.0"
+    }
+  }
 }
