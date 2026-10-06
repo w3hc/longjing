@@ -267,7 +267,7 @@ The test suite validates these ZK properties:
 ### Anonymity
 - Identity commitments hide secret keys
 - Merkle tree provides k-anonymity (k = number of deposits)
-- Server cannot link requests to deposit addresses: a design goal, not tested, and not true at v0.4.0, since `idCommitment` is a public signal ([#134](https://github.com/w3hc/longjing/issues/134))
+- Server cannot link requests to deposit addresses: a design goal, not tested, and not true at v0.4.1, since `idCommitment` is a public signal ([#134](https://github.com/w3hc/longjing/issues/134))
 
 ### Rate Limiting
 - Each nullifier can only be used once

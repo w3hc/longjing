@@ -40,6 +40,10 @@ COPY --from=builder /app/dist ./dist
 # Copy the verification key of the production request circuit
 COPY --from=builder /app/circuits/build/api_request_verification_key.json ./circuits/build/
 
+# Run as the image's unprivileged node user, which owns only the SQLite and Merkle tree data
+RUN mkdir data && chown node:node data
+USER node
+
 EXPOSE 3000
 
 CMD ["node", "dist/src/main.js"]

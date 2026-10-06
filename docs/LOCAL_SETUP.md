@@ -195,7 +195,6 @@ longjing/
 │   ├── app.module.ts        # Root module
 │   ├── config/              # Configuration services
 │   ├── longjing/              # ZK proof endpoints
-│   ├── auth/                # Authentication (SIWE)
 │   ├── filters/             # Exception filters
 │   └── logging/             # Custom loggers
 ├── test/                    # E2E tests

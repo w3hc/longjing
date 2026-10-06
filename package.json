@@ -1,6 +1,6 @@
 {
   "name": "longjing",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "RLN-based anonymous API credits behind a TEE gateway",
   "author": "Julien Béranger",
   "license": "LGPL-3.0",
@@ -47,7 +47,6 @@
     "mlkem": "^2.7.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "siwe": "^3.0.0",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
@@ -100,5 +99,11 @@
       "<rootDir>/../jest.setup.ts"
     ]
   },
-  "packageManager": "pnpm@10.23.0+sha1.b4a44ab0dc2adf2e36371d11d8eb0dc78ffc976c"
+  "packageManager": "pnpm@10.23.0+sha1.b4a44ab0dc2adf2e36371d11d8eb0dc78ffc976c",
+  "pnpm": {
+    "overrides": {
+      "ws@8": "^8.21.0",
+      "jayson": "^5.0.0"
+    }
+  }
 }

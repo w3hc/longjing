@@ -1,6 +1,6 @@
 # ML-KEM Quantum-Resistant Encryption
 
-> **Status: attested, but not used by any endpoint.** In v0.4.0, the server derives an ML-KEM-1024 key in the enclave, serves its public key in `keys.mlkemPublicKey` of `GET /attestation` and binds it in `report_data`. No endpoint accepts ML-KEM ciphertext: no controller uses `MlkemEncryptionService` (`src/encryption/mlkem-encryption.service.ts`), and the `/secret/*` endpoints this page describes are not served. Encrypting to this key today protects nothing, because nothing on the server decrypts it. The key exists so that future features, such as the attested onion service in [#99](https://github.com/w3hc/longjing/issues/99), can rely on it. The rest of this page documents that intended design, not current behavior.
+> **Status: attested, but not used by any endpoint.** In v0.4.1, the server derives an ML-KEM-1024 key in the enclave, serves its public key in `keys.mlkemPublicKey` of `GET /attestation` and binds it in `report_data`. No endpoint accepts ML-KEM ciphertext: no controller uses `MlkemEncryptionService` (`src/encryption/mlkem-encryption.service.ts`), and the `/secret/*` endpoints this page describes are not served. Encrypting to this key today protects nothing, because nothing on the server decrypts it. The key exists so that future features, such as the attested onion service in [#99](https://github.com/w3hc/longjing/issues/99), can rely on it. The rest of this page documents that intended design, not current behavior.
 
 ## Overview
 
@@ -154,9 +154,6 @@ The ML-KEM encryption endpoints (`/secret/attestation`, `/secret/store`, `/secre
 
 **Available for Future Implementation:**
 - `src/encryption/mlkem-encryption.service.ts` - Complete ML-KEM-1024 encryption/decryption service
-- `src/auth/siwe.service.ts` - SIWE authentication service
-- `src/auth/siwe.guard.ts` - Guard for protecting endpoints with SIWE
-- `src/auth/auth.controller.ts` - Nonce generation endpoint
 
 These can be re-enabled by creating new controllers that import and use these existing services.
 

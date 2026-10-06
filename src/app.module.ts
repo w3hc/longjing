@@ -6,7 +6,6 @@ import { SecretsService } from './config/secrets.service';
 import { AttestationModule } from './attestation/attestation.module';
 import { HealthController } from './health/health.controller';
 import { validateEnvironment } from './config/env.validation';
-import { AuthModule } from './auth/auth.module';
 import { LongjingModule } from './longjing/longjing.module';
 import { RequestFingerprintThrottler } from './guards/request-fingerprint-throttler.guard';
 import { TimingProtectionInterceptor } from './interceptors/timing-protection.interceptor';
@@ -32,7 +31,6 @@ import { isProd } from './config/profile';
       },
     ]),
     AttestationModule,
-    AuthModule,
     LongjingModule,
   ],
   controllers: [HealthController],

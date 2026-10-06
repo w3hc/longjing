@@ -30,17 +30,17 @@ export class SanitizedLogger implements LoggerService {
   }
 
   /**
-   * Logs error messages without stack traces to prevent data leakage.
+   * Logs error messages from safe contexts, without stack traces.
    * Stack traces can contain variable values and internal state.
    * @param message The error message
    * @param _trace The stack trace (ignored for security)
    * @param context The context (usually the class name)
    */
   error(message: string, _trace?: string, context?: string): void {
-    // Never emit stack traces — they can contain variable values
-    process.stdout.write(
-      `[ERR] ${context ?? 'App'}: ${message?.split('\n')[0]}\n`,
-    );
+    if (this.isSafe(context)) {
+      // Never emit stack traces — they can contain variable values
+      process.stdout.write(`[ERR] ${context}: ${message?.split('\n')[0]}\n`);
+    }
   }
 
   /**

@@ -241,7 +241,7 @@ On dstack, the attestation commits to the compose file, not to the image content
 
 ### Why the pin lags one release
 
-A commit can't contain the digest of an image built from itself: the digest exists only once CI has built the tagged commit. So the `docker-compose.yml` at a release tag still pins the **previous** release's image. At `v0.4.0`, for example, it pins the `v0.3.0` digest.
+A commit can't contain the digest of an image built from itself: the digest exists only once CI has built the tagged commit. So the `docker-compose.yml` at a release tag still pins the **previous** release's image. At `v0.4.1`, for example, it pins the `v0.4.0` digest.
 
 The new digest is pinned in a follow-up commit on `main`, after the release:
 

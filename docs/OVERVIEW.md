@@ -82,7 +82,7 @@ Longjing is **designed to run in a Trusted Execution Environment (TEE)** such as
 - Code is designed so it *cannot* link payments to requests (ZK nullifiers destroy linkage)
 - Regulatory demand: "We cannot comply: the system is cryptographically designed to prevent it"
 
-**The complexity is justified**: ZK aims at cryptographic unlinkability that survives regulatory pressure, not just operational privacy. At v0.4.0 that aim is not met: every request carries the user's `idCommitment`, so the operator can link requests to deposits (see [Key Privacy Guarantees](#key-privacy-guarantees) and [#134](https://github.com/w3hc/longjing/issues/134)).
+**The complexity is justified**: ZK aims at cryptographic unlinkability that survives regulatory pressure, not just operational privacy. At v0.4.1 that aim is not met: every request carries the user's `idCommitment`, so the operator can link requests to deposits (see [Key Privacy Guarantees](#key-privacy-guarantees) and [#134](https://github.com/w3hc/longjing/issues/134)).
 
 ## Architecture
 
@@ -214,7 +214,6 @@ See [PROVIDERS.md](./PROVIDERS.md) for adding new providers.
 
 | Service | Purpose |
 |---------|---------|
-| **SiweService** | Sign-In with Ethereum authentication |
 | **MlkemEncryptionService** | Post-quantum encryption (ML-KEM-768) |
 | **AttestationService** | TEE attestation, dstack only in production |
 | **SecretService** | Secure secret management (TEE/KMS) |
@@ -287,7 +286,7 @@ See [PROVIDERS.md](./PROVIDERS.md) for adding new providers.
 
 ### Key Privacy Guarantees
 
-> **v0.4.0:** guarantees 1 to 3 are design goals, not yet properties of the code. The `api_request` circuit outputs the user's `idCommitment` as a public signal, the client sends it in the request body, and the server stores it next to the nullifier. Since the onchain deposit is indexed by the same value, the operator can link every request to its deposit, and so to the depositor's other requests and to their deposit amount. Refund redemption also publishes it onchain. The fix is tracked in [#134](https://github.com/w3hc/longjing/issues/134).
+> **v0.4.1:** guarantees 1 to 3 are design goals, not yet properties of the code. The `api_request` circuit outputs the user's `idCommitment` as a public signal, the client sends it in the request body, and the server stores it next to the nullifier. Since the onchain deposit is indexed by the same value, the operator can link every request to its deposit, and so to the depositor's other requests and to their deposit amount. Refund redemption also publishes it onchain. The fix is tracked in [#134](https://github.com/w3hc/longjing/issues/134).
 
 1. **Identity Privacy** (Deposit Unlinkability)
    - ZK proof proves membership without revealing which leaf in the Merkle tree
@@ -320,7 +319,7 @@ See [PROVIDERS.md](./PROVIDERS.md) for adding new providers.
    - A note expires `NOTE_TTL` (365 days) after its deposit, after which the operator can claim it; until then, and until the operator actually claims it, you can still withdraw
    - Pausing can't be used to wait out the TTL: `withdraw()` and `redeemRefund()` work while paused, the expiry clock stops while paused, and `claimExpired()` is blocked while paused
 
-**Cryptographic Unlinkability (design goal)**: Once [#134](https://github.com/w3hc/longjing/issues/134) lands, these properties are meant to survive regulatory pressure, because the system would be incapable of linking requests to users, even if compelled. At v0.4.0 it can link them. TEE deployment ensures the operator can't read memory or tamper with the code.
+**Cryptographic Unlinkability (design goal)**: Once [#134](https://github.com/w3hc/longjing/issues/134) lands, these properties are meant to survive regulatory pressure, because the system would be incapable of linking requests to users, even if compelled. At v0.4.1 it can link them. TEE deployment ensures the operator can't read memory or tamper with the code.
 
 ## Cryptographic Primitives
 

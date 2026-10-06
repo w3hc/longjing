@@ -70,7 +70,6 @@ async function bootstrap() {
       },
       // Additional protections
       frameguard: { action: 'deny' },
-      xssFilter: true,
       ieNoOpen: true,
       noSniff: true,
     }),
@@ -79,7 +78,6 @@ async function bootstrap() {
   // CORS configuration - restrict to trusted origins in production
   app.enableCors({
     origin: prod ? false : '*', // Disable CORS in production by default
-    credentials: true,
   });
 
   // Global validation pipe - validates all incoming requests
@@ -98,7 +96,7 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .setTitle('Longjing')
     .setDescription('API documentation for Longjing')
-    .setVersion('0.4.0')
+    .setVersion('0.4.1')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('', app, document);

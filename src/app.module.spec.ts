@@ -3,8 +3,6 @@ import { AppModule } from './app.module';
 import { SecretsService } from './config/secrets.service';
 import { AttestationController } from './attestation/attestation.controller';
 import { HealthController } from './health/health.controller';
-import { AuthController } from './auth/auth.controller';
-import { SiweService } from './auth/siwe.service';
 
 describe('AppModule', () => {
   it('should compile the module', async () => {
@@ -22,7 +20,6 @@ describe('AppModule', () => {
 
     expect(module.get(AttestationController)).toBeDefined();
     expect(module.get(HealthController)).toBeDefined();
-    expect(module.get(AuthController)).toBeDefined();
   });
 
   it('should have all providers registered', async () => {
@@ -31,6 +28,5 @@ describe('AppModule', () => {
     }).compile();
 
     expect(module.get(SecretsService)).toBeDefined();
-    expect(module.get(SiweService)).toBeDefined();
   });
 });

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-06
+
 ### Added
 
 - README badges for CI, NestJS, TypeScript, Solidity, Circom, pnpm, Node.js and the license ([#120](https://github.com/w3hc/longjing/issues/120)).
@@ -39,10 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Claude pricing lives in one table, `src/pricing/claude-pricing.ts`, read by `LongjingService`, the request DTO, `CLAUDE_CONFIG` and `ClaudeProvider`. The provider's supported models are exactly the priced ones, and its rates, cache rates included, come from the requested model (LJ-14) ([#125](https://github.com/w3hc/longjing/issues/125)).
 - **Breaking:** `PROFILE` is merged into `NODE_ENV`, which is now required and is one of `development`, `test` or `production`. `development` and `test` are local, `production` is production, and the startup checks are unchanged. Drop `PROFILE` from your env, and deploy with `NODE_ENV=development` or `NODE_ENV=production` ([#139](https://github.com/w3hc/longjing/issues/139)).
 - `test/app.e2e-spec.ts` runs the same steps as `pnpm demo`: it deploys the contract before the app starts, proves and redeems with the deposited secret, and checks that a replay and a second redemption fail. The mock refund proof and its catch-all are gone ([#139](https://github.com/w3hc/longjing/issues/139)).
+- The container runs as the unprivileged `node` user, which owns only `/app/data` (LJ-22) ([#127](https://github.com/w3hc/longjing/issues/127)).
+- `docker-compose.yml` pins the v0.4.0 image ([#127](https://github.com/w3hc/longjing/issues/127)).
 
 ### Removed
 
 - `api_credit_proof.circom`, `api_credit_proof_simple.circom`, the unused `ZKProofService`, and `pnpm setup:circuit`, which only set up `api_credit_proof` (LJ-23) ([#132](https://github.com/w3hc/longjing/issues/132)).
+- The unused SIWE module, `POST /auth/nonce`, `docs/SIWE.md` and the `siwe` dependency. Its guard protected no route and skipped domain, nonce and time binding (LJ-20) ([#127](https://github.com/w3hc/longjing/issues/127)).
 
 ### Fixed
 
@@ -69,6 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.env.template` no longer mentions `/longjing/proofs/*`: only `/longjing/proofs/slashing` remains ([#126](https://github.com/w3hc/longjing/issues/126)).
 - `DOCKER.md` explains why the compose file at a release tag pins the previous release's image, and the follow-up commit that pins the new digest ([#126](https://github.com/w3hc/longjing/issues/126)).
 - `TRUSTED_SETUP_CEREMONY.md` states how the `circuits-v1` keys still in use were produced: both phases on one machine ([#126](https://github.com/w3hc/longjing/issues/126)).
+- `pnpm.overrides` raise `ws` 8.x to 8.21.0 and `jayson` to 5, which drops `uuid` and `stream-json`, so `pnpm audit --prod` reports only the unpatched `elliptic` advisory (LJ-18) ([#127](https://github.com/w3hc/longjing/issues/127)).
+- The cost-estimate cache evicts expired entries and holds at most 1000: its keys come from request contents, so it grew without bound (LJ-21) ([#127](https://github.com/w3hc/longjing/issues/127)).
+- `SanitizedLogger.error` emits only framework contexts in production, like `log` and `warn` (LJ-22) ([#127](https://github.com/w3hc/longjing/issues/127)).
+- Dev CORS no longer combines `*` with credentials, and helmet drops the deprecated `xssFilter` (LJ-22) ([#127](https://github.com/w3hc/longjing/issues/127)).
 
 ## [0.4.0] - 2026-10-05
 
