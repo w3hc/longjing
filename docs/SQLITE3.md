@@ -79,7 +79,7 @@ CREATE INDEX idx_redeemed_timestamp ON redeemed_refunds(redeemed_at);
 
 ### What We DON'T Store
 
-> **v0.4.0:** the store keeps linkage. Every row of `nullifiers` holds the request's `id_commitment`, which is the key of the user's onchain deposit, and `redeemed_refunds` holds it too. Anyone with the database, the operator included, can map each request to its deposit and group requests by user. The goal is to stop storing `id_commitment` and to reconsider `payload_hash`, tracked in [#134](https://github.com/w3hc/longjing/issues/134).
+> **v0.4.1:** the store keeps linkage. Every row of `nullifiers` holds the request's `id_commitment`, which is the key of the user's onchain deposit, and `redeemed_refunds` holds it too. Anyone with the database, the operator included, can map each request to its deposit and group requests by user. The goal is to stop storing `id_commitment` and to reconsider `payload_hash`, tracked in [#134](https://github.com/w3hc/longjing/issues/134).
 
 ❌ **User payloads** (questions/API requests) - Removed for privacy
 ❌ **Responses** - Never stored
@@ -100,7 +100,7 @@ What the database protects today:
 1. **No Content Storage**: User requests and responses never touch the database
 2. **Server Admin Limitations**: Even with full database access, server maintainers cannot see what users asked, only a hash of it
 
-What it does not protect at v0.4.0: with database access, server maintainers can identify which deposit made which request, and link requests made by the same user.
+What it does not protect at v0.4.1: with database access, server maintainers can identify which deposit made which request, and link requests made by the same user.
 
 ### What Server Maintainers CAN See
 

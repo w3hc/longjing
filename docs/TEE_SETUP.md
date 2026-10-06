@@ -513,7 +513,7 @@ EOF
 
 **Why Phala + Longjing?** Phala simplifies TEE deployment (containerized apps, one-click deployment), while Longjing is designed to add cryptographic unlinkability that even Phala's infrastructure cannot violate. Together they provide:
 - **Phala**: Hardware isolation, remote attestation, decentralized infrastructure
-- **Longjing**: Payment unlinkability that survives regulatory demands, as a design goal: at v0.4.0, requests can still be linked to deposits ([#134](https://github.com/w3hc/longjing/issues/134))
+- **Longjing**: Payment unlinkability that survives regulatory demands, as a design goal: at v0.4.1, requests can still be linked to deposits ([#134](https://github.com/w3hc/longjing/issues/134))
 
 #### Overview
 

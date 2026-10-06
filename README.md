@@ -9,7 +9,7 @@
 
 # Longjing
 
-Anonymous, prepaid API access behind a TEE gateway. Deposit ETH once, then make API requests that are meant to be unlinkable to you — by an eavesdropper, and by the operator running the service. That is the design goal; v0.4.0 does not deliver it yet (see [Status](#status)).
+Anonymous, prepaid API access behind a TEE gateway. Deposit ETH once, then make API requests that are meant to be unlinkable to you — by an eavesdropper, and by the operator running the service. That is the design goal; v0.4.1 does not deliver it yet (see [Status](#status)).
 
 Most paid API access today silently ties every request to a payment identity. There's no technical reason it has to. This project is an attempt to make unlinkable, prepaid API access a normal thing that exists — something anyone can run, fork, and build on.
 
@@ -38,7 +38,7 @@ If you want the simplified protocol with a browser SDK, use zkapi. If you want t
 
 Working implementation, actively developed, not ready to hold real value. Read [What this protects — and what it doesn't](#what-this-protects--and-what-it-doesnt) before relying on it for anything.
 
-At v0.4.0, unlinkability is a design goal, not a property of the code:
+At v0.4.1, unlinkability is a design goal, not a property of the code:
 
 - Every request publishes the user's `idCommitment`, the same value that indexes their onchain deposit, and the server stores it next to the nullifier. The operator can map each request to its deposit and group requests by user. Redemption publishes it onchain too. Tracked in [#134](https://github.com/w3hc/longjing/issues/134).
 - The protocol's accounting is not settled yet: the deposit amount in the solvency proof is unconstrained, and withdrawal does not net out spending. Also [#134](https://github.com/w3hc/longjing/issues/134).
@@ -49,16 +49,16 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 1. **Deposit once.** You send ETH to a smart contract along with an identity commitment. This is the only step that touches your onchain identity.
 2. **Prove, don't reveal.** For each request, your client generates a zero-knowledge proof that you have credits — without exposing your balance, your deposit, or your past requests. Your secret key never leaves your machine: the server never generates proofs that need it.
-3. **Request anonymously.** You submit the API request with the proof and a one-time nullifier. The operator verifies the proof and forwards the request. The goal is that it can't tell which depositor you are; at v0.4.0 it can (see [Status](#status)).
-4. **Unlinkable by design.** Each request uses a fresh nullifier, so that two requests from the same person can't be correlated with each other. Not yet true at v0.4.0, since every request also carries the same `idCommitment`.
+3. **Request anonymously.** You submit the API request with the proof and a one-time nullifier. The operator verifies the proof and forwards the request. The goal is that it can't tell which depositor you are; at v0.4.1 it can (see [Status](#status)).
+4. **Unlinkable by design.** Each request uses a fresh nullifier, so that two requests from the same person can't be correlated with each other. Not yet true at v0.4.1, since every request also carries the same `idCommitment`.
 5. **Get unused credits back.** Refund tickets let you redeem what you didn't spend, onchain, with a proof your client generates (`pnpm prove refund`).
 
-The goal: the operator sees valid proofs and the requests it forwards, but not who you are, and it can't link your requests together, by cryptography rather than by a policy promise. At v0.4.0 that goal is not met: the operator can link every request to its deposit (see [Status](#status)).
+The goal: the operator sees valid proofs and the requests it forwards, but not who you are, and it can't link your requests together, by cryptography rather than by a policy promise. At v0.4.1 that goal is not met: the operator can link every request to its deposit (see [Status](#status)).
 
 ## Features
 
 - **Anonymous API access** — make requests without revealing your identity
-- **Unlinkable requests (design goal)** — a unique nullifier per request; not yet unlinkable at v0.4.0, see [#134](https://github.com/w3hc/longjing/issues/134)
+- **Unlinkable requests (design goal)** — a unique nullifier per request; not yet unlinkable at v0.4.1, see [#134](https://github.com/w3hc/longjing/issues/134)
 - **Prove solvency, not balance** — ZK proofs confirm you can pay without exposing how much you have or what you've spent
 - **Multi-provider** — a provider abstraction any API can plug into; Claude ships as the reference provider
 - **Trustless refunds** — automatic refund tickets for unused credits
@@ -71,7 +71,7 @@ The goal: the operator sees valid proofs and the requests it forwards, but not w
 
 Privacy tooling is only as honest as its threat model. Here's the real boundary, stated plainly.
 
-**It is designed to protect** (not yet delivered at v0.4.0, see [Status](#status)):
+**It is designed to protect** (not yet delivered at v0.4.1, see [Status](#status)):
 - The link between your payment identity and your individual requests
 - The correlation between two requests made by the same person
 - Your balance and spending history from the operator and from observers
@@ -170,7 +170,6 @@ The provider layer is an abstraction — any upstream API plugs in the same way 
 - [PROVIDERS.md](docs/PROVIDERS.md) — provider abstraction design
 - [SQLITE3.md](docs/SQLITE3.md) — database and privacy design
 - [MLKEM.md](docs/MLKEM.md) — post-quantum key encapsulation
-- [SIWE.md](docs/SIWE.md) — Sign-In with Ethereum
 
 **Deployment**
 - [TEE_SETUP.md](docs/TEE_SETUP.md) — production TEE deployment

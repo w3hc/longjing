@@ -27,8 +27,6 @@ https://your-domain.com  (production)
   - [TEE Attestation Endpoints](#tee-attestation-endpoints)
     - [GET /attestation](#get-attestation)
     - [GET /attestation/manifest](#get-attestationmanifest)
-  - [Authentication Endpoints](#authentication-endpoints)
-    - [POST /auth/nonce](#post-authnonce)
   - [Available for Future Implementation](#available-for-future-implementation)
   - [Health Check Endpoints](#health-check-endpoints)
     - [GET /health](#get-health)
@@ -174,7 +172,7 @@ curl -k -X POST https://localhost:3000/longjing/request \
    - Correct RLN signal generation (nullifier = Hash(a), y = k + a*x)
    - All public inputs are cryptographically bound to the proof
 
-   Two known gaps at v0.4.0, both tracked in [#134](https://github.com/w3hc/longjing/issues/134): `initialDeposit` is a private input the circuit doesn't tie to the onchain deposit, so solvency is not enforced; and `idCommitment` is a public signal, sent in the body and stored by the server, so every request can be linked to its deposit.
+   Two known gaps at v0.4.1, both tracked in [#134](https://github.com/w3hc/longjing/issues/134): `initialDeposit` is a private input the circuit doesn't tie to the onchain deposit, so solvency is not enforced; and `idCommitment` is a public signal, sent in the body and stored by the server, so every request can be linked to its deposit.
 
 3. **Cost Protection**: `maxCost` must cover the request's worst-case cost, priced on the payload's UTF-8 byte length plus 32 tokens of input and 4096 output tokens at the model's rates. A lower `maxCost` gets a 400 before the nullifier is used. If the upstream call fails, the nullifier is released, so the same ticket index can be retried
 
@@ -487,27 +485,6 @@ The ML-KEM public key has no endpoint of its own: read it from `keys.mlkemPublic
 **Documentation:**
 - [docs/KEY_DERIVATION.md](KEY_DERIVATION.md) - Key derivation and the manifest
 - [docs/MLKEM.md](MLKEM.md) - ML-KEM encryption guide
-
----
-
-## Authentication Endpoints
-
-### POST /auth/nonce
-
-Returns a single-use nonce for a Sign-In with Ethereum message. It expires after 5 minutes. No endpoint requires SIWE yet; `SiweGuard` in `src/auth/` is ready for the ones that will.
-
-**Response (201):**
-
-```typescript
-{
-  nonce: string;
-  issuedAt: string;   // ISO 8601
-  expiresAt: string;  // ISO 8601
-}
-```
-
-**Documentation:**
-- [docs/SIWE.md](SIWE.md) - SIWE guide
 
 ---
 

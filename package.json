@@ -1,6 +1,6 @@
 {
   "name": "longjing",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "RLN-based anonymous API credits behind a TEE gateway",
   "author": "Julien Béranger",
   "license": "LGPL-3.0",
