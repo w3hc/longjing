@@ -6,6 +6,7 @@ import { ProofGenService } from './proof-gen.service';
 import { ProofVerifierService } from './proof-verifier.service';
 import { RefundSignerService } from './refund-signer.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
+import { ComputeLimiterService } from './compute-limiter.service';
 
 const TREE_DEPTH = 20;
 const MAX_REFUNDS = 10;
@@ -46,6 +47,7 @@ describe('api_request proof verification', () => {
       {} as ProofGenService,
       snarkjsProofService,
       refundSigner,
+      new ComputeLimiterService(),
     );
     for (const level of ['log', 'warn', 'debug'] as const) {
       jest.spyOn(verifier['logger'], level).mockImplementation();

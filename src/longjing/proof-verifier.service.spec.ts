@@ -3,6 +3,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProofVerifierService } from './proof-verifier.service';
+import { ComputeLimiterService } from './compute-limiter.service';
 import { BlockchainService } from './blockchain.service';
 import { ProofGenService } from './proof-gen.service';
 import { RefundSignerService } from './refund-signer.service';
@@ -62,6 +63,7 @@ describe('ProofVerifierService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProofVerifierService,
+        ComputeLimiterService,
         { provide: BlockchainService, useValue: mockBlockchainService },
         { provide: ProofGenService, useValue: mockProofGenService },
         { provide: SnarkjsProofService, useValue: mockSnarkjsProofService },
@@ -177,6 +179,34 @@ describe('ProofVerifierService', () => {
       });
 
       expect(result).toBe(true);
+    });
+
+    it('rejects with 503 before any RPC or pairing work when the cap is full', async () => {
+      blockchainService.isAvailable.mockReturnValue(true);
+      snarkjsProofService.isAvailable.mockReturnValue(true);
+      let release!: (valid: boolean) => void;
+      snarkjsProofService.verifyProof.mockReturnValue(
+        new Promise<boolean>((resolve) => (release = resolve)),
+      );
+      blockchainService.getMerkleRoot.mockResolvedValue(
+        mockPublicInputs.merkleRoot,
+      );
+      blockchainService.isNullifierSlashed.mockResolvedValue(false);
+
+      const { max } = service['computeLimiter'].verification;
+      const inFlight = Array.from({ length: max }, () =>
+        service.verify(mockProof, mockPublicInputs),
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      blockchainService.getMerkleRoot.mockClear();
+
+      await expect(service.verify(mockProof, mockPublicInputs)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(blockchainService.getMerkleRoot).not.toHaveBeenCalled();
+
+      release(true);
+      await Promise.all(inFlight);
     });
 
     it('should continue verification if blockchain check fails outside prod', async () => {
