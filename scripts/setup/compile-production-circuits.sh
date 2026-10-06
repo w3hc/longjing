@@ -102,7 +102,7 @@ compile_circuit() {
 }
 
 # Compile all production circuits
-echo "Starting compilation of 4 production circuits..."
+echo "Starting compilation of 3 production circuits..."
 echo ""
 
 # 1. Withdrawal circuit
@@ -113,9 +113,6 @@ compile_circuit "refund_redemption" "RefundRedemptionVerifier"
 
 # 3. Double-spend slashing circuit
 compile_circuit "double_spend_slashing" "DoubleSpendSlashingVerifier"
-
-# 4. Policy violation circuit
-compile_circuit "policy_violation" "PolicyViolationVerifier"
 
 # Summary
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -141,12 +138,6 @@ echo "  • circuits/build/double_spend_slashing.r1cs"
 echo "  • circuits/build/double_spend_slashing_js/double_spend_slashing.wasm"
 echo "  • circuits/build/double_spend_slashing.zkey"
 echo "  • contracts/src/DoubleSpendSlashingVerifier.sol"
-echo ""
-echo "Policy Violation Circuit:"
-echo "  • circuits/build/policy_violation.r1cs"
-echo "  • circuits/build/policy_violation_js/policy_violation.wasm"
-echo "  • circuits/build/policy_violation.zkey"
-echo "  • contracts/src/PolicyViolationVerifier.sol"
 echo ""
 echo "Next steps:"
 echo "  1. Review the generated Solidity verifier contracts"

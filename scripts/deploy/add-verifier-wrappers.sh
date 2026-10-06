@@ -47,7 +47,6 @@ EOF
 add_wrapper "contracts/src/WithdrawalVerifier.sol" "WithdrawalVerifier" "verifyWithdrawalProof" "6"
 add_wrapper "contracts/src/RefundRedemptionVerifier.sol" "RefundRedemptionVerifier" "verifyRefundProof" "5"
 add_wrapper "contracts/src/DoubleSpendSlashingVerifier.sol" "DoubleSpendSlashingVerifier" "verifySlashingProof" "4"
-add_wrapper "contracts/src/PolicyViolationVerifier.sol" "PolicyViolationVerifier" "verifyPolicyProof" "3"
 
 echo ""
 echo "✅ All verifier wrappers added successfully!"
