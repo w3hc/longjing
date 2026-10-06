@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SECURITY.md`: how to report a vulnerability privately, which versions get fixes, and what is in scope ([#126](https://github.com/w3hc/longjing/issues/126)).
 - `pnpm demo` runs one user from deposit to refund against Anvil, with real proofs and the real server, and prints a checklist of asserted checks: the proof's root matches the chain, a replay is rejected, the refund ticket verifies against the server's key, the balance grows by the refund, and a second redemption reverts. It exits non-zero on any failed check. `docs/TESTING_GUIDE.md` opens with it ([#139](https://github.com/w3hc/longjing/issues/139)).
 - `pnpm prove request` builds a request proof on the client from the deposited secret, reading the Merkle path, the root and the deposit from the contract ([#139](https://github.com/w3hc/longjing/issues/139)).
+- A Static Analysis workflow runs Slither on `contracts/src/` and circomspect on `circuits/` for every pull request touching either. `pnpm check:slither` and `pnpm check:circomspect` fail on any finding missing from `contracts/slither.baseline.json` or `circuits/circomspect.baseline.json`, and on any baseline entry that no longer matches a finding. Every baselined finding has a written reason ([#131](https://github.com/w3hc/longjing/issues/131)).
 
 ### Changed
 
