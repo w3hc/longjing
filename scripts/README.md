@@ -23,15 +23,6 @@ Compiles production ZK circuits with Groth16 proofs.
 
 Runs the trusted setup ceremony for production circuits.
 
-### `setup/setup-trusted-setup.ts`
-
-TypeScript wrapper for trusted setup configuration.
-
-**Usage:**
-```bash
-pnpm setup:circuit
-```
-
 ## Deploy Scripts
 
 Scripts for generating Solidity contracts.

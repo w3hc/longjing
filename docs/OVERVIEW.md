@@ -118,19 +118,20 @@ The system uses four specialized ZK circuits (Groth16) for different operations:
 
 1. **API Request Circuit** ([api_request.circom](../circuits/api_request.circom))
    - Proves full solvency formula: `(i + 1) · C_max ≤ D + R`
-   - Verifies Merkle tree membership + EdDSA refund signatures + RLN
+   - Verifies Merkle tree membership + Poseidon EdDSA refund signatures + RLN, with distinct refund tickets
    - Used for anonymous API requests with balance verification
    - 20-level tree, max 10 refund tickets
-   - ~112K constraints; the server's refund-signing key is a public input, filled in by the server
+   - ~110K constraints; the server's refund-signing key is a public input, filled in by the server
    - The server verifies every request with it in production (`ZK_CIRCUIT=api_request`)
+   - [api_request_local.circom](../circuits/api_request_local.circom), with 2 refund tickets and ~32K constraints, is the default for `PROFILE=local`
 
 2. **Withdrawal Circuit** ([withdrawal.circom](../circuits/withdrawal.circom))
-   - 11,749 constraints, 11,773 wires
+   - 11,750 constraints, the extra one binding `recipient`
    - Proves Merkle tree membership + RLN signal generation
    - Verifier: [WithdrawalVerifier.sol](../contracts/src/WithdrawalVerifier.sol)
 
 3. **Refund Redemption Circuit** ([refund_redemption.circom](../circuits/refund_redemption.circom))
-   - 10,170 constraints, 10,173 wires
+   - 10,171 constraints, the extra one binding `recipient`
    - Proves EdDSA signature validity on refund tickets
    - Verifier: [RefundRedemptionVerifier.sol](../contracts/src/RefundRedemptionVerifier.sol)
 
@@ -146,7 +147,7 @@ The system uses four specialized ZK circuits (Groth16) for different operations:
    - Prevents arbitrary policy stake burning (C-4 security fix)
    - Verifier: [PolicyViolationVerifier.sol](../contracts/src/PolicyViolationVerifier.sol)
 
-**Test Circuit**: `api_credit_proof_test`, whose artifacts come from `pnpm circuits:fetch` (development only; production refuses to start with it)
+**Test Circuit**: `api_credit_proof_test`, whose artifacts come from `pnpm circuits:fetch` (opt-in with `ZK_CIRCUIT`; production refuses to start with it)
 
 The ZK circuits prove critical properties in zero-knowledge:
 

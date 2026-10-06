@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `DeployLongjingCredits.s.sol` tests in `contracts/test/DeployLongjingCredits.t.sol` ([#122](https://github.com/w3hc/longjing/issues/122)).
 - `pnpm check:verifiers` checks each pinned verification key against its zkey, and each Solidity verifier against that key, IC count included. CI runs it in the proof job (LJ-13) ([#128](https://github.com/w3hc/longjing/issues/128)).
 - `test/onchain-proofs.e2e-spec.ts` submits a real withdrawal, refund redemption and double-spend slashing proof to the real contract on Anvil, and checks that a refund can't be redeemed twice (LJ-05) ([#128](https://github.com/w3hc/longjing/issues/128)).
+- `api_request_local.circom`, `ApiRequestProof(20, 2)` with about 32K constraints instead of 110K, is the default `ZK_CIRCUIT` for `PROFILE=local`. Production still accepts only `api_request` ([#132](https://github.com/w3hc/longjing/issues/132)).
 
 ### Changed
 
@@ -28,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /longjing/redeem-refund` requires exactly 8 proof elements and 8 public signals (LJ-11) ([#128](https://github.com/w3hc/longjing/issues/128)).
 - E2E suites run one at a time, since they share one Anvil chain and deployer ([#128](https://github.com/w3hc/longjing/issues/128)).
 - `LongjingService` defaults to `claude-fable-5-1`, priced at $10 input and $50 output per million tokens, instead of Sonnet 4.6 ([#138](https://github.com/w3hc/longjing/issues/138)).
+- **Breaking:** circuit artifacts are fetched from the `circuits-v1.2` release. The `api_request`, `api_request_local`, `withdrawal` and `refund_redemption` keys come from a single-party phase 2 on `ppot_0080_17.ptau`, and `WithdrawalVerifier` and `RefundRedemptionVerifier` embed the new keys, so the contract must be redeployed. Run `pnpm circuits:fetch` again ([#132](https://github.com/w3hc/longjing/issues/132)).
+
+### Removed
+
+- `api_credit_proof.circom`, `api_credit_proof_simple.circom`, the unused `ZKProofService`, and `pnpm setup:circuit`, which only set up `api_credit_proof` (LJ-23) ([#132](https://github.com/w3hc/longjing/issues/132)).
 
 ### Fixed
 
@@ -38,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `generateDoubleSpendProof`, behind `POST /longjing/proofs/slashing`, proves with `double_spend_slashing` instead of the `api_credit_proof_test` circuit (LJ-11) ([#128](https://github.com/w3hc/longjing/issues/128)).
 - `LongjingService` model IDs use hyphens (`claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`): the dotted IDs made every real Claude API request fail with a 404 `not_found_error` ([#138](https://github.com/w3hc/longjing/issues/138)).
 - With `PROFILE=prod`, `POST /longjing/request` returns 503 when the onchain Merkle root or slashed status can't be read: both checks were silently skipped, so a client could prove membership in a tree of its own. Roots are compared by value, so a decimal root matches the onchain hex (LJ-09) ([#123](https://github.com/w3hc/longjing/issues/123)).
+- `api_request` requires the nullifiers of active refund tickets to be strictly increasing: one ticket could fill all 10 slots and count 10 times toward the balance (LJ-06) ([#132](https://github.com/w3hc/longjing/issues/132)).
+- `api_request` verifies refund tickets with `EdDSAPoseidonVerifier`, the variant `RefundSignerService` signs with: it used `EdDSAMiMCVerifier`, so no server-issued refund could count toward solvency. The circuit tests now get their tickets from `RefundSignerService` (LJ-10) ([#132](https://github.com/w3hc/longjing/issues/132)).
+- `withdrawal` and `refund_redemption` constrain `recipient` explicitly. The binding relied on snarkjs adding a constraint per public input (LJ-23) ([#132](https://github.com/w3hc/longjing/issues/132)).
 
 ## [0.4.0] - 2026-10-05
 

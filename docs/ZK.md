@@ -103,12 +103,13 @@ The ZK proof system now supports **cryptographically valid Groth16 SNARK verific
 **Key Changes:**
 - New [SnarkjsProofService](../src/longjing/snarkjs-proof.service.ts) for real proof generation/verification
 - Updated [ProofVerifierService](../src/longjing/proof-verifier.service.ts) to use cryptographic verification
-- Automated trusted setup script: `npm run setup:circuit`
-- `ZK_CIRCUIT` selects the circuit; production only accepts `api_request` and refuses to start without its verification key
+- `ZK_CIRCUIT` selects the circuit; production only accepts `api_request` and refuses to start without its verification key, and other profiles default to `api_request_local`
 
 **Files:**
-- Production circuit: [circuits/api_request.circom](../circuits/api_request.circom) (~112K constraints)
-- Test circuit: `api_credit_proof_test` (~676 constraints), whose artifacts come from `pnpm circuits:fetch`
+- Production circuit: [circuits/api_request.circom](../circuits/api_request.circom) (~110K constraints)
+- Local circuit: [circuits/api_request_local.circom](../circuits/api_request_local.circom) (~32K constraints)
+- Test circuit: `api_credit_proof_test` (~676 constraints), opt-in
+- All three come from `pnpm circuits:fetch`
 
 ## ZK Circuit Design
 
@@ -116,7 +117,7 @@ The ZK proof system now supports **cryptographically valid Groth16 SNARK verific
 
 **Artifacts**: `circuits/build/api_credit_proof_test*`, fetched with `pnpm circuits:fetch`
 
-A simplified circuit for development and testing. The server uses it outside production unless `ZK_CIRCUIT` says otherwise. It checks no Merkle membership, solvency or refund signature, so production refuses it.
+A simplified circuit, used only with `ZK_CIRCUIT=api_credit_proof_test`. [scripts/testing/generate-proof.ts](../scripts/testing/generate-proof.ts), the end-to-end flow and `ProofGenService.generateWithdrawalProof` still prove with it. It checks no Merkle membership, solvency or refund signature, so production refuses it.
 
 **Inputs:**
 - `secretKey` (private) - User's secret key
@@ -136,12 +137,12 @@ A simplified circuit for development and testing. The server uses it outside pro
 
 ### Production Circuit
 
-**File**: [circuits/api_request.circom](../circuits/api_request.circom)
+**File**: [circuits/api_request.circom](../circuits/api_request.circom), with the template in [circuits/templates/api_request_proof.circom](../circuits/templates/api_request_proof.circom)
 
 The circuit the server verifies requests with in production. It proves four key properties:
 
 1. **Membership**: User's identity commitment is in the Merkle tree
-2. **Refund Summation**: All refund tickets are valid (EdDSA signature verification)
+2. **Refund Summation**: All refund tickets carry a valid Poseidon EdDSA signature, the variant `RefundSignerService` signs with, and the nullifiers of active tickets are strictly increasing, so one ticket can't be counted twice. Clients sort their tickets by nullifier
 3. **Solvency**: User has sufficient balance: `(ticketIndex + 1) × maxCost ≤ initialDeposit + totalRefunds`
 4. **RLN**: Generates nullifier and signal for double-spend prevention
 
@@ -159,17 +160,11 @@ serverPublicKeyX, serverPublicKeyY                          // inputs
 
 The server fills `serverPublicKeyX/Y` with its own refund-signing key, never with a value from the request, so a proof whose refund tickets were signed by any other key fails verification.
 
-### Full Credit Circuit (Not Deployed)
+### Local Circuit
 
-**File**: [circuits/api_credit_proof.circom](../circuits/api_credit_proof.circom)
+**File**: [circuits/api_request_local.circom](../circuits/api_request_local.circom)
 
-Same properties with up to 100 refund tickets and `initialDeposit` as a public input. At 775,250 constraints its trusted setup needs cloud hardware, and no keys exist for it yet.
-
-### Simplified Circuit
-
-**File**: [circuits/api_credit_proof_simple.circom](../circuits/api_credit_proof_simple.circom)
-
-A stripped-down version for testing that omits EdDSA signature verification, focusing on core RLN and solvency checks.
+The same statement and public signals as `api_request`, with `MAX_REFUNDS = 2`: about 32K constraints instead of 110K. It is the default for `PROFILE=local`, where proving and the setup stay fast on a laptop. Production refuses it.
 
 ## Smart Contract
 
@@ -469,7 +464,7 @@ npx ts-node scripts/test-proof-verification.ts
 
 ```bash
 cd circuits
-circom api_credit_proof.circom --r1cs --wasm --sym
+circom api_request.circom --r1cs --wasm --sym
 ```
 
 ## Production Readiness
@@ -540,7 +535,7 @@ See [OVERVIEW.md](./OVERVIEW.md#implementation-alignment-with-original-proposal)
 
 ## Circuit Artifacts
 
-Circuit artifacts are not tracked in Git. They are published as assets of the [`circuits-v1.1` release](https://github.com/w3hc/longjing/releases/tag/circuits-v1.1), and [`circuits/artifacts.json`](../circuits/artifacts.json) pins each one by sha256. Fetch them into `circuits/build/` with:
+Circuit artifacts are not tracked in Git. They are published as assets of the [`circuits-v1.2` release](https://github.com/w3hc/longjing/releases/tag/circuits-v1.2), and [`circuits/artifacts.json`](../circuits/artifacts.json) pins each one by sha256. Fetch them into `circuits/build/` with:
 
 ```bash
 pnpm circuits:fetch
@@ -556,7 +551,9 @@ The server verifies requests with `api_request`. Its artifacts:
 - `api_request.zkey` - Proving key, for clients
 - `api_request_verification_key.json` - Verification key, the only artifact the server loads and the only one the Docker image ships
 
-The keys come from the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) (`ppot_0080_17.ptau`) plus a single local phase 2 contribution. That is enough for testnets; mainnet needs a multi-party phase 2 ceremony (see [TRUSTED_SETUP_CEREMONY.md](./TRUSTED_SETUP_CEREMONY.md)).
+`api_request_local` ships the same three files under its own name, for `PROFILE=local`.
+
+The `api_request`, `api_request_local`, `withdrawal` and `refund_redemption` keys come from the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) (`ppot_0080_17.ptau`, sha256 `f807e065…a367c`) plus a single local phase 2 contribution. That is enough for testnets; mainnet needs a multi-party phase 2 ceremony (see [TRUSTED_SETUP_CEREMONY.md](./TRUSTED_SETUP_CEREMONY.md)).
 
 **To regenerate them** after changing the circuit:
 
@@ -569,9 +566,11 @@ npx snarkjs zkey contribute build/api_request_0000.zkey build/api_request.zkey -
 npx snarkjs zkey export verificationkey build/api_request.zkey build/api_request_verification_key.json
 ```
 
+Repeat for `api_request_local`, `withdrawal` and `refund_redemption`. For the last two, also export the Solidity verifier with `npx snarkjs zkey export solidityverifier`, rename `Groth16Verifier` to `WithdrawalVerifier` or `RefundRedemptionVerifier`, run `forge fmt` on it, and keep the `verifyWithdrawalProof` or `verifyRefundProof` wrapper at the end of the contract.
+
 After regenerating, publish the changed files as assets of a new release, then update the release URL and hashes in `circuits/artifacts.json` (`shasum -a 256 <file>`).
 
-**Test Circuit:** `circuits/build/api_credit_proof_test.zkey` and `circuits/build/verification_key.json`, used outside production by default.
+**Test Circuit:** `circuits/build/api_credit_proof_test.zkey` and `circuits/build/verification_key.json`, used only with `ZK_CIRCUIT=api_credit_proof_test`.
 
 ## References
 
