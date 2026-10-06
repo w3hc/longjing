@@ -215,7 +215,7 @@ longjing/
 - Anvil only: reads `ANVIL_RPC_URL`, and refuses to start if its chain id is not 31337. Without an RPC, or with Anvil down, contract interaction is disabled.
 - Signs contract transactions with `ANVIL_PRIVATE_KEY` (Anvil account #0 in `.env.template`).
 - Without the dstack socket, falls back to `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY` or the deterministic dev refund-signer key. Run the dstack simulator to derive keys instead, see [KEY_DERIVATION.md](./KEY_DERIVATION.md#development).
-- Mock TEE platform when no real one is detected, self-signed TLS from `./secrets`, CORS open to `*`, 100 requests per minute, the `api_credit_proof_test` circuit by default.
+- Mock TEE platform when no real one is detected, self-signed TLS from `./secrets`, CORS open to `*`, 100 requests per minute, the `api_request_local` circuit by default.
 
 Deploy the contract to Anvil with the same profile:
 

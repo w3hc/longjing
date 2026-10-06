@@ -171,37 +171,25 @@ Signature: [digital_signature]
 
 ## For This Project
 
-### Current Implementation Status: ✅ Development Setup Complete
+### Current Implementation Status: single-party setup
 
-The project now includes an automated trusted setup for development and testing:
+The artifacts of the [`circuits-v1.2` release](https://github.com/w3hc/longjing/releases/tag/circuits-v1.2) were produced as follows:
 
-**Script:** `npm run setup:circuit`
-
-This automated script ([scripts/setup/setup-trusted-setup.ts](../scripts/setup/setup-trusted-setup.ts)):
-1. Compiles the test circuit
-2. Generates Powers of Tau (2^12 constraints)
-3. Performs single-party contribution
-4. Generates proving and verification keys
-5. Verifies the final parameters
-
-**Generated Files** (in `circuits/build/`):
-- `api_credit_proof_test_final.zkey` - Proving key
-- `verification_key.json` - Verification key
-- `pot12_final.ptau` - Powers of Tau parameters
+- `api_request`, `api_request_local`, `withdrawal` and `refund_redemption`: phase 1 is the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) file `ppot_0080_17.ptau` (sha256 `f807e065fde53f72f4bf4d57140fab85b26daa6cc95bdfec7cce93622b3a367c`). Phase 2 is one contribution by the maintainer, with `openssl rand` entropy, checked with `snarkjs zkey verify`.
+- `double_spend_slashing` and `api_credit_proof_test`: unchanged from `circuits-v1`.
 
 **Current Status:**
-- ✅ Development setup: Automated single-contributor ceremony
-- ✅ Test circuit: Minimal circuit for fast iteration (~676 constraints)
-- ⚠️ **NOT secure for production** - single participant only
+- ⚠️ **NOT secure for production**: one phase 2 participant, who could forge proofs if the entropy was kept
 - ⚠️ Automated entropy (not airgapped)
+- A public multi-party phase 2 ceremony is tracked in [#135](https://github.com/w3hc/longjing/issues/135)
 
 ### Production Deployment Roadmap
 
 When implementing the trusted setup ceremony for production:
 
 1. **Development** (Current):
-   - ✅ Automated test setup with `npm run setup:circuit`
-   - ✅ Test circuit with fast proving/verification
+   - ✅ Single-party phase 2 on the Perpetual Powers of Tau
+   - ✅ `api_request_local` for fast local proving
    - ✅ Production refuses to start without the `api_request` verification key
 
 2. **Testnet** (Next):
@@ -231,21 +219,18 @@ When implementing the trusted setup ceremony for production:
 ### Quick Start (Development)
 
 ```bash
-# Complete automated setup
-npm run setup:circuit
+# Download the pinned artifacts and check them
+pnpm circuits:fetch
+pnpm check:verifiers
 
-# Verify setup completed
-ls circuits/build/*.zkey
-ls circuits/build/verification_key.json
-
-# Build and run server (will use real verification if setup complete)
-npm run build
-npm run start
+# Build and run server
+pnpm build
+pnpm start
 ```
 
 ### Request Circuit Setup
 
-The server verifies requests with [api_request.circom](../circuits/api_request.circom) (~112K constraints). Its committed keys use the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) for phase 1 and a single local contribution for phase 2, so they are **NOT secure for mainnet** until a multi-party phase 2 ceremony replaces them.
+The server verifies requests with [api_request.circom](../circuits/api_request.circom) (~110K constraints), or [api_request_local.circom](../circuits/api_request_local.circom) (~32K) with `PROFILE=local`. Its committed keys use the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) for phase 1 and a single local contribution for phase 2, so they are **NOT secure for mainnet** until a multi-party phase 2 ceremony replaces them.
 
 To regenerate them after changing the circuit:
 
@@ -258,4 +243,4 @@ npx snarkjs zkey contribute build/api_request_0000.zkey build/api_request.zkey -
 npx snarkjs zkey export verificationkey build/api_request.zkey build/api_request_verification_key.json
 ```
 
-The full credit circuit (`api_credit_proof`, 775,250 constraints, 100 refund tickets) is not deployed: its setup takes 1-2 hours on a 36 vCPU cloud instance and 12+ hours on an M1 MacBook.
+Repeat for `api_request_local`, `withdrawal` and `refund_redemption`, then follow [ZK.md](./ZK.md#circuit-artifacts) to export the Solidity verifiers and publish a new release.

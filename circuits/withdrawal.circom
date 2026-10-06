@@ -105,6 +105,11 @@ template WithdrawalProof(TREE_DEPTH) {
     // 5. Generate RLN signal
     // y = secretKey + a * x
     signalY <== secretKey + a * signalX;
+
+    // Bind recipient with an explicit constraint rather than relying on the
+    // setup giving every public input an IC point
+    signal recipientSquare;
+    recipientSquare <== recipient * recipient;
 }
 
 // Export with 20-level Merkle tree (supports ~1 million users)

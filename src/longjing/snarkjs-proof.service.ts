@@ -9,7 +9,8 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { isProd } from '../config/profile';
 
-export type ZkCircuit = 'api_request' | 'api_credit_proof_test';
+export type ZkCircuit =
+  'api_request' | 'api_request_local' | 'api_credit_proof_test';
 
 const CIRCUIT_ARTIFACTS: Record<
   ZkCircuit,
@@ -19,6 +20,11 @@ const CIRCUIT_ARTIFACTS: Record<
     wasm: 'circuits/build/api_request_js/api_request.wasm',
     zkey: 'circuits/build/api_request.zkey',
     vKey: 'circuits/build/api_request_verification_key.json',
+  },
+  api_request_local: {
+    wasm: 'circuits/build/api_request_local_js/api_request_local.wasm',
+    zkey: 'circuits/build/api_request_local.zkey',
+    vKey: 'circuits/build/api_request_local_verification_key.json',
   },
   api_credit_proof_test: {
     wasm: 'circuits/build/api_credit_proof_test_js/api_credit_proof_test.wasm',
@@ -32,7 +38,7 @@ const CIRCUIT_ARTIFACTS: Record<
  *
  * The circuit comes from ZK_CIRCUIT. Production verifies with api_request and
  * refuses to start without its verification key; other environments default
- * to the lighter test circuit.
+ * to api_request_local, the same statement with 2 refund slots instead of 10.
  */
 @Injectable()
 export class SnarkjsProofService implements OnModuleInit {
@@ -48,7 +54,7 @@ export class SnarkjsProofService implements OnModuleInit {
   constructor() {
     const circuit =
       process.env.ZK_CIRCUIT ||
-      (isProd() ? 'api_request' : 'api_credit_proof_test');
+      (isProd() ? 'api_request' : 'api_request_local');
 
     if (!(circuit in CIRCUIT_ARTIFACTS)) {
       throw new Error(`Unknown ZK_CIRCUIT: ${circuit}`);

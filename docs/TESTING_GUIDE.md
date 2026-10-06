@@ -280,7 +280,7 @@ Production circuits are in `circuits/`:
 
 To test with real circuits:
 1. Compile circuits: `bash scripts/setup/compile-production-circuits.sh`
-2. Run trusted setup: `pnpm setup:circuit`
+2. Run trusted setup: `bash scripts/setup/run-trusted-setup.sh`
 3. E2E tests automatically use generated artifacts
 
 ### Performance Testing

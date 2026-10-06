@@ -24,6 +24,10 @@ const CIRCUITS: Record<string, Circuit> = {
     zkey: 'api_request.zkey',
     vkey: 'api_request_verification_key.json',
   },
+  api_request_local: {
+    zkey: 'api_request_local.zkey',
+    vkey: 'api_request_local_verification_key.json',
+  },
   refund_redemption: {
     zkey: 'refund_redemption.zkey',
     vkey: 'refund_redemption_verification_key.json',

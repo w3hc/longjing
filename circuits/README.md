@@ -12,13 +12,15 @@ Proves the right to make one API request. The server verifies every request with
 
 **Proves**:
 - Identity commitment exists in Merkle tree (membership proof)
-- Every refund ticket carries a valid EdDSA signature from the server
+- Every refund ticket carries a valid Poseidon EdDSA signature from the server, the variant `RefundSignerService` signs with
+- Active refund nullifiers are strictly increasing, so one ticket can't fill two slots (clients sort their tickets by nullifier)
 - Solvency: `(ticketIndex + 1) · maxCost ≤ initialDeposit + refunds`
 - RLN signal is correctly computed for double-spend prevention
 
 **Parameters**:
 - Merkle tree depth: 20, max refund tickets: 10
-- Constraints: ~112K
+- Constraints: ~110K
+- Template: [templates/api_request_proof.circom](templates/api_request_proof.circom), shared with `api_request_local`
 - Public inputs: `merkleRootExpected`, `maxCost`, `signalX`, `serverPublicKeyX`, `serverPublicKeyY` (the verifier fills the key in itself)
 - Outputs: `nullifier`, `signalY`, `idCommitment`, `merkleRoot`
 - Artifacts: `build/api_request_js/api_request.wasm`, `build/api_request.zkey`, `build/api_request_verification_key.json` (fetch with `pnpm circuits:fetch`, see [docs/ZK.md](../docs/ZK.md#circuit-artifacts) to regenerate)
@@ -67,9 +69,13 @@ Proves that a user double-spent a ticket, allowing anyone to extract and verify 
 - Public inputs: `secretKeyClaimed`, `nullifierExpected`
 - Outputs: `idCommitment`, `nullifier`
 
+### Local Request Circuit ([api_request_local.circom](api_request_local.circom))
+
+The API request circuit with 2 refund slots instead of 10 (~32K constraints), the default `ZK_CIRCUIT` for `PROFILE=local`. Production refuses it.
+
 ### Test Circuit (`api_credit_proof_test`)
 
-Simplified test circuit used during development. The server refuses to start with it in production.
+Simplified test circuit, used only with `ZK_CIRCUIT=api_credit_proof_test`. The server refuses to start with it in production.
 
 ## Compilation
 
@@ -174,13 +180,13 @@ echo '{
 }' > input.json
 
 # Generate witness
-node api_credit_proof_js/generate_witness.js api_credit_proof_js/api_credit_proof.wasm input.json witness.wtns
+node build/api_request_js/generate_witness.js build/api_request_js/api_request.wasm input.json witness.wtns
 
 # Generate proof
-snarkjs groth16 prove api_credit_proof_final.zkey witness.wtns proof.json public.json
+snarkjs groth16 prove build/api_request.zkey witness.wtns proof.json public.json
 
 # Verify proof
-snarkjs groth16 verify verification_key.json public.json proof.json
+snarkjs groth16 verify build/api_request_verification_key.json public.json proof.json
 ```
 
 ## Security Considerations

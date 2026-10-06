@@ -175,7 +175,7 @@ export class ProofVerifierService {
         this.failedVerifications++;
         this.logger.error(
           'CRITICAL: Proof verification requires circuit artifacts. ' +
-            'Run `npm run setup:circuit` to generate proving/verification keys.',
+            'Run `pnpm circuits:fetch` to download proving/verification keys.',
         );
         throw new Error(
           'Proof verification not available. Circuit artifacts not loaded.',
@@ -219,7 +219,7 @@ export class ProofVerifierService {
 
       try {
         let signals: string[];
-        if (this.snarkjsProofService.getCircuit() === 'api_request') {
+        if (this.snarkjsProofService.getCircuit() !== 'api_credit_proof_test') {
           // Refunds must be signed by this server, so the key never comes from the request
           const serverKey = await this.refundSignerService.getPublicKey();
           // [nullifier, signalY, idCommitment, merkleRoot, merkleRootExpected, maxCost, signalX, serverPublicKeyX, serverPublicKeyY]
