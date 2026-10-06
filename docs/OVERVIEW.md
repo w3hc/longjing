@@ -206,7 +206,7 @@ The backend orchestrates proof verification, API execution, and refund signing:
 | **ProviderRegistryService** | Dynamic provider registration and routing |
 | **PricingOracleService** | Cost calculation with 1-hour cache |
 | **CostEstimationService** | Pre-request cost estimation |
-| **ClaudeProvider** | Reference implementation (claude-sonnet-4-5-20250929) |
+| **ClaudeProvider** | Reference implementation (claude-fable-5-1 by default) |
 
 See [PROVIDERS.md](./PROVIDERS.md) for adding new providers.
 
@@ -483,7 +483,7 @@ While the system provides strong cryptographic privacy guarantees, users should 
 
 **Provider Abstraction**
 - Multi-provider architecture with dynamic pricing
-- Claude provider (claude-sonnet-4-5-20250929)
+- Claude provider (claude-fable-5-1 by default)
   - $3/M input tokens, $15/M output tokens
   - Cache-aware pricing (90% read discount)
   - Token counting and cost estimation

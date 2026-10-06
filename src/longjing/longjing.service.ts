@@ -22,17 +22,16 @@ import {
   parseFieldElement,
   signalXMatchesPayload,
 } from './utils/payload-signal.util';
+import {
+  ClaudeModel,
+  DEFAULT_CLAUDE_MODEL,
+  MAX_OUTPUT_TOKENS,
+  claudeCostUSD,
+  isClaudeModel,
+} from '../pricing/claude-pricing';
 
-// Example: Claude API Pricing (USD per million tokens)
-// This can be configured for any API service with similar pricing models
-const CLAUDE_PRICING = {
-  'claude-fable-5-1': { input: 10, output: 50 },
-  'claude-opus-4-6': { input: 5, output: 25 },
-  'claude-sonnet-4-6': { input: 3, output: 15 },
-  'claude-haiku-4-5': { input: 1, output: 5 },
-};
-
-type ClaudeModel = keyof typeof CLAUDE_PRICING;
+// Messages API framing adds a few tokens around the user's payload
+const MESSAGE_OVERHEAD_TOKENS = 32;
 
 /**
  * Main service for handling ZK-based API requests
@@ -102,7 +101,10 @@ export class LongjingService {
    * Implements the full protocol: nullifier check, proof verification, API call, refund
    */
   async handleRequest(req: LongjingRequestDto): Promise<LongjingResponseDto> {
-    const model = (req.model || 'claude-fable-5-1') as ClaudeModel;
+    const model = req.model ?? DEFAULT_CLAUDE_MODEL;
+    if (!isClaudeModel(model)) {
+      throw new BadRequestException(`Unsupported model: ${model}`);
+    }
 
     // 1. Check per-nullifier rate limit (before expensive operations)
     if (!this.nullifierStore.checkRateLimit(req.nullifier)) {
@@ -132,7 +134,16 @@ export class LongjingService {
       throw new UnauthorizedException('Invalid ZK proof');
     }
 
-    // 4. Atomically check nullifier and insert if new
+    // 4. Reject before the nullifier is consumed if maxCost can't cover the worst case
+    const maxCost = parseFieldElement(req.maxCost);
+    const worstCaseCost = await this.worstCaseCostInETH(req.payload, model);
+    if (maxCost < worstCaseCost) {
+      throw new BadRequestException(
+        `maxCost is below the worst-case cost of ${worstCaseCost} wei for ${model}`,
+      );
+    }
+
+    // 5. Atomically check nullifier and insert if new
     // This prevents TOCTOU race conditions in concurrent scenarios
     const payloadHash = this.hashPayload(req.payload);
     const existingSignal = this.nullifierStore.checkAndSet(req.nullifier, {
@@ -227,18 +238,25 @@ export class LongjingService {
       throw new ForbiddenException('Nullifier already used');
     }
 
-    // 5. Execute API request (Claude example)
-    const response = await this.executeClaudeRequest(req.payload, model);
+    // 6. Execute API request (Claude example); if it fails, nothing was served,
+    // so give the ticket index back instead of burning it
+    let response: Awaited<ReturnType<typeof this.executeClaudeRequest>>;
+    try {
+      response = await this.executeClaudeRequest(req.payload, model);
+    } catch (error) {
+      this.nullifierStore.release(req.nullifier, req.signal.x);
+      throw error;
+    }
 
-    // 6. Calculate actual cost in ETH (internal only)
+    // 7. Calculate actual cost in ETH (internal only)
     const actualCost = await this.calculateCostInETH(
       response.usage._internalInputTokens ?? 0,
       response.usage._internalOutputTokens ?? 0,
       model,
     );
 
-    // 7. Generate refund ticket
-    const refundValue = BigInt(req.maxCost) - actualCost;
+    // 8. Generate refund ticket, never negative
+    const refundValue = maxCost > actualCost ? maxCost - actualCost : 0n;
     const refundTicket = await this.refundSigner.signRefund({
       idCommitment: req.idCommitment,
       nullifier: req.nullifier,
@@ -321,6 +339,19 @@ export class LongjingService {
   }
 
   /**
+   * Upper bound on a request's cost in ETH (wei), known before the upstream call.
+   * Every token covers at least one UTF-8 byte, so the byte length bounds the input.
+   */
+  private async worstCaseCostInETH(
+    payload: string,
+    model: ClaudeModel,
+  ): Promise<bigint> {
+    const inputTokens =
+      Buffer.byteLength(payload, 'utf8') + MESSAGE_OVERHEAD_TOKENS;
+    return this.calculateCostInETH(inputTokens, MAX_OUTPUT_TOKENS, model);
+  }
+
+  /**
    * Calculate cost in ETH (wei) for external API usage
    * Example implementation for Claude API - adapt for your external service
    */
@@ -329,18 +360,7 @@ export class LongjingService {
     outputTokens: number,
     model: ClaudeModel,
   ): Promise<bigint> {
-    const pricing = CLAUDE_PRICING[model];
-
-    if (!pricing) {
-      throw new Error(
-        `Unknown model: ${model}. Valid models: ${Object.keys(CLAUDE_PRICING).join(', ')}`,
-      );
-    }
-
-    // Calculate cost in USD
-    const costUSD =
-      (inputTokens / 1_000_000) * pricing.input +
-      (outputTokens / 1_000_000) * pricing.output;
+    const costUSD = claudeCostUSD(model, inputTokens, outputTokens);
 
     // Convert to ETH (wei)
     const costWei = await this.ethRateOracle.usdToWei(costUSD);
@@ -373,7 +393,7 @@ export class LongjingService {
 
       const message = await this.anthropic.messages.create({
         model: model,
-        max_tokens: 4096,
+        max_tokens: MAX_OUTPUT_TOKENS,
         messages: [{ role: 'user', content: payload }],
       });
 
@@ -388,10 +408,7 @@ export class LongjingService {
       const totalTokens = inputTokens + outputTokens;
 
       // Fixed: Calculate actual cost (internal only)
-      const pricing = CLAUDE_PRICING[model];
-      const actualCostUSD =
-        (inputTokens / 1_000_000) * pricing.input +
-        (outputTokens / 1_000_000) * pricing.output;
+      const actualCostUSD = claudeCostUSD(model, inputTokens, outputTokens);
 
       // Fixed: Quantize units and cost
       const { unitClass } = quantizeUnits(totalTokens);
@@ -437,10 +454,7 @@ export class LongjingService {
     const mockResponse = `This is a mock Claude ${model} response to: "${payload.slice(0, 50)}..."`;
 
     // Fixed: Calculate actual cost (internal only)
-    const pricing = CLAUDE_PRICING[model];
-    const actualCostUSD =
-      (inputTokens / 1_000_000) * pricing.input +
-      (outputTokens / 1_000_000) * pricing.output;
+    const actualCostUSD = claudeCostUSD(model, inputTokens, outputTokens);
 
     // Fixed: Quantize units and cost
     const { unitClass } = quantizeUnits(totalTokens);

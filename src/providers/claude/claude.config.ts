@@ -1,3 +1,10 @@
+import {
+  CLAUDE_MODELS,
+  DEFAULT_CLAUDE_MODEL,
+} from '../../pricing/claude-pricing';
+
+export type { ClaudeModel } from '../../pricing/claude-pricing';
+
 /**
  * Claude provider configuration
  */
@@ -5,21 +12,12 @@ export const CLAUDE_CONFIG = {
   /**
    * Default model to use when not specified
    */
-  DEFAULT_MODEL: 'claude-sonnet-4-5-20250929',
+  DEFAULT_MODEL: DEFAULT_CLAUDE_MODEL,
 
   /**
-   * Supported Claude models
+   * Supported Claude models: exactly the priced ones
    */
-  SUPPORTED_MODELS: [
-    'claude-sonnet-4-5-20250929',
-    'claude-opus-4-6',
-    'claude-sonnet-4-6',
-    'claude-haiku-4-5',
-    'claude-3-7-sonnet-20250219',
-    'claude-3-5-sonnet-20241022',
-    'claude-3-5-haiku-20241022',
-    'claude-3-opus-20240229',
-  ] as const,
+  SUPPORTED_MODELS: CLAUDE_MODELS,
 
   /**
    * Default request parameters
@@ -40,5 +38,3 @@ export const CLAUDE_CONFIG = {
     concurrentRequests: 5,
   },
 };
-
-export type ClaudeModel = (typeof CLAUDE_CONFIG.SUPPORTED_MODELS)[number];

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { BaseProvider } from '../core/base.provider';
 import {
@@ -13,6 +13,17 @@ import {
   ProviderHealth,
 } from '../core/provider.interface';
 import { PricingModel } from '../../pricing/dto/pricing-model.dto';
+import {
+  CLAUDE_MODELS,
+  CLAUDE_PRICING,
+  ClaudeModel,
+  DEFAULT_CLAUDE_MODEL,
+  isClaudeModel,
+} from '../../pricing/claude-pricing';
+
+// Anthropic bills cache writes at 1.25x and cache reads at 0.1x the input rate
+const CACHE_WRITE_MULTIPLIER = 1.25;
+const CACHE_READ_MULTIPLIER = 0.1;
 
 /**
  * Claude API Provider
@@ -27,33 +38,28 @@ export class ClaudeProvider extends BaseProvider implements ApiProvider {
   private anthropic?: Anthropic;
 
   /**
-   * Get hardcoded pricing configuration for Claude API
-   * Based on Anthropic's pricing as of March 2026
+   * Pricing for a model, derived from the shared CLAUDE_PRICING table.
+   * Rates are USD per 1K tokens, as PricingOracleService expects.
    */
-  getPricingConfig(): PricingModel {
+  getPricingConfig(model: ClaudeModel = DEFAULT_CLAUDE_MODEL): PricingModel {
+    const { input, output } = CLAUDE_PRICING[model];
+    const perThousand = (perMillion: number) => perMillion / 1000;
+
     return {
       providerId: 'claude',
       endpoint: '/v1/messages',
       pricingType: 'per-token',
       rates: [
+        { type: 'per-token', rate: perThousand(input), unit: 'input_token' },
+        { type: 'per-token', rate: perThousand(output), unit: 'output_token' },
         {
           type: 'per-token',
-          rate: 0.003, // $3 per million input tokens
-          unit: 'input_token',
-        },
-        {
-          type: 'per-token',
-          rate: 0.015, // $15 per million output tokens
-          unit: 'output_token',
-        },
-        {
-          type: 'per-token',
-          rate: 0.00375, // $3.75 per million cache write tokens (25% markup)
+          rate: perThousand(input * CACHE_WRITE_MULTIPLIER),
           unit: 'cache_creation_input_token',
         },
         {
           type: 'per-token',
-          rate: 0.0003, // $0.30 per million cache read tokens (90% discount)
+          rate: perThousand(input * CACHE_READ_MULTIPLIER),
           unit: 'cache_read_input_token',
         },
       ],
@@ -108,8 +114,11 @@ export class ClaudeProvider extends BaseProvider implements ApiProvider {
       errors.push('messages array is required and cannot be empty');
     }
 
-    if (model && typeof model !== 'string') {
-      errors.push('model must be a string');
+    if (
+      model !== undefined &&
+      (typeof model !== 'string' || !isClaudeModel(model))
+    ) {
+      errors.push(`model must be one of: ${CLAUDE_MODELS.join(', ')}`);
     }
 
     if (
@@ -145,7 +154,7 @@ export class ClaudeProvider extends BaseProvider implements ApiProvider {
 
     const {
       messages,
-      model = 'claude-sonnet-4-5-20250929',
+      model = DEFAULT_CLAUDE_MODEL,
       maxTokens = 8192,
       temperature = 1.0,
       system,
@@ -185,7 +194,7 @@ export class ClaudeProvider extends BaseProvider implements ApiProvider {
       });
 
       // Extract usage metrics
-      const usage = this.extractUsage(response);
+      const usage = this.extractUsage(response, model as ClaudeModel);
 
       return {
         status: 200,
@@ -227,25 +236,36 @@ export class ClaudeProvider extends BaseProvider implements ApiProvider {
    * Estimate cost before request execution
    */
   estimateCost(request: ProviderRequest): Promise<CostEstimate> {
-    const { messages, maxTokens = 1024 } = (request.metadata ||
-      request.body ||
-      {}) as Record<string, any>;
+    const {
+      messages,
+      maxTokens = 1024,
+      model = DEFAULT_CLAUDE_MODEL,
+    } = (request.metadata || request.body || {}) as Record<string, any>;
+
+    if (typeof model !== 'string' || !isClaudeModel(model)) {
+      return Promise.reject(
+        new BadRequestException(
+          `model must be one of: ${CLAUDE_MODELS.join(', ')}`,
+        ),
+      );
+    }
 
     // Estimate input tokens based on message length
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     const estimatedInputTokens = this.estimateTokenCount(messages || []);
     const estimatedOutputTokens = maxTokens as number;
 
-    // Get pricing rates
-    const pricing = this.getPricingConfig();
-    const inputRate =
-      pricing.rates.find((r) => r.unit === 'input_token')?.rate || 0.003;
-    const outputRate =
-      pricing.rates.find((r) => r.unit === 'output_token')?.rate || 0.015;
-
-    // Calculate costs (rates are per token, need to divide by 1M)
-    const inputCostUSD = (estimatedInputTokens * inputRate) / 1_000_000;
-    const outputCostUSD = (estimatedOutputTokens * outputRate) / 1_000_000;
+    const pricing = this.getPricingConfig(model);
+    const inputCostUSD = this.tokenCostUSD(
+      pricing,
+      'input_token',
+      estimatedInputTokens,
+    );
+    const outputCostUSD = this.tokenCostUSD(
+      pricing,
+      'output_token',
+      estimatedOutputTokens,
+    );
     const estimatedCostUSD = inputCostUSD + outputCostUSD;
 
     return Promise.resolve({
@@ -297,7 +317,7 @@ export class ClaudeProvider extends BaseProvider implements ApiProvider {
 
       // Make a minimal API call to check health
       await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: DEFAULT_CLAUDE_MODEL,
         max_tokens: 10,
         messages: [{ role: 'user', content: 'ping' }],
       });
@@ -322,29 +342,33 @@ export class ClaudeProvider extends BaseProvider implements ApiProvider {
   /**
    * Extract usage metrics from Claude API response
    */
-  private extractUsage(response: Anthropic.Message): UsageMetrics {
+  private extractUsage(
+    response: Anthropic.Message,
+    model: ClaudeModel,
+  ): UsageMetrics {
     const { usage } = response;
+    const pricing = this.getPricingConfig(model);
 
-    // Get pricing rates
-    const pricing = this.getPricingConfig();
-    const inputRate =
-      pricing.rates.find((r) => r.unit === 'input_token')?.rate || 0.003;
-    const outputRate =
-      pricing.rates.find((r) => r.unit === 'output_token')?.rate || 0.015;
-    const cacheWriteRate =
-      pricing.rates.find((r) => r.unit === 'cache_creation_input_token')
-        ?.rate || 0.00375;
-    const cacheReadRate =
-      pricing.rates.find((r) => r.unit === 'cache_read_input_token')?.rate ||
-      0.0003;
-
-    // Calculate individual costs (rates are per token, divide by 1M)
-    const inputCost = (usage.input_tokens * inputRate) / 1_000_000;
-    const outputCost = (usage.output_tokens * outputRate) / 1_000_000;
-    const cacheWriteCost =
-      ((usage.cache_creation_input_tokens || 0) * cacheWriteRate) / 1_000_000;
-    const cacheReadCost =
-      ((usage.cache_read_input_tokens || 0) * cacheReadRate) / 1_000_000;
+    const inputCost = this.tokenCostUSD(
+      pricing,
+      'input_token',
+      usage.input_tokens,
+    );
+    const outputCost = this.tokenCostUSD(
+      pricing,
+      'output_token',
+      usage.output_tokens,
+    );
+    const cacheWriteCost = this.tokenCostUSD(
+      pricing,
+      'cache_creation_input_token',
+      usage.cache_creation_input_tokens || 0,
+    );
+    const cacheReadCost = this.tokenCostUSD(
+      pricing,
+      'cache_read_input_token',
+      usage.cache_read_input_tokens || 0,
+    );
 
     const totalCostUSD =
       inputCost + outputCost + cacheWriteCost + cacheReadCost;
@@ -367,6 +391,15 @@ export class ClaudeProvider extends BaseProvider implements ApiProvider {
         cacheRead: usage.cache_read_input_tokens || 0,
       },
     };
+  }
+
+  private tokenCostUSD(
+    pricing: PricingModel,
+    unit: string,
+    tokens: number,
+  ): number {
+    const rate = pricing.rates.find((r) => r.unit === unit)?.rate ?? 0;
+    return (tokens * rate) / 1000;
   }
 
   /**

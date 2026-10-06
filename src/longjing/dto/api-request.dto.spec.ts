@@ -35,6 +35,20 @@ describe('request DTO shape checks', () => {
     expect(errors.map((e) => e.property)).toContain(field);
   });
 
+  it('accepts a priced model', async () => {
+    expect(
+      await errorsFor({ ...validRequest, model: 'claude-haiku-4-5' }),
+    ).toHaveLength(0);
+  });
+
+  it('rejects a model with no pricing', async () => {
+    const errors = await errorsFor({
+      ...validRequest,
+      model: 'claude-3-opus-20240229',
+    });
+    expect(errors.map((e) => e.property)).toContain('model');
+  });
+
   it('rejects a malformed signal', async () => {
     const errors = await errorsFor({
       ...validRequest,

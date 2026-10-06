@@ -180,6 +180,76 @@ describe('LongjingService', () => {
       expect(result.usage).toBeDefined();
     });
 
+    it('should reject a maxCost below the worst-case cost without consuming the nullifier', async () => {
+      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
+
+      await expect(
+        service.handleRequest({ ...validRequest, maxCost: '99999' }),
+      ).rejects.toThrow('maxCost is below the worst-case cost');
+      expect(nullifierStore.exists(validRequest.nullifier)).toBe(false);
+    });
+
+    it('should price the worst case on payload bytes and max output tokens', async () => {
+      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+      const usdToWei = jest
+        .spyOn(ethRateOracle, 'usdToWei')
+        .mockResolvedValue(BigInt(100000));
+
+      await service.handleRequest({
+        ...validRequest,
+        model: 'claude-haiku-4-5',
+      });
+
+      const inputTokens = Buffer.byteLength(payload, 'utf8') + 32;
+      expect(usdToWei.mock.calls[0][0]).toBeCloseTo(
+        (inputTokens * 1 + 4096 * 5) / 1_000_000,
+        12,
+      );
+    });
+
+    it('should clamp the refund at zero when the actual cost exceeds maxCost', async () => {
+      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+      jest
+        .spyOn(ethRateOracle, 'usdToWei')
+        .mockResolvedValueOnce(BigInt(100000))
+        .mockResolvedValueOnce(BigInt(200000));
+
+      const result = await service.handleRequest({
+        ...validRequest,
+        maxCost: '100000',
+      });
+
+      expect(result.actualCost).toBe('200000');
+      expect(result.refundTicket.value).toBe('0');
+    });
+
+    it('should release the nullifier when the upstream call fails', async () => {
+      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
+      const execute = jest
+        .spyOn(service as any, 'executeClaudeRequest')
+        .mockRejectedValueOnce(new Error('upstream down'));
+
+      await expect(service.handleRequest(validRequest)).rejects.toThrow(
+        'upstream down',
+      );
+      expect(nullifierStore.exists(validRequest.nullifier)).toBe(false);
+
+      execute.mockRestore();
+      const retry = await service.handleRequest(validRequest);
+      expect(retry.refundTicket).toBeDefined();
+    });
+
+    it('should reject a model with no pricing', async () => {
+      await expect(
+        service.handleRequest({
+          ...validRequest,
+          model: 'claude-3-opus-20240229',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should reject invalid proof', async () => {
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(false);
 

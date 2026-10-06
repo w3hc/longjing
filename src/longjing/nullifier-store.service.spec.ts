@@ -165,6 +165,25 @@ describe('NullifierStoreService - Rate Limiting', () => {
     });
   });
 
+  describe('release', () => {
+    it('should free a nullifier for reuse', () => {
+      service.checkAndSet('0xrelease1', { x: '0xaaa', y: '0xbbb' });
+
+      expect(service.release('0xrelease1', '0xaaa')).toBe(true);
+      expect(service.exists('0xrelease1')).toBe(false);
+      expect(
+        service.checkAndSet('0xrelease1', { x: '0xaaa', y: '0xbbb' }),
+      ).toBeNull();
+    });
+
+    it('should keep a nullifier stored with another signal', () => {
+      service.checkAndSet('0xrelease2', { x: '0xaaa', y: '0xbbb' });
+
+      expect(service.release('0xrelease2', '0xccc')).toBe(false);
+      expect(service.exists('0xrelease2')).toBe(true);
+    });
+  });
+
   describe('atomic checkAndSet operations', () => {
     it('should insert new nullifier atomically', () => {
       const nullifier = '0xatomic1';
