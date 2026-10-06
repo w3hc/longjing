@@ -100,8 +100,10 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
     };
   };
   usage: {
-    inputTokens: number;        // Tokens in request
-    outputTokens: number;       // Tokens in response
+    // Quantized classes, not exact counts: exact token counts and costs would make requests linkable
+    unitClass: 'tiny' | 'small' | 'medium' | 'large' | 'xlarge';
+    unitType: string;           // e.g. "tokens"
+    costClass: 'micro' | 'small' | 'medium' | 'large' | 'xlarge';
   };
 }
 ```
@@ -123,7 +125,7 @@ curl -k -X POST https://localhost:3000/longjing/request \
   -H "Content-Type: application/json" \
   -d '{
     "payload": "What does 苟全性命於亂世，不求聞達於諸侯。mean?",
-    "proof": "{\"pi_a\":[\"123...\",\"456...\"],\"pi_b\":[[\"789...\"]],\"pi_c\":[\"012...\"]}",
+    "proof": "{\"pi_a\":[\"123...\",\"456...\",\"1\"],\"pi_b\":[[\"789...\",\"012...\"],[\"345...\",\"678...\"],[\"1\",\"0\"]],\"pi_c\":[\"901...\",\"234...\",\"1\"],\"protocol\":\"groth16\",\"curve\":\"bn128\"}",
     "nullifier": "12345678901234567890123456789012",
     "signal": {
       "x": "98765432109876543210987654321098",
@@ -152,8 +154,9 @@ curl -k -X POST https://localhost:3000/longjing/request \
     }
   },
   "usage": {
-    "inputTokens": 50,
-    "outputTokens": 300
+    "unitClass": "small",
+    "unitType": "tokens",
+    "costClass": "micro"
   }
 }
 ```
@@ -170,6 +173,8 @@ curl -k -X POST https://localhost:3000/longjing/request \
    - All previous refund tickets are valid (EdDSA signatures)
    - Correct RLN signal generation (nullifier = Hash(a), y = k + a*x)
    - All public inputs are cryptographically bound to the proof
+
+   Two known gaps at v0.4.0, both tracked in [#134](https://github.com/w3hc/longjing/issues/134): `initialDeposit` is a private input the circuit doesn't tie to the onchain deposit, so solvency is not enforced; and `idCommitment` is a public signal, sent in the body and stored by the server, so every request can be linked to its deposit.
 
 3. **Cost Protection**: `maxCost` must cover the request's worst-case cost, priced on the payload's UTF-8 byte length plus 32 tokens of input and 4096 output tokens at the model's rates. A lower `maxCost` gets a 400 before the nullifier is used. If the upstream call fails, the nullifier is released, so the same ticket index can be retried
 
@@ -245,7 +250,7 @@ curl -k -X POST https://localhost:3000/longjing/redeem-refund \
 - Refund tickets can only be redeemed once
 - The smart contract verifies the Groth16 proof, which checks the EdDSA signature in-circuit and binds the recipient
 - If the nullifier was slashed for double-spending, redemption will fail
-- Redemption requires onchain gas fees (paid by caller)
+- The server relays the transaction and its wallet pays the gas: the enclave-derived identity key with `PROFILE=prod`, `ANVIL_PRIVATE_KEY` with `PROFILE=local`. The caller pays nothing onchain
 
 ---
 
