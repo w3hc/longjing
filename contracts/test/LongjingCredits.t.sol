@@ -242,22 +242,25 @@ contract LongjingCreditsTest is Test {
         ];
 
         uint256 slasherBalanceBefore = slasher.balance;
+        uint256 contractBalanceBefore = address(longjing).balance;
 
         // Slasher reports double-spend
         vm.prank(slasher);
         vm.expectEmit(true, true, true, true);
-        emit DoubleSpendSlashed(secretKey1, nullifier, slasher, depositAmount / 2);
+        emit DoubleSpendSlashed(secretKey1, nullifier, slasher, depositAmount);
 
         longjing.slashDoubleSpend(secretKey1, nullifier, idCommitment1, proof, publicSignals);
 
         // Verify slashing
         assertTrue(longjing.revealedSecretKeys(secretKey1));
         assertTrue(longjing.slashedNullifiers(nullifier));
-        assertEq(slasher.balance, slasherBalanceBefore + depositAmount / 2);
+        assertEq(slasher.balance, slasherBalanceBefore + depositAmount);
+        assertEq(address(longjing).balance, contractBalanceBefore - depositAmount);
 
         LongjingCredits.Deposit memory dep = longjing.getDeposit(idCommitment1);
         assertFalse(dep.active);
         assertEq(dep.rlnStake, 0);
+        assertEq(dep.policyStake, 0);
     }
 
     function test_SlashDoubleSpend_AlreadySlashed() public {

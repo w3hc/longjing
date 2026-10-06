@@ -306,7 +306,8 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
      *      2. Secret key was correctly extracted: k = (y1*x2 - y2*x1) / (x2 - x1)
      *      3. Poseidon(secretKey) = idCommitment
      *      4. All RLN mathematics are correct
-     * @dev Reward goes to the slasher who provided the proof
+     * @dev Reward goes to the slasher who provided the proof: the RLN stake and
+     *      the policy stake, which would otherwise be locked in an inactive deposit
      */
     function slashDoubleSpend(
         bytes32 _secretKey,
@@ -346,8 +347,9 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         slashedNullifiers[_nullifier] = true;
         userDeposit.active = false;
 
-        uint256 reward = userDeposit.rlnStake;
+        uint256 reward = userDeposit.rlnStake + userDeposit.policyStake;
         userDeposit.rlnStake = 0;
+        userDeposit.policyStake = 0;
 
         // Transfer reward to slasher
         (bool success,) = msg.sender.call{value: reward}("");
