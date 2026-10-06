@@ -22,7 +22,11 @@ CREATE TABLE nullifiers (
   nullifier TEXT PRIMARY KEY,
   x TEXT NOT NULL,
   y TEXT NOT NULL,
-  timestamp INTEGER NOT NULL
+  timestamp INTEGER NOT NULL,
+  rln_share_a TEXT,
+  payload_hash TEXT,
+  ticket_index TEXT,
+  id_commitment TEXT
 );
 
 CREATE INDEX idx_nullifiers_timestamp ON nullifiers(timestamp);
@@ -32,6 +36,12 @@ CREATE INDEX idx_nullifiers_timestamp ON nullifiers(timestamp);
 - `nullifier`: Unique cryptographic hash preventing reuse (PRIMARY KEY)
 - `x`, `y`: RLN signal coordinates for double-spend detection
 - `timestamp`: Unix timestamp in milliseconds for auditing
+- `rln_share_a`: RLN share, when the client sends it
+- `payload_hash`: Hash of the request payload, bound to the signal `x`
+- `ticket_index`: The request's ticket index
+- `id_commitment`: The user's identity commitment, the same value that indexes their onchain deposit
+
+`payload_hash`, `ticket_index` and `id_commitment` are written for every request. Together they link each request to its deposit and to the user's other requests, and tie it to its content. See [Privacy Design](#privacy-design).
 
 **Why we store this:**
 - **Nullifier**: Required to prevent replay attacks
@@ -69,27 +79,28 @@ CREATE INDEX idx_redeemed_timestamp ON redeemed_refunds(redeemed_at);
 
 ### What We DON'T Store
 
+> **v0.4.0:** the store keeps linkage. Every row of `nullifiers` holds the request's `id_commitment`, which is the key of the user's onchain deposit, and `redeemed_refunds` holds it too. Anyone with the database, the operator included, can map each request to its deposit and group requests by user. The goal is to stop storing `id_commitment` and to reconsider `payload_hash`, tracked in [#134](https://github.com/w3hc/longjing/issues/134).
+
 ❌ **User payloads** (questions/API requests) - Removed for privacy
-❌ **User identities** - Cannot link nullifiers to users
-❌ **Onchain addresses** - No direct link between deposits and API usage
+❌ **Responses** - Never stored
 
 ### What We DO Store
 
-✅ **Nullifiers** - Cryptographic hashes (anonymous)
+✅ **Nullifiers** - Needed to prevent replays
 ✅ **RLN signals** - Needed for double-spend detection
-✅ **Timestamps** - Basic metadata only
+✅ **Timestamps** - Basic metadata
+⚠️ **`id_commitment`** - Links every request to its deposit and to the user's other requests
+⚠️ **`payload_hash`** - Not the content, but it identifies a request whose content is known, and matches identical requests
+⚠️ **`ticket_index`** - Shows how many requests a user has made
 
 ### Privacy Guarantees
 
-The database provides strong privacy because:
+What the database protects today:
 
-1. **Zero-Knowledge**: Nullifiers are cryptographically hashed - cannot determine who created them
-2. **No Content Storage**: User requests/responses never touch the database
-3. **Unlinkability**: Cannot cryptographically link a deposit to an API request
-4. **Server Admin Limitations**: Even with full database access, server maintainers cannot:
-   - See what users asked
-   - Identify which user made which request
-   - Link onchain deposits to specific API calls (without timing analysis)
+1. **No Content Storage**: User requests and responses never touch the database
+2. **Server Admin Limitations**: Even with full database access, server maintainers cannot see what users asked, only a hash of it
+
+What it does not protect at v0.4.0: with database access, server maintainers can identify which deposit made which request, and link requests made by the same user.
 
 ### What Server Maintainers CAN See
 

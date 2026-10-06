@@ -176,10 +176,13 @@ Signature: [digital_signature]
 The artifacts of the [`circuits-v1.2` release](https://github.com/w3hc/longjing/releases/tag/circuits-v1.2) were produced as follows:
 
 - `api_request`, `api_request_local`, `withdrawal` and `refund_redemption`: phase 1 is the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) file `ppot_0080_17.ptau` (sha256 `f807e065fde53f72f4bf4d57140fab85b26daa6cc95bdfec7cce93622b3a367c`). Phase 2 is one contribution by the maintainer, with `openssl rand` entropy, checked with `snarkjs zkey verify`.
-- `double_spend_slashing` and `api_credit_proof_test`: unchanged from `circuits-v1`.
+- `double_spend_slashing` and `api_credit_proof_test`: unchanged from `circuits-v1`, which was produced by [run-trusted-setup.sh](../scripts/setup/run-trusted-setup.sh) on the maintainer's machine. That script generates its own powers of tau (2^15, two contributions with `openssl rand` entropy) and then makes one phase 2 contribution per circuit, so both phases ran on a single machine, with no public transcript. The slashing key is consistent with this: `snarkjs zkey verify` against `ppot_0080_17.ptau` rejects it (`Invalid alpha1`), so its phase 1 is not the public one.
+
+The sha256 pins in [artifacts.json](../circuits/artifacts.json) guarantee that everyone fetches the same files. They say nothing about whether the setup secrets were destroyed.
 
 **Current Status:**
 - ⚠️ **NOT secure for production**: one phase 2 participant, who could forge proofs if the entropy was kept
+- ⚠️ `double_spend_slashing` also has a single-party phase 1, so its setup is entirely in one party's hands
 - ⚠️ Automated entropy (not airgapped)
 - A public multi-party phase 2 ceremony is tracked in [#135](https://github.com/w3hc/longjing/issues/135)
 
