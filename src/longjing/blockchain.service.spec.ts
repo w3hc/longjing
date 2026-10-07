@@ -226,14 +226,28 @@ describe('BlockchainService', () => {
       await expect(startup('test', LOCAL)).resolves.toBeUndefined();
     });
 
-    it('refuses to start when the RPC is unreachable in prod', async () => {
+    it('starts unavailable and retries when the RPC is unreachable in prod', async () => {
       jest
         .spyOn(global, 'fetch')
         .mockRejectedValue(new TypeError('fetch failed'));
-
-      await expect(startup('production', PROD)).rejects.toThrow(
-        'Cannot start in production: RPC unreachable',
+      process.env.NODE_ENV = 'production';
+      const blockchain = new BlockchainService(
+        {
+          get: (key: string) => PROD[key as keyof typeof PROD],
+        } as unknown as ConfigService,
+        {} as KeyDerivationService,
+        {} as RefundSignerService,
       );
+      const warn = jest.fn();
+      (blockchain as any).logger = { log: jest.fn(), warn };
+
+      await expect(blockchain.onModuleInit()).resolves.toBeUndefined();
+
+      expect(blockchain.isAvailable()).toBe(false);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('does not answer, retrying in 30 s'),
+      );
+      await blockchain.onModuleDestroy();
     });
 
     it('never reads SERVER_TX_PRIVATE_KEY in prod', async () => {
@@ -252,7 +266,8 @@ describe('BlockchainService', () => {
       );
       (blockchain as any).logger = { log: jest.fn(), warn: jest.fn() };
 
-      await blockchain.onModuleInit().catch(() => undefined);
+      await blockchain.onModuleInit();
+      await blockchain.onModuleDestroy();
 
       expect(get).not.toHaveBeenCalledWith('SERVER_TX_PRIVATE_KEY');
       expect(get).not.toHaveBeenCalledWith('ANVIL_RPC_URL');
@@ -266,27 +281,32 @@ describe('BlockchainService', () => {
     };
     const txSigner = ethers.Wallet.createRandom();
     let warn: jest.Mock;
+    let error: jest.Mock;
     let contract: Record<string, jest.Mock>;
+    let blockchain: BlockchainService;
 
     function startup(
       nodeEnv: string,
       onchain: { key: { x: string; y: string }; address: string },
     ) {
       process.env.NODE_ENV = nodeEnv;
-      jest.spyOn(global, 'fetch').mockResolvedValue(
-        Response.json({
-          jsonrpc: '2.0',
-          id: 1,
-          result: nodeEnv === 'production' ? '0x1' : '0x7a69',
-        }),
+      jest.spyOn(global, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          Response.json({
+            jsonrpc: '2.0',
+            id: 1,
+            result: nodeEnv === 'production' ? '0x1' : '0x7a69',
+          }),
+        ),
       );
       contract = {
         C_MAX: jest.fn().mockResolvedValue(10n ** 15n),
         serverPublicKey: jest.fn().mockResolvedValue(onchain.key),
         serverAddress: jest.fn().mockResolvedValue(onchain.address),
         connect: jest.fn(() => contract),
+        removeAllListeners: jest.fn(),
       };
-      (ethers.Contract as unknown as jest.Mock).mockImplementationOnce(
+      (ethers.Contract as unknown as jest.Mock).mockImplementation(
         () => contract,
       );
       const values: Record<string, string> = {
@@ -294,7 +314,7 @@ describe('BlockchainService', () => {
         ANVIL_RPC_URL: 'http://127.0.0.1:1',
         ZK_CONTRACT_ADDRESS: '0x1234567890123456789012345678901234567890',
       };
-      const blockchain = new BlockchainService(
+      blockchain = new BlockchainService(
         { get: (key: string) => values[key] } as unknown as ConfigService,
         {
           getTxSigner: (provider: ethers.Provider) =>
@@ -305,13 +325,22 @@ describe('BlockchainService', () => {
         } as unknown as RefundSignerService,
       );
       warn = jest.fn();
-      (blockchain as any).logger = { log: jest.fn(), warn, error: jest.fn() };
+      error = jest.fn();
+      (blockchain as any).logger = { log: jest.fn(), warn, error };
       return blockchain.onModuleInit();
     }
 
-    afterEach(() => {
+    afterEach(async () => {
+      await blockchain.onModuleDestroy();
       process.env.NODE_ENV = 'test';
+      jest.useRealTimers();
       jest.restoreAllMocks();
+      (ethers.Contract as unknown as jest.Mock).mockImplementation(
+        (...args: ConstructorParameters<typeof ethers.Contract>) =>
+          new (jest.requireActual<typeof import('ethers')>(
+            'ethers',
+          ).ethers.Contract)(...args),
+      );
     });
 
     it('starts in prod when the contract holds the refund signer and the tx signer', async () => {
@@ -334,6 +363,48 @@ describe('BlockchainService', () => {
           address: txSigner.address,
         }),
       ).rejects.toThrow('is not the refund signer');
+    });
+
+    it('connects in prod on a retry once the contract answers', async () => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+      const notDeployed = startup('production', {
+        key: REFUND_KEY,
+        address: txSigner.address,
+      });
+      contract.C_MAX.mockRejectedValueOnce(new Error('could not decode'));
+
+      await expect(notDeployed).resolves.toBeUndefined();
+      expect(blockchain.isAvailable()).toBe(false);
+      expect(() => blockchain.getCMax()).toThrow();
+
+      const handler = jest.fn().mockResolvedValue(undefined);
+      await blockchain.onConnected(handler);
+      expect(handler).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(30_000);
+
+      expect(blockchain.isAvailable()).toBe(true);
+      expect(blockchain.getCMax()).toBe(10n ** 15n);
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays unavailable in prod when a retry finds the wrong refund key', async () => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+      const notDeployed = startup('production', {
+        key: { x: REFUND_KEY.y, y: REFUND_KEY.x },
+        address: txSigner.address,
+      });
+      contract.C_MAX.mockRejectedValueOnce(new Error('could not decode'));
+      await notDeployed;
+
+      await jest.advanceTimersByTimeAsync(30_000);
+
+      expect(blockchain.isAvailable()).toBe(false);
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining('is not the refund signer'),
+      );
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(contract.C_MAX).toHaveBeenCalledTimes(2);
     });
 
     it('warns in prod when serverAddress is not the tx signer', async () => {

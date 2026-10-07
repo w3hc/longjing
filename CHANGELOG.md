@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A first production boot no longer needs a deployed `LongjingCredits`: when the RPC or the contract at `ZK_CONTRACT_ADDRESS` doesn't answer, the enclave starts, serves `GET /attestation` and `GET /attestation/manifest`, and retries the contract every 30 s. Until it answers, every `/longjing` endpoint and `GET /health/ready` return 503, and exits are watched from the moment it does. `ZK_CONTRACT_ADDRESS` and the RPC stay required, and a wrong chain or refund key found at boot still refuses to start ([#159](https://github.com/w3hc/longjing/issues/159)).
 - A second request on a kept-alive connection got a 500: the request sanitizer redefined the socket's non-configurable `remoteAddress` ([#169](https://github.com/w3hc/longjing/issues/169)).
 
 ## [0.4.1] - 2026-10-06

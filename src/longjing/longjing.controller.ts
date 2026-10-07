@@ -5,6 +5,7 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { LongjingService } from './longjing.service';
@@ -15,9 +16,11 @@ import {
   CostEstimateRequestDto,
   CostEstimateResponseDto,
 } from './dto/cost-estimate.dto';
+import { ContractReadyGuard } from './contract-ready.guard';
 
 @ApiTags('App')
 @Controller('longjing')
+@UseGuards(ContractReadyGuard)
 export class LongjingController {
   constructor(
     private readonly longjingService: LongjingService,

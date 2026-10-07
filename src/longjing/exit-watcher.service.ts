@@ -22,9 +22,12 @@ export class ExitWatcherService implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     if (!this.blockchain.isAvailable()) {
-      this.logger.warn('No contract: exits are not watched');
-      return;
+      this.logger.warn('No contract: exits are watched once it answers');
     }
+    await this.blockchain.onConnected(() => this.watch());
+  }
+
+  private async watch(): Promise<void> {
     await this.blockchain.watchWithdrawals(async (exit) => {
       try {
         await this.ingest(exit);

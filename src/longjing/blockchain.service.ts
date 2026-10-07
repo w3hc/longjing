@@ -22,6 +22,11 @@ export interface WithdrawalInitiated {
 // A little more than the 3-day challenge window at 12-second blocks
 const WITHDRAWAL_LOOKBACK_BLOCKS = 25_000;
 
+const CONNECT_RETRY_MS = 30_000;
+
+/** A deployment no retry can fix: the wrong chain or the wrong refund key */
+class Misconfigured extends Error {}
+
 const toWithdrawal = (args: ethers.Result): WithdrawalInitiated => ({
   nullifier: args.nullifier as bigint,
   signalX: args.signalX as bigint,
@@ -39,6 +44,9 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
   private contract: ethers.Contract | null = null;
   private wallet: ethers.Wallet | null = null;
   private cMax: bigint | null = null;
+  private retry: NodeJS.Timeout | null = null;
+  private destroyed = false;
+  private readonly connectedHandlers: Array<() => Promise<void>> = [];
 
   constructor(
     private readonly configService: ConfigService,
@@ -65,15 +73,15 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    if (prod) {
+      await this.connectProd(rpcUrl, contractAddress, true);
+      return;
+    }
+
     let chainId: bigint;
     try {
       chainId = await fetchChainId(rpcUrl);
-    } catch (error) {
-      if (prod) {
-        throw new Error('Cannot start in production: RPC unreachable', {
-          cause: error,
-        });
-      }
+    } catch {
       this.logger.warn(
         `RPC unreachable at ${rpcUrl}. Contract interaction will be disabled.`,
       );
@@ -82,42 +90,112 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
     assertChainMatchesProfile(chainId);
 
     try {
-      this.logger.log(`Connecting to RPC: ${rpcUrl} (chain ${chainId})`);
-      this.provider = new ethers.JsonRpcProvider(rpcUrl, chainId, {
-        staticNetwork: true,
-      });
-      this.contract = new ethers.Contract(
-        contractAddress,
-        LongjingCreditsABI,
-        this.provider,
-      );
-
-      this.wallet = this.createSigner(prod, this.provider);
-      if (this.wallet) {
-        this.logger.log(`Transactions signed by ${this.wallet.address}`);
-        this.contract = this.contract.connect(this.wallet) as ethers.Contract;
-      } else {
-        this.logger.warn('No transaction signer: contract access is read-only');
-      }
-
-      // C_MAX is immutable, so one read serves the contract's lifetime
-      this.cMax = (await this.contract.C_MAX()) as bigint;
+      const contract = this.build(rpcUrl, chainId, contractAddress, false);
+      this.cMax = (await contract.C_MAX()) as bigint;
       this.logger.log(
         `Connected to LongjingCredits at ${contractAddress}, C_MAX ${this.cMax} wei`,
       );
     } catch (error) {
-      if (prod) {
-        throw new Error('Cannot start in production: blockchain unavailable', {
-          cause: error,
-        });
-      }
       this.logger.error('Failed to connect to blockchain', error);
+    }
+  }
+
+  /**
+   * Connects to LongjingCredits, and retries while the RPC or the contract
+   * doesn't answer, so a first boot can publish the keys the contract is
+   * deployed with. Until it answers, isAvailable() is false and requests are
+   * refused. A wrong chain or refund key refuses to start when found at boot;
+   * found later, requests stay refused.
+   */
+  private async connectProd(
+    rpcUrl: string,
+    address: string,
+    atBoot: boolean,
+  ): Promise<void> {
+    try {
+      const chainId = await fetchChainId(rpcUrl);
+      try {
+        assertChainMatchesProfile(chainId);
+      } catch (error) {
+        throw new Misconfigured((error as Error).message);
+      }
+      const contract = this.build(rpcUrl, chainId, address, true);
+      // C_MAX is immutable, so one read serves the contract's lifetime
+      this.cMax = (await contract.C_MAX()) as bigint;
+      await this.checkServerKeys(contract);
+    } catch (error) {
+      this.disconnect();
+      if (error instanceof Misconfigured) {
+        if (atBoot) {
+          throw error;
+        }
+        this.logger.error(`${error.message}, requests stay refused`);
+        return;
+      }
+      if (!this.destroyed) {
+        this.logger.warn(
+          `LongjingCredits at ${address} does not answer, retrying in ${CONNECT_RETRY_MS / 1000} s: ${(error as Error).message}`,
+        );
+        this.retry = setTimeout(
+          () => void this.connectProd(rpcUrl, address, false),
+          CONNECT_RETRY_MS,
+        ).unref();
+      }
       return;
     }
-
-    if (prod) {
-      await this.checkServerKeys(this.connected());
+    this.logger.log(
+      `Connected to LongjingCredits at ${address}, C_MAX ${this.cMax} wei`,
+    );
+    for (const handler of this.connectedHandlers.splice(0)) {
+      await handler().catch((error) =>
+        this.logger.error('A handler failed once connected', error),
+      );
     }
+  }
+
+  /**
+   * Runs the handler once the contract answers: now if it already does,
+   * otherwise when a production retry connects
+   */
+  async onConnected(handler: () => Promise<void>): Promise<void> {
+    if (this.isAvailable()) {
+      return handler();
+    }
+    this.connectedHandlers.push(handler);
+  }
+
+  private build(
+    rpcUrl: string,
+    chainId: bigint,
+    address: string,
+    prod: boolean,
+  ): ethers.Contract {
+    this.logger.log(`Connecting to RPC: ${rpcUrl} (chain ${chainId})`);
+    this.provider = new ethers.JsonRpcProvider(rpcUrl, chainId, {
+      staticNetwork: true,
+    });
+    this.contract = new ethers.Contract(
+      address,
+      LongjingCreditsABI,
+      this.provider,
+    );
+
+    this.wallet = this.createSigner(prod, this.provider);
+    if (this.wallet) {
+      this.logger.log(`Transactions signed by ${this.wallet.address}`);
+      this.contract = this.contract.connect(this.wallet) as ethers.Contract;
+    } else {
+      this.logger.warn('No transaction signer: contract access is read-only');
+    }
+    return this.contract;
+  }
+
+  private disconnect(): void {
+    this.provider?.destroy();
+    this.provider = null;
+    this.contract = null;
+    this.wallet = null;
+    this.cMax = null;
   }
 
   /**
@@ -135,7 +213,7 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
       BigInt(onchain.x) !== BigInt(signer.x) ||
       BigInt(onchain.y) !== BigInt(signer.y)
     ) {
-      throw new Error(
+      throw new Misconfigured(
         `Cannot start in production: LongjingCredits.serverPublicKey (${onchain.x}, ${onchain.y}) is not the refund signer (${signer.x}, ${signer.y})`,
       );
     }
@@ -148,8 +226,12 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Stops event polling, so no handler runs once the app is closing */
+  /** Stops retrying and event polling, so nothing runs once the app is closing */
   async onModuleDestroy() {
+    this.destroyed = true;
+    if (this.retry) {
+      clearTimeout(this.retry);
+    }
     await this.contract?.removeAllListeners();
     this.provider?.destroy();
   }

@@ -87,6 +87,8 @@ ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,htt
 
 `NODE_ENV` comes from the compose file as a literal. Leave out `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY`, `ANVIL_RPC_URL` and `SERVER_TX_PRIVATE_KEY`: the keys are derived inside the enclave, and `NODE_ENV=production` refuses to start with them in env. Contract transactions, slashing included, are signed by the enclave's transaction signer, so fund its address (`txSignerAddress` in `GET /attestation/manifest`) for gas and set it as the contract's `serverAddress`. Placeholder values, such as Anvil addresses or `example.com` URLs, are refused too, see [LOCAL_SETUP.md](LOCAL_SETUP.md#node_env).
 
+On a first deployment, `LongjingCredits` doesn't exist yet: its constructor needs the refund signer key from `GET /attestation/manifest`. Set `ZK_CONTRACT_ADDRESS` to the address it will be deployed at and boot the CVM: the enclave serves `/attestation` and `/attestation/manifest`, refuses every `/longjing` request with 503 and fails `GET /health/ready`, and connects within 30 s of the contract answering at that address.
+
 **Important**: Add `.env.prod` to [.gitignore](../.gitignore) to prevent committing secrets.
 
 ### Generating ML-KEM Keys
