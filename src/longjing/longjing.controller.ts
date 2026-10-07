@@ -15,12 +15,6 @@ import {
   CostEstimateRequestDto,
   CostEstimateResponseDto,
 } from './dto/cost-estimate.dto';
-import { ProofGenService } from './proof-gen.service';
-import { ComputeLimiterService } from './compute-limiter.service';
-import {
-  GenerateSlashingProofDto,
-  ProofResponseDto,
-} from './dto/proof-generation.dto';
 
 @ApiTags('App')
 @Controller('longjing')
@@ -28,8 +22,6 @@ export class LongjingController {
   constructor(
     private readonly longjingService: LongjingService,
     private readonly costEstimationService: CostEstimationService,
-    private readonly proofGenService: ProofGenService,
-    private readonly computeLimiter: ComputeLimiterService,
   ) {}
 
   @Post('request')
@@ -102,73 +94,5 @@ export class LongjingController {
     @Body() request: CostEstimateRequestDto,
   ): Promise<CostEstimateResponseDto> {
     return this.costEstimationService.estimateCost(request);
-  }
-
-  @Post('proofs/slashing')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Generate ZK proof for double-spend slashing',
-    description:
-      'Generate a Groth16 zero-knowledge proof for slashing a double-spender. ' +
-      'The proof verifies that a secret key was correctly extracted from two RLN signals.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Slashing proof generated successfully',
-    type: ProofResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid input parameters or signals do not reveal secret key',
-  })
-  @ApiResponse({
-    status: 503,
-    description: 'Too many proofs being generated, retry later',
-  })
-  async generateSlashingProof(
-    @Body() body: GenerateSlashingProofDto,
-  ): Promise<ProofResponseDto> {
-    return this.computeLimiter.proving.run(() => this.proveSlashing(body));
-  }
-
-  private async proveSlashing(
-    body: GenerateSlashingProofDto,
-  ): Promise<ProofResponseDto> {
-    const secretKey = BigInt(body.secretKey);
-    const ticketIndex = BigInt(body.ticketIndex);
-    const signal1 = {
-      x: BigInt(body.signal1.x),
-      y: BigInt(body.signal1.y),
-    };
-    const signal2 = {
-      x: BigInt(body.signal2.x),
-      y: BigInt(body.signal2.y),
-    };
-
-    const { proof, publicSignals } =
-      await this.proofGenService.generateDoubleSpendProof({
-        secretKey,
-        ticketIndex,
-        signal1,
-        signal2,
-      });
-
-    const idCommitment =
-      await this.proofGenService.generateIdCommitment(secretKey);
-    const { nullifier } = await this.proofGenService.generateRLNSignal(
-      secretKey,
-      ticketIndex,
-      signal1.x,
-    );
-
-    return {
-      proof: proof.map((p) => '0x' + BigInt(p).toString(16)),
-      publicSignals: publicSignals.map((s) => '0x' + BigInt(s).toString(16)),
-      metadata: {
-        idCommitment: '0x' + idCommitment.toString(16),
-        nullifier: '0x' + nullifier.toString(16),
-        timestamp: Date.now(),
-      },
-    };
   }
 }

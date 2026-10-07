@@ -15,7 +15,6 @@ import { ProofVerifierService } from './proof-verifier.service';
 import { EthRateOracleService } from './eth-rate-oracle.service';
 import { RefundSignerService } from './refund-signer.service';
 import { SlashingService } from './slashing.service';
-import { SlashingProofService } from './slashing-proof.service';
 import { quantizeCost, quantizeUnits } from './utils/cost-quantization.util';
 import { padResponse } from './utils/response-padding.util';
 import {
@@ -42,8 +41,6 @@ const MESSAGE_OVERHEAD_TOKENS = 32;
 export class LongjingService {
   private readonly logger = new Logger(LongjingService.name);
   private readonly anthropic: Anthropic;
-  private poseidon: any;
-  private initPromise: Promise<void> | null = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -52,7 +49,6 @@ export class LongjingService {
     private readonly ethRateOracle: EthRateOracleService,
     private readonly refundSigner: RefundSignerService,
     private readonly slashingService: SlashingService,
-    private readonly slashingProofService: SlashingProofService,
   ) {
     // Example: Initialize Claude API client
     // Replace with your own API service client initialization
@@ -63,37 +59,6 @@ export class LongjingService {
       );
     }
     this.anthropic = new Anthropic({ apiKey: apiKey || 'mock-key' });
-  }
-
-  /**
-   * Initialize Poseidon hash (lazy initialization)
-   */
-  private async initialize() {
-    if (this.poseidon) {
-      return;
-    }
-
-    if (this.initPromise) {
-      return this.initPromise;
-    }
-
-    this.initPromise = (async () => {
-      try {
-        // Use require instead of dynamic import to avoid ESM issues
-        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
-        const circomlibjs = require('circomlibjs');
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        this.poseidon = await circomlibjs.buildPoseidon();
-        this.logger.debug(
-          'Poseidon hash initialized for secret key extraction',
-        );
-      } catch (error) {
-        this.logger.error('Failed to initialize Poseidon hash', error);
-        throw error;
-      }
-    })();
-
-    return this.initPromise;
   }
 
   /**
@@ -154,81 +119,14 @@ export class LongjingService {
     });
 
     if (existingSignal) {
-      // Nullifier already used
       if (
         parseFieldElement(existingSignal.x) !== parseFieldElement(req.signal.x)
       ) {
-        // Double-spend detected! Two different signals with same nullifier
+        // Two signals at one index reveal k, and knowing k is the slashing proof
         this.logger.error(
           `Double-spend detected for nullifier ${req.nullifier}`,
         );
-
-        // Extract secret key from two signals using field arithmetic
-        const secretKey = await this.extractSecretKey(
-          existingSignal,
-          req.signal,
-        );
-
-        // Submit slashing transaction to smart contract
-        this.logger.warn(`Secret key extracted: ${secretKey.slice(0, 10)}...`);
-
-        if (this.slashingService.isEnabled()) {
-          try {
-            // Get metadata from stored signal
-            const ticketIndex =
-              existingSignal.ticketIndex || req.ticketIndex || '0';
-            const idCommitment =
-              existingSignal.idCommitment || req.idCommitment;
-
-            if (!idCommitment) {
-              throw new Error(
-                'Missing idCommitment - cannot generate slashing proof',
-              );
-            }
-
-            // Strip 0x prefix from hex strings for circuit input
-            const stripHex = (hex: string) =>
-              hex.startsWith('0x') ? hex.slice(2) : hex;
-
-            // Generate ZK proof of correct secret key extraction
-            this.logger.log('Generating slashing proof...');
-            const { proof, publicSignals } =
-              await this.slashingProofService.generateSlashingProof({
-                signal1_x: existingSignal.x,
-                signal1_y: existingSignal.y,
-                signal2_x: req.signal.x,
-                signal2_y: req.signal.y,
-                secretKey: stripHex(secretKey),
-                nullifier: stripHex(req.nullifier),
-                ticketIndex: ticketIndex,
-              });
-
-            this.logger.log('Slashing proof generated successfully');
-
-            // Submit transaction with proof
-            const txHash = await this.slashingService.slashDoubleSpend(
-              secretKey,
-              req.nullifier,
-              idCommitment,
-              existingSignal,
-              req.signal,
-              ticketIndex,
-              proof,
-              publicSignals,
-            );
-            this.logger.log(
-              `Slashing transaction submitted: ${txHash || 'disabled'}`,
-            );
-          } catch (error) {
-            this.logger.error('Failed to submit slashing transaction', error);
-            // Continue to reject the request even if slashing fails
-          }
-        } else {
-          this.logger.warn(
-            'Slashing disabled - no contract or transaction signer (see docs/LOCAL_SETUP.md)',
-          );
-        }
-
+        await this.slashRevealedKey(existingSignal, req.signal);
         throw new ForbiddenException(
           'Double-spend detected. Your secret key has been extracted and you will be slashed.',
         );
@@ -291,51 +189,34 @@ export class LongjingService {
   }
 
   /**
-   * Extract secret key from two RLN signals using field arithmetic
-   * Given: y1 = k + a*x1 and y2 = k + a*x2
-   * Solve: k = (x2*y1 - x1*y2) / (x2 - x1) mod p
+   * Recovers k from two signals that share a nullifier and slashes its note.
+   * A failed transaction is logged: the request is rejected either way.
    */
-  private async extractSecretKey(
+  private async slashRevealedKey(
     signal1: { x: string; y: string },
     signal2: { x: string; y: string },
-  ): Promise<string> {
-    await this.initialize();
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-    const F = this.poseidon.F;
-
-    // Convert hex strings to BigInt (handle both with and without 0x prefix)
-    const toBigInt = (value: string): bigint => {
-      const str = value.trim();
-      if (str.startsWith('0x') || str.startsWith('-0x')) {
-        return BigInt(str);
-      }
-      if (/^-?\d+$/.test(str)) {
-        return BigInt(str);
-      }
-      return BigInt('0x' + str);
-    };
-
-    const x1 = toBigInt(signal1.x);
-    const y1 = toBigInt(signal1.y);
-    const x2 = toBigInt(signal2.x);
-    const y2 = toBigInt(signal2.y);
-
-    // Prevent division by zero
-    if (x2 === x1) {
-      throw new Error('Invalid signals: x values are identical');
+  ): Promise<void> {
+    if (!this.slashingService.isEnabled()) {
+      this.logger.warn(
+        'Slashing disabled - no contract or transaction signer (see docs/LOCAL_SETUP.md)',
+      );
+      return;
     }
-
-    // Field arithmetic: k = (x2*y1 - x1*y2) / (x2 - x1) mod p
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    const numerator = F.sub(F.mul(F.e(x2), F.e(y1)), F.mul(F.e(x1), F.e(y2)));
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    const denominator = F.sub(F.e(x2), F.e(x1));
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    const k = F.div(numerator, denominator);
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    return '0x' + F.toObject(k).toString(16).padStart(64, '0');
+    try {
+      const secretKey = SlashingService.recoverSecretKey(
+        {
+          x: parseFieldElement(signal1.x),
+          y: parseFieldElement(signal1.y),
+        },
+        {
+          x: parseFieldElement(signal2.x),
+          y: parseFieldElement(signal2.y),
+        },
+      );
+      await this.slashingService.slash(secretKey);
+    } catch (error) {
+      this.logger.error('Failed to slash the double-spent note', error);
+    }
   }
 
   /**

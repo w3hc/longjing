@@ -1,7 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { LongjingRequestDto, MAX_PROOF_LENGTH } from './api-request.dto';
-import { GenerateSlashingProofDto } from './proof-generation.dto';
 
 describe('request DTO shape checks', () => {
   const validRequest = {
@@ -63,17 +62,5 @@ describe('request DTO shape checks', () => {
       proof: 'a'.repeat(MAX_PROOF_LENGTH + 1),
     });
     expect(errors.map((e) => e.property)).toContain('proof');
-  });
-
-  it('rejects malformed slashing inputs', async () => {
-    const errors = await validate(
-      plainToInstance(GenerateSlashingProofDto, {
-        secretKey: 'secret',
-        ticketIndex: '0x01',
-        signal1: { x: '0x1', y: '0x2' },
-        signal2: { x: '0x3', y: '0x4' },
-      }),
-    );
-    expect(errors.map((e) => e.property)).toEqual(['secretKey']);
   });
 });

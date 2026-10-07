@@ -10,7 +10,6 @@ import { BlockchainService } from './blockchain.service';
 import { ProofGenService } from './proof-gen.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 import { SlashingService } from './slashing.service';
-import { SlashingProofService } from './slashing-proof.service';
 import { SecretsService } from '../config/secrets.service';
 import { ProviderRegistryService } from '../providers';
 import { DatabaseService } from '../database/database.service';
@@ -35,7 +34,6 @@ import { AttestationModule } from '../attestation/attestation.module';
     RefundSignerService,
     BlockchainService,
     SlashingService,
-    SlashingProofService,
     SecretsService,
     ProviderRegistryService,
     DatabaseService,

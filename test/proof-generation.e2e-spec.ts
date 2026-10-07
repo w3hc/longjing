@@ -29,20 +29,6 @@ describe('Proof Generation Integration (e2e)', () => {
   const ticketIndex = BigInt(1);
   const signalX = BigInt('999888777666555444');
 
-  // Helper to suppress expected error logs from NestJS
-  const suppressErrorLogs = (callback: () => Promise<void>) => {
-    return async () => {
-      // Disable NestJS logger temporarily
-      app.useLogger(false);
-      try {
-        await callback();
-      } finally {
-        // Re-enable logger
-        app.useLogger(['error', 'warn', 'log']);
-      }
-    };
-  };
-
   // Proves on the client side, as a user would: the secret key never reaches the API
   const proveWithdrawal = async (key: bigint): Promise<ProofResponse> => {
     const { proof, publicSignals } =
@@ -193,101 +179,6 @@ describe('Proof Generation Integration (e2e)', () => {
   });
 
   describe('Double-Spend Slashing Proof Generation (e2e)', () => {
-    it('should generate slashing proof via API endpoint', async () => {
-      // Generate two different signals with the same nullifier (simulating double-spend)
-      const signalX1 = BigInt('111111111111111111');
-      const signalX2 = BigInt('222222222222222222');
-
-      const { signalY: signalY1 } = await proofGenService.generateRLNSignal(
-        secretKey,
-        ticketIndex,
-        signalX1,
-      );
-      const { signalY: signalY2 } = await proofGenService.generateRLNSignal(
-        secretKey,
-        ticketIndex,
-        signalX2,
-      );
-
-      const response = await request(app.getHttpServer())
-        .post('/longjing/proofs/slashing')
-        .send({
-          secretKey: `0x${secretKey.toString(16)}`,
-          ticketIndex: `0x${ticketIndex.toString(16)}`,
-          signal1: {
-            x: `0x${signalX1.toString(16)}`,
-            y: `0x${signalY1.toString(16)}`,
-          },
-          signal2: {
-            x: `0x${signalX2.toString(16)}`,
-            y: `0x${signalY2.toString(16)}`,
-          },
-        })
-        .expect(200);
-
-      const body = response.body as ProofResponse;
-
-      // Verify response structure
-      expect(body).toHaveProperty('proof');
-      expect(body).toHaveProperty('publicSignals');
-      expect(body).toHaveProperty('metadata');
-
-      // The caller already holds the key, so it is not echoed back
-      expect(body.metadata).not.toHaveProperty('secretKey');
-      expect(body.metadata).toHaveProperty('nullifier');
-    });
-
-    it('should reject a malformed body before proving', async () => {
-      const proveSpy = jest.spyOn(proofGenService, 'generateDoubleSpendProof');
-
-      await request(app.getHttpServer())
-        .post('/longjing/proofs/slashing')
-        .send({
-          secretKey: 'not-a-field-element',
-          ticketIndex: '0x01',
-          signal1: { x: '0x1', y: '0x2' },
-          signal2: { x: '0x3', y: '0x4' },
-        })
-        .expect(400);
-
-      expect(proveSpy).not.toHaveBeenCalled();
-      proveSpy.mockRestore();
-    });
-
-    it(
-      'should reject invalid signal pairs (same x values)',
-      suppressErrorLogs(async () => {
-        const signalX1 = BigInt('111111111111111111');
-
-        const { signalY: signalY1 } = await proofGenService.generateRLNSignal(
-          secretKey,
-          ticketIndex,
-          signalX1,
-        );
-        const { signalY: signalY2 } = await proofGenService.generateRLNSignal(
-          secretKey,
-          ticketIndex,
-          signalX1, // Same x value - should fail
-        );
-
-        await request(app.getHttpServer())
-          .post('/longjing/proofs/slashing')
-          .send({
-            secretKey: `0x${secretKey.toString(16)}`,
-            ticketIndex: `0x${ticketIndex.toString(16)}`,
-            signal1: {
-              x: `0x${signalX1.toString(16)}`,
-              y: `0x${signalY1.toString(16)}`,
-            },
-            signal2: {
-              x: `0x${signalX1.toString(16)}`, // Same x
-              y: `0x${signalY2.toString(16)}`,
-            },
-          })
-          .expect(500); // Should fail in proof generation
-      }),
-    );
-
     it('should verify secret key recovery from two signals', async () => {
       const signalX1 = BigInt('333333333333333333');
       const signalX2 = BigInt('444444444444444444');

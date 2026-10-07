@@ -15,7 +15,6 @@ import { EthRateOracleService } from './eth-rate-oracle.service';
 import { RefundSignerService } from './refund-signer.service';
 import { BlockchainService } from './blockchain.service';
 import { SlashingService } from './slashing.service';
-import { SlashingProofService } from './slashing-proof.service';
 import { LongjingRequestDto } from './dto/api-request.dto';
 import { SecretsService } from '../config/secrets.service';
 import { KeyDerivationService } from '../keys/key-derivation.service';
@@ -83,20 +82,9 @@ describe('LongjingService', () => {
           provide: SlashingService,
           useValue: {
             isEnabled: jest.fn().mockReturnValue(false),
-            slashDoubleSpend: jest.fn().mockResolvedValue(null),
+            slash: jest.fn().mockResolvedValue(null),
             getContractAddress: jest.fn().mockReturnValue(null),
             getSlasherAddress: jest.fn().mockReturnValue(null),
-          },
-        },
-        {
-          provide: SlashingProofService,
-          useValue: {
-            initialize: jest.fn().mockResolvedValue(true),
-            isAvailable: jest.fn().mockReturnValue(false),
-            generateSlashingProof: jest.fn().mockResolvedValue({
-              proof: [],
-              publicSignals: [],
-            }),
           },
         },
         {
@@ -334,7 +322,12 @@ describe('LongjingService', () => {
       );
     });
 
-    it('should correctly extract secret key using field arithmetic', async () => {
+    it('should slash the note with the key two signals reveal', async () => {
+      const slashing = service[
+        'slashingService'
+      ] as jest.Mocked<SlashingService>;
+      slashing.isEnabled.mockReturnValue(true);
+
       // Generate two signals with the same secret key using ProofGenService
       const secretKey = BigInt(12345);
       const ticketIndex = BigInt(1);
@@ -389,13 +382,7 @@ describe('LongjingService', () => {
         expect((error as Error).message).toContain('Double-spend detected');
       }
 
-      // Verify that the extracted secret key matches by using ProofGenService
-      const recoveredKey = await proofGenService.recoverSecretKey(
-        { x: signalX1, y: signal1.signalY },
-        { x: signalX2, y: signal2.signalY },
-      );
-
-      expect(recoveredKey).toEqual(secretKey);
+      expect(slashing.slash.mock.calls).toEqual([[secretKey]]);
     });
 
     it('should enforce per-nullifier rate limiting', async () => {

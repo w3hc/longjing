@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { BlockchainService } from './blockchain.service';
 import { SlashingService } from './slashing.service';
+import { BN254_SCALAR_FIELD } from './utils/payload-signal.util';
 
 describe('SlashingService', () => {
   const contractAddress = '0x1111111111111111111111111111111111111111';
@@ -29,6 +30,42 @@ describe('SlashingService', () => {
     });
   });
 
+  describe('recoverSecretKey', () => {
+    const p = BN254_SCALAR_FIELD;
+    const k = 123456789n;
+    const a = 987654321n;
+    const signal = (x: bigint) => ({ x, y: (k + a * x) % p });
+
+    it('recovers k from two signals on the same line', () => {
+      expect(
+        SlashingService.recoverSecretKey(signal(11n), signal(p - 22n)),
+      ).toBe(k);
+    });
+
+    it('refuses two signals with the same x', () => {
+      expect(() =>
+        SlashingService.recoverSecretKey(signal(11n), signal(11n)),
+      ).toThrow('Signals share x');
+    });
+  });
+
+  describe('slash', () => {
+    it('sends slash(k) and returns the transaction hash', async () => {
+      const service = create(signer);
+      const wait = jest.fn().mockResolvedValue({});
+      const slash = jest.fn().mockResolvedValue({ hash: '0xabc', wait });
+      jest.spyOn(service as any, 'slashingContract').mockReturnValue({ slash });
+
+      await expect(service.slash(42n)).resolves.toBe('0xabc');
+      expect(slash).toHaveBeenCalledWith(42n);
+      expect(wait).toHaveBeenCalled();
+    });
+
+    it('skips without a contract', async () => {
+      await expect(create(null, null).slash(42n)).resolves.toBeNull();
+    });
+  });
+
   describe('getContractAddress', () => {
     it("returns BlockchainService's contract address", () => {
       expect(create(signer).getContractAddress()).toBe(contractAddress);
@@ -46,34 +83,6 @@ describe('SlashingService', () => {
 
     it('returns null without a signer', () => {
       expect(create(null).getSlasherAddress()).toBeNull();
-    });
-  });
-
-  describe('slashDoubleSpend', () => {
-    it('returns null when slashing is disabled', async () => {
-      const result = await create(null).slashDoubleSpend(
-        '0x' + '12'.repeat(32),
-        '0x' + 'ab'.repeat(32),
-        '0x' + 'cd'.repeat(32),
-        { x: '1', y: '2' },
-        { x: '3', y: '4' },
-        '0',
-        [],
-        [],
-      );
-
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('slashPolicyStake', () => {
-    it('returns null when slashing is disabled', async () => {
-      const result = await create(null).slashPolicyStake(
-        '0x' + 'ab'.repeat(32),
-        '0x' + 'cd'.repeat(32),
-      );
-
-      expect(result).toBeNull();
     });
   });
 });
