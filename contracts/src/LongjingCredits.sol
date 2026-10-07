@@ -94,6 +94,10 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     /// @notice C_max, the most a single request can cost, in wei
     uint256 public immutable C_MAX;
 
+    /// @notice What whoever slashes a note gets, at most D. The rest goes to the operator,
+    ///         so an owner who slashes their own note recovers no spending.
+    uint256 public immutable SLASH_BOUNTY;
+
     // ============ State ============
 
     mapping(bytes32 => Note) public notes;
@@ -150,6 +154,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         uint256 exitAt
     );
     event WithdrawalFinalized(bytes32 indexed commitment, address indexed recipient, uint256 payout);
+    event Slashed(bytes32 indexed commitment, address indexed slasher, uint256 bounty);
     event MerkleRootUpdated(bytes32 indexed newRoot, uint256 leafCount);
     event NoteExpiredClaimed(bytes32 indexed commitment, uint256 amount);
     event OperatorBalanceWithdrawn(address indexed to, uint256 amount);
@@ -162,6 +167,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
 
     error InvalidDepositAmount();
     error InvalidCommitment();
+    error InvalidSecretKey();
     error NoteAlreadyExists();
     error NoteNotActive();
     error NoteNotExiting();
@@ -179,14 +185,19 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
 
     // ============ Constructor ============
 
-    constructor(address _serverAddress, bytes32 _serverPubKeyX, bytes32 _serverPubKeyY, uint256 _cMax)
-        Ownable(msg.sender)
-    {
+    constructor(
+        address _serverAddress,
+        bytes32 _serverPubKeyX,
+        bytes32 _serverPubKeyY,
+        uint256 _cMax,
+        uint256 _slashBounty
+    ) Ownable(msg.sender) {
         if (_serverAddress == address(0)) revert ZeroAddress();
         serverAddress = _serverAddress;
         serverPublicKey = EdDSAPublicKey({x: _serverPubKeyX, y: _serverPubKeyY});
         acceptedRefundKeys[_refundKeyId(_serverPubKeyX, _serverPubKeyY)] = true;
         C_MAX = _cMax;
+        SLASH_BOUNTY = _slashBounty;
         settlementVerifier = new SettlementVerifier();
 
         // zeros[i] is the root of an empty subtree of height i, matching the circuit
@@ -297,6 +308,32 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         _pay(exit.recipient, exit.payout);
 
         emit WithdrawalFinalized(_commitment, exit.recipient, exit.payout);
+    }
+
+    /**
+     * @notice Slash a note whose secret key is known
+     * @param _secretKey k, which leaks only when two RLN signals share a nullifier:
+     *        k = (y1 · x2 − y2 · x1) / (x2 − x1)
+     * @dev Knowing k is the proof, so anyone can call it, also while paused and
+     *      during an exit's challenge window. The caller gets the bounty and the
+     *      operator the rest of D.
+     */
+    function slash(uint256 _secretKey) external nonReentrant {
+        if (_secretKey >= FIELD_MODULUS) revert InvalidSecretKey();
+        bytes32 commitment = bytes32(PoseidonHasher.hash(_secretKey));
+        Note storage note = notes[commitment];
+        if (note.status == Status.Active) {
+            _removeLeaf(note.leafIndex);
+        } else if (note.status != Status.Exiting) {
+            revert NoteNotActive();
+        }
+
+        uint256 bounty = note.amount < SLASH_BOUNTY ? note.amount : SLASH_BOUNTY;
+        note.status = Status.Slashed;
+        operatorBalance += note.amount - bounty;
+        _pay(msg.sender, bounty);
+
+        emit Slashed(commitment, msg.sender, bounty);
     }
 
     /**

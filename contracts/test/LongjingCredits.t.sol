@@ -20,6 +20,7 @@ contract LongjingCreditsTest is Test {
 
     uint256 public constant C_MAX = 0.001 ether;
     uint256 public constant DEPOSIT = 0.01 ether;
+    uint256 public constant SLASH_BOUNTY = 0.0001 ether;
     uint256 internal constant FIELD_MODULUS =
         21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
@@ -36,7 +37,9 @@ contract LongjingCreditsTest is Test {
         assertEq(DEPOSIT, vm.parseJsonUint(fixtures, ".deposit"));
         address at = vm.parseJsonAddress(fixtures, ".contract");
         deployCodeTo(
-            "LongjingCredits.sol:LongjingCredits", abi.encode(server, _refundKey().x, _refundKey().y, C_MAX), at
+            "LongjingCredits.sol:LongjingCredits",
+            abi.encode(server, _refundKey().x, _refundKey().y, C_MAX, SLASH_BOUNTY),
+            at
         );
         longjing = LongjingCredits(at);
 
@@ -265,6 +268,108 @@ contract LongjingCreditsTest is Test {
         assertEq(longjing.withdrawalSignalX(_recipient()), _exit(".honest").signalX);
     }
 
+    // ============ Slashing ============
+
+    /// The note used index 1, then exits from the accumulator before it, claiming n = 1.
+    /// Its exit signal shares the nullifier of the request at index 1, which reveals k.
+    function test_Slash_AnUnderstatedExitDuringTheWindow() public {
+        Exit memory e = _exit(".understated");
+        _deposit(e.commitment, DEPOSIT);
+        _initiate(e);
+
+        uint256 k = _recoverKey(
+            e.signalX,
+            e.signalY,
+            vm.parseJsonUint(fixtures, ".understated.requestSignalX"),
+            vm.parseJsonUint(fixtures, ".understated.requestSignalY")
+        );
+        assertEq(k, vm.parseJsonUint(fixtures, ".understated.secretKey"));
+
+        vm.expectEmit(true, true, false, true);
+        emit LongjingCredits.Slashed(e.commitment, user2, SLASH_BOUNTY);
+        vm.prank(user2);
+        longjing.slash(k);
+
+        assertEq(user2.balance, 10 ether + SLASH_BOUNTY);
+        assertEq(longjing.operatorBalance(), DEPOSIT - SLASH_BOUNTY);
+        assertEq(uint256(longjing.getNote(e.commitment).status), uint256(LongjingCredits.Status.Slashed));
+
+        vm.warp(block.timestamp + longjing.CHALLENGE_WINDOW());
+        vm.expectRevert(LongjingCredits.NoteNotExiting.selector);
+        longjing.finalizeWithdrawal(e.commitment);
+        assertEq(_recipient().balance, 0);
+    }
+
+    /// Self-slashing pays the owner only the bounty, far less than an honest exit
+    function test_Slash_ByTheOwnerPaysOnlyTheBounty() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        uint256 before = user1.balance;
+
+        vm.prank(user1);
+        longjing.slash(vm.parseJsonUint(fixtures, ".honest.secretKey"));
+
+        assertEq(user1.balance - before, SLASH_BOUNTY);
+        assertLt(SLASH_BOUNTY, e.payout);
+        assertEq(longjing.operatorBalance(), DEPOSIT - SLASH_BOUNTY);
+        assertEq(longjing.leaves(0), bytes32(0));
+    }
+
+    function test_Slash_PaysAtMostD() public {
+        uint256 k = 42;
+        bytes32 c = bytes32(PoseidonHasher.hash(k));
+        LongjingCredits small = new LongjingCredits(server, _refundKey().x, _refundKey().y, C_MAX, 1 ether);
+        vm.prank(user1);
+        small.deposit{value: C_MAX}(c);
+
+        vm.prank(user2);
+        small.slash(k);
+        assertEq(user2.balance, 10 ether + C_MAX);
+        assertEq(small.operatorBalance(), 0);
+        assertEq(address(small).balance, 0);
+    }
+
+    function test_Slash_StaysOpenWhilePaused() public {
+        _deposit(commitment1, DEPOSIT);
+        longjing.pause();
+        vm.prank(user2);
+        longjing.slash(uint256(keccak256("secret1")) % FIELD_MODULUS);
+        assertEq(uint256(longjing.getNote(commitment1).status), uint256(LongjingCredits.Status.Slashed));
+    }
+
+    function test_Slash_RevertsTwiceAndOnUnknownKeys() public {
+        uint256 k = uint256(keccak256("secret1")) % FIELD_MODULUS;
+        _deposit(commitment1, DEPOSIT);
+        vm.prank(user2);
+        longjing.slash(k);
+        vm.expectRevert(LongjingCredits.NoteNotActive.selector);
+        longjing.slash(k);
+        vm.expectRevert(LongjingCredits.NoteNotActive.selector);
+        longjing.slash(k + 1);
+        vm.expectRevert(LongjingCredits.InvalidSecretKey.selector);
+        longjing.slash(FIELD_MODULUS);
+    }
+
+    /// Recipient, slasher and operator never get more than D between them
+    function test_Settlement_EachNotePaysOutAtMostD() public {
+        Exit memory honest = _exit(".honest");
+        Exit memory understated = _exit(".understated");
+        _deposit(honest.commitment, DEPOSIT);
+        _deposit(understated.commitment, DEPOSIT);
+        _initiate(honest);
+        _initiate(understated);
+        vm.prank(user2);
+        longjing.slash(vm.parseJsonUint(fixtures, ".understated.secretKey"));
+
+        vm.warp(block.timestamp + longjing.CHALLENGE_WINDOW());
+        longjing.finalizeWithdrawal(honest.commitment);
+        vm.prank(server);
+        longjing.withdrawOperatorBalance();
+
+        assertEq(_recipient().balance + SLASH_BOUNTY + server.balance, 2 * DEPOSIT);
+        assertEq(address(longjing).balance, 0);
+    }
+
     // ============ Expiry ============
 
     function test_NoteExpiry_IsDepositPlusTtl() public {
@@ -442,6 +547,19 @@ contract LongjingCreditsTest is Test {
         longjing.initiateWithdrawal(
             _e.commitment, _recipient(), _refundKey(), _e.proof, _e.nullifier, _e.signalY, _e.payout
         );
+    }
+
+    /// k = (y1 · x2 − y2 · x1) / (x2 − x1) mod p
+    function _recoverKey(uint256 _x1, uint256 _y1, uint256 _x2, uint256 _y2) internal pure returns (uint256) {
+        uint256 p = FIELD_MODULUS;
+        uint256 numerator = addmod(mulmod(_y1, _x2, p), p - mulmod(_y2, _x1, p), p);
+        uint256 denominator = addmod(_x2, p - _x1, p);
+        uint256 inverse = 1;
+        for (uint256 e = p - 2; e > 0; e >>= 1) {
+            if (e & 1 == 1) inverse = mulmod(inverse, denominator, p);
+            denominator = mulmod(denominator, denominator, p);
+        }
+        return mulmod(numerator, inverse, p);
     }
 
     function _recipient() internal view returns (address) {

@@ -28,17 +28,21 @@ contract DeployLongjingCredits is Script {
 
     // C_max: the most one request may cost, and the smallest deposit
     uint256 constant C_MAX = 0.001 ether;
+    // What whoever slashes a note gets, the rest goes to the operator
+    uint256 constant SLASH_BOUNTY = 0.0001 ether;
 
     function run() external {
         Config memory c = config();
 
         vm.startBroadcast(c.deployerPrivateKey);
-        LongjingCredits longjing = new LongjingCredits(c.serverAddress, c.serverPubKeyX, c.serverPubKeyY, C_MAX);
+        LongjingCredits longjing =
+            new LongjingCredits(c.serverAddress, c.serverPubKeyX, c.serverPubKeyY, C_MAX, SLASH_BOUNTY);
         vm.stopBroadcast();
 
         console.log("LongjingCredits deployed at:", address(longjing));
         console.log("Server address:", c.serverAddress);
         console.log("C_MAX:", C_MAX);
+        console.log("SLASH_BOUNTY:", SLASH_BOUNTY);
         console.log("Settlement verifier:", address(longjing.settlementVerifier()));
     }
 
