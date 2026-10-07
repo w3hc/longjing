@@ -16,6 +16,9 @@
  * 5. POST /longjing/request, then replay it
  * 6. She proves the refund (pnpm prove refund), redeems it onchain, then
  *    tries again
+ * 7. She sends a second request, and the demo compares what the two
+ *    requests publish with each other and with her deposit
+ * 8. It checks that no request body it sent contains her secret key
  *
  * The server answers with mock responses: ANTHROPIC_API_KEY is ignored.
  */
@@ -43,11 +46,15 @@ const ALICE_KEY =
 const DEPOSIT = ethers.parseEther('0.2');
 const MAX_COST = ethers.parseEther('0.05');
 const PAYLOAD = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
+const PAYLOAD_2 = 'Who wrote 出師表?';
+// The same for every request at a given time, so they identify no one
+const SHARED_BY_DESIGN = new Set(['merkleRoot', 'maxCost']);
 const ISSUES = 'https://github.com/w3hc/longjing/issues';
 
 const ABI = [
   'function deposit(bytes32 _idCommitment) payable',
   'function merkleRoot() view returns (bytes32)',
+  'function getAllIdentityCommitments() view returns (bytes32[])',
   'function serverPublicKey() view returns (bytes32 x, bytes32 y)',
   'function getDeposit(bytes32 _idCommitment) view returns (tuple(bytes32 idCommitment, uint256 rlnStake, uint256 policyStake, uint256 timestamp, bool active))',
   'function redeemRefund(bytes32 _idCommitment, bytes32 _nullifier, uint256 _refundValue, address _recipient, uint256[8] _proof, uint256[8] _publicSignals)',
@@ -93,13 +100,11 @@ const goals = {
     "A request can't be linked to the deposit",
     'not met',
     [134],
-    'every request publishes idCommitment',
   ),
   requestToRequest: goal(
     "Two requests can't be linked to each other",
     'not met',
     [134],
-    'every request publishes idCommitment',
   ),
   solvency: goal(
     'Solvency is enforced: spending is deducted, D is bound to the deposit',
@@ -110,7 +115,10 @@ const goals = {
     'A double-spend reveals k and anyone can slash the RLN stake',
     'not checked yet',
   ),
-  secretKey: goal('The secret key never reaches the server', 'not checked yet'),
+  secretKey: goal(
+    'The client sends nothing that contains the secret key',
+    'verified',
+  ),
   attestation: goal(
     'The client verifies the attestation before sending anything',
     'not checked yet',
@@ -197,6 +205,27 @@ function report(): boolean {
     }
   }
   return regressed;
+}
+
+/** A request's public fields, normalized, without the proof and the payload */
+function publicFields(body: Record<string, unknown>): Map<string, string> {
+  const fields = new Map<string, string>();
+  const walk = (value: unknown, path: string) => {
+    if (value && typeof value === 'object') {
+      for (const [key, child] of Object.entries(value)) {
+        walk(child, path ? `${path}.${key}` : key);
+      }
+    } else if (path !== 'proof' && path !== 'payload') {
+      const text = String(value);
+      try {
+        fields.set(path, BigInt(text).toString());
+      } catch {
+        fields.set(path, text);
+      }
+    }
+  };
+  walk(body, '');
+  return fields;
 }
 
 const workDir = mkdtempSync(join(tmpdir(), 'longjing-demo-'));
@@ -325,6 +354,16 @@ async function main() {
   const app = await startServer(address);
   const url = await app.getUrl();
   console.log(`  Listening on ${url}`);
+  const sent: string[] = [];
+  const post = (request: object) => {
+    const json = JSON.stringify(request);
+    sent.push(json);
+    return fetch(`${url}/longjing/request`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: json,
+    });
+  };
 
   try {
     const secretKey =
@@ -377,13 +416,8 @@ async function main() {
     let response:
       { actualCost: string; refundTicket: RefundTicket } | undefined;
     await verify(goals.nullifier, async () => {
-      const request = JSON.stringify(required(body, 'request proof'));
-      const send = () =>
-        fetch(`${url}/longjing/request`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: request,
-        });
+      const request = required(body, 'request proof');
+      const send = () => post(request);
       const first = await send();
       const json = (await first.json()) as typeof response;
       check(
@@ -468,6 +502,66 @@ async function main() {
         'a second redemption reverts',
         revert === 'RefundAlreadyRedeemed',
         revert || 'it succeeded',
+      );
+    });
+
+    step('7. Alice sends a second request and compares what they publish');
+    await verify(goals.requestToRequest, async () => {
+      const first = publicFields(required(body, 'request proof'));
+      const second = await prove('request', {
+        secretKey,
+        ticketIndex: '0x01',
+        payload: PAYLOAD_2,
+        maxCost: MAX_COST.toString(),
+        rpcUrl: RPC_URL,
+        contract: address,
+        serverPublicKey: required(serverPublicKey, 'server public key'),
+        circuit: 'api_request_local',
+      });
+      const res = await post(second);
+      if (res.status !== 200) {
+        throw new Error(
+          `the second request failed: HTTP ${res.status} ${await res.text()}`,
+        );
+      }
+      const fields = publicFields(second);
+      const shared = [...first]
+        .filter(([k, v]) => !SHARED_BY_DESIGN.has(k) && fields.get(k) === v)
+        .map(([k]) => k);
+      check(
+        goals.requestToRequest,
+        'the two requests share no identifier',
+        shared.length === 0,
+        `both publish the same ${shared.join(', ')}`,
+      );
+    });
+    await verify(goals.requestToDeposit, async () => {
+      const commitments = (
+        (await contract.getAllIdentityCommitments()) as string[]
+      ).map((c) => BigInt(c).toString());
+      const linked = [...publicFields(required(body, 'request proof'))]
+        .filter(([, v]) => commitments.includes(v) || v === DEPOSIT.toString())
+        .map(([k]) => k);
+      check(
+        goals.requestToDeposit,
+        'no public field of the request matches the deposit',
+        linked.length === 0,
+        `${linked.join(', ')} match Alice's deposit`,
+      );
+    });
+
+    step('8. Check what the client sent the server');
+    await verify(goals.secretKey, async () => {
+      const key = BigInt(secretKey);
+      const forms = [key.toString(), key.toString(16)];
+      const leaked = sent.filter((json) =>
+        forms.some((form) => json.toLowerCase().includes(form)),
+      );
+      check(
+        goals.secretKey,
+        `none of the ${sent.length} request bodies contains the secret key`,
+        sent.length > 0 && leaked.length === 0,
+        `${leaked.length} do`,
       );
     });
   } finally {
