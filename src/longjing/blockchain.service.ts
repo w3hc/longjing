@@ -6,6 +6,22 @@ import { isProd } from '../config/profile';
 import { KeyDerivationService } from '../keys/key-derivation.service';
 import { assertChainMatchesProfile, fetchChainId, selectRpcUrl } from './chain';
 
+/** An exit's RLN signal at its claimed index */
+export interface WithdrawalInitiated {
+  nullifier: bigint;
+  signalX: bigint;
+  signalY: bigint;
+}
+
+// A little more than the 3-day challenge window at 12-second blocks
+const WITHDRAWAL_LOOKBACK_BLOCKS = 25_000;
+
+const toWithdrawal = (args: ethers.Result): WithdrawalInitiated => ({
+  nullifier: args.nullifier as bigint,
+  signalX: args.signalX as bigint,
+  signalY: args.signalY as bigint,
+});
+
 /**
  * Reads LongjingCredits for the request path (recent roots, C_MAX, the refund
  * key) and sends the server's transactions
@@ -159,6 +175,31 @@ export class BlockchainService implements OnModuleInit {
       leafIndex: bigint;
       status: bigint;
     };
+  }
+
+  /**
+   * Calls the handler with every exit still within its challenge window, then
+   * with each new one, so a claim that understates usage can be challenged
+   */
+  async watchWithdrawals(
+    handler: (exit: WithdrawalInitiated) => Promise<void>,
+  ): Promise<void> {
+    const contract = this.connected();
+    const latest = await this.provider!.getBlockNumber();
+    const past = await contract.queryFilter(
+      contract.filters.WithdrawalInitiated(),
+      Math.max(0, latest - WITHDRAWAL_LOOKBACK_BLOCKS),
+    );
+    for (const event of past) {
+      await handler(toWithdrawal((event as ethers.EventLog).args));
+    }
+    await contract.on(
+      'WithdrawalInitiated',
+      (...args: unknown[]) =>
+        void handler(
+          toWithdrawal((args.at(-1) as ethers.ContractEventPayload).args),
+        ),
+    );
   }
 
   async getServerAddress(): Promise<string> {

@@ -61,6 +61,28 @@ describe('SlashingService', () => {
       expect(wait).toHaveBeenCalled();
     });
 
+    it('slashes the key two signals reveal', async () => {
+      const service = create(signer);
+      const slash = jest.spyOn(service, 'slash').mockResolvedValue('0xabc');
+      const k = 123456789n;
+      const a = 987654321n;
+      const p = BN254_SCALAR_FIELD;
+      const signal = (x: bigint) => ({
+        x: x.toString(),
+        y: ((k + a * x) % p).toString(),
+      });
+
+      await service.slashRevealed(signal(11n), signal(22n));
+      expect(slash.mock.calls).toEqual([[k]]);
+    });
+
+    it('does not slash when disabled', async () => {
+      const service = create(null);
+      const slash = jest.spyOn(service, 'slash');
+      await service.slashRevealed({ x: '1', y: '2' }, { x: '3', y: '4' });
+      expect(slash).not.toHaveBeenCalled();
+    });
+
     it('skips without a contract', async () => {
       await expect(create(null, null).slash(42n)).resolves.toBeNull();
     });

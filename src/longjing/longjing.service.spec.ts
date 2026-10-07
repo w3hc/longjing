@@ -32,7 +32,6 @@ describe('LongjingService', () => {
   let nullifierStore: NullifierStoreService;
   let proofVerifier: ProofVerifierService;
   let ethRateOracle: EthRateOracleService;
-  let proofGenService: ProofGenService;
 
   // Suppress expected circomlibjs teardown errors
   const originalConsoleError = console.error;
@@ -89,6 +88,7 @@ describe('LongjingService', () => {
           useValue: {
             isEnabled: jest.fn().mockReturnValue(false),
             slash: jest.fn().mockResolvedValue(null),
+            slashRevealed: jest.fn().mockResolvedValue(undefined),
             getContractAddress: jest.fn().mockReturnValue(null),
             getSlasherAddress: jest.fn().mockReturnValue(null),
           },
@@ -118,7 +118,6 @@ describe('LongjingService', () => {
     nullifierStore = module.get<NullifierStoreService>(NullifierStoreService);
     proofVerifier = module.get<ProofVerifierService>(ProofVerifierService);
     ethRateOracle = module.get<EthRateOracleService>(EthRateOracleService);
-    proofGenService = module.get<ProofGenService>(ProofGenService);
     refundSigner = module.get<RefundSignerService>(RefundSignerService);
     blockchain = module.get(BlockchainService);
 
@@ -204,7 +203,9 @@ describe('LongjingService', () => {
 
       await service.handleRequest(validRequest);
 
-      expect(nullifierStore.get(validRequest.nullifier)).toEqual({
+      expect(
+        nullifierStore.get(BigInt(validRequest.nullifier).toString()),
+      ).toEqual({
         x: validRequest.signal.x,
         y: BigInt(validRequest.signal.y).toString(),
       });
@@ -218,7 +219,9 @@ describe('LongjingService', () => {
         'exceeds C_MAX',
       );
       expect(verify).not.toHaveBeenCalled();
-      expect(nullifierStore.exists(validRequest.nullifier)).toBe(false);
+      expect(
+        nullifierStore.exists(BigInt(validRequest.nullifier).toString()),
+      ).toBe(false);
     });
 
     it('prices the worst case on payload bytes and max output tokens', async () => {
@@ -265,7 +268,9 @@ describe('LongjingService', () => {
       expect([body.accumulator.x, body.accumulator.y]).toEqual(
         applyRefund(published, C_MAX).map(String),
       );
-      expect(nullifierStore.exists(validRequest.nullifier)).toBe(true);
+      expect(
+        nullifierStore.exists(BigInt(validRequest.nullifier).toString()),
+      ).toBe(true);
 
       costs(10n ** 14n);
       await expect(service.handleRequest(validRequest)).rejects.toBe(failure);
@@ -351,36 +356,43 @@ describe('LongjingService', () => {
       );
     });
 
-    it('slashes the note with the key two signals at one index reveal', async () => {
+    it('slashes the note behind two signals at one index', async () => {
       const slashing = service[
         'slashingService'
       ] as jest.Mocked<SlashingService>;
-      slashing.isEnabled.mockReturnValue(true);
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
 
-      const secretKey = 12345n;
-      const signalFor = async (p: string) => {
-        const x = await payloadSignalX(p, NONCE);
-        const { signalY } = await proofGenService.generateRLNSignal(
-          secretKey,
-          1n,
-          x,
-        );
-        return {
-          ...validRequest,
-          payload: p,
-          signal: { x: x.toString(), y: signalY.toString() },
-        };
-      };
+      const signalFor = async (p: string, y: string) => ({
+        ...validRequest,
+        payload: p,
+        signal: { x: (await payloadSignalX(p, NONCE)).toString(), y },
+      });
+      const first = await signalFor('first request', '11');
+      const second = await signalFor('second request', '22');
 
       costs(10n ** 14n);
-      await service.handleRequest(await signalFor('first request'));
+      await service.handleRequest(first);
       costs(10n ** 14n);
-      await expect(
-        service.handleRequest(await signalFor('second request')),
-      ).rejects.toThrow('Double-spend detected');
+      await expect(service.handleRequest(second)).rejects.toThrow(
+        'Double-spend detected',
+      );
 
-      expect(slashing.slash.mock.calls).toEqual([[secretKey]]);
+      expect(slashing.slashRevealed.mock.calls).toEqual([
+        [first.signal, second.signal],
+      ]);
+    });
+
+    it('treats a nullifier in another encoding as the same nullifier', async () => {
+      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+      costs(10n ** 14n);
+      const first = await service.handleRequest(validRequest);
+
+      costs(10n ** 14n);
+      const retry = await service.handleRequest({
+        ...validRequest,
+        nullifier: BigInt(validRequest.nullifier).toString(),
+      });
+      expect(retry).toBe(first);
     });
 
     it('enforces per-nullifier rate limiting', async () => {
@@ -397,7 +409,11 @@ describe('LongjingService', () => {
       await expect(service.handleRequest(rapidRequest)).rejects.toThrow(
         'Rate limit exceeded for this nullifier',
       );
-      expect(nullifierStore.getRemainingAttempts('0x123456789abc')).toBe(0);
+      expect(
+        nullifierStore.getRemainingAttempts(
+          BigInt('0x123456789abc').toString(),
+        ),
+      ).toBe(0);
     });
   });
 

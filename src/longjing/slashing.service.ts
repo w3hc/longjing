@@ -63,6 +63,31 @@ export class SlashingService {
   }
 
   /**
+   * Slash the note behind two signals that share a nullifier. A failure is
+   * logged, not thrown: the caller rejects the request or exit either way.
+   */
+  async slashRevealed(
+    signal1: { x: string; y: string },
+    signal2: { x: string; y: string },
+  ): Promise<void> {
+    if (!this.isEnabled()) {
+      this.logger.warn(
+        'Slashing disabled - no contract or transaction signer (see docs/LOCAL_SETUP.md)',
+      );
+      return;
+    }
+    try {
+      const secretKey = SlashingService.recoverSecretKey(
+        { x: BigInt(signal1.x), y: BigInt(signal1.y) },
+        { x: BigInt(signal2.x), y: BigInt(signal2.y) },
+      );
+      await this.slash(secretKey);
+    } catch (error) {
+      this.logger.error('Failed to slash the double-spent note', error);
+    }
+  }
+
+  /**
    * Slash the note whose secret key is k
    * @returns Transaction hash, or null when slashing is not configured
    */

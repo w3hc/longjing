@@ -81,8 +81,11 @@ export class LongjingService {
       throw new BadRequestException(`Unsupported model: ${model}`);
     }
 
+    // Stored in canonical form, as the exit watcher stores exit nullifiers
+    const nullifier = parseFieldElement(req.nullifier).toString();
+
     // 1. Check per-nullifier rate limit (before expensive operations)
-    if (!this.nullifierStore.checkRateLimit(req.nullifier)) {
+    if (!this.nullifierStore.checkRateLimit(nullifier)) {
       throw new ForbiddenException(
         'Rate limit exceeded for this nullifier. Maximum 3 requests per minute.',
       );
@@ -123,10 +126,7 @@ export class LongjingService {
       x: parseFieldElement(req.signal.x).toString(),
       y: parseFieldElement(req.signal.y).toString(),
     };
-    const existingSignal = this.nullifierStore.checkAndSet(
-      req.nullifier,
-      signal,
-    );
+    const existingSignal = this.nullifierStore.checkAndSet(nullifier, signal);
 
     if (existingSignal) {
       if (existingSignal.x !== signal.x) {
@@ -134,7 +134,7 @@ export class LongjingService {
         this.logger.error(
           `Double-spend detected for nullifier ${req.nullifier}`,
         );
-        await this.slashRevealedKey(existingSignal, signal);
+        await this.slashingService.slashRevealed(existingSignal, signal);
         throw new ForbiddenException(
           'Double-spend detected. Your secret key has been extracted and you will be slashed.',
         );
@@ -143,7 +143,7 @@ export class LongjingService {
       // A retry of a request whose response was lost gets it back, once paid
       const cached = this.nullifierStore.recallResponse<
         LongjingResponseDto | BadGatewayException
-      >(req.nullifier, signal);
+      >(nullifier, signal);
       if (cached instanceof BadGatewayException) throw cached;
       if (cached) return cached;
       throw new ForbiddenException('Nullifier already used');
@@ -166,7 +166,7 @@ export class LongjingService {
         refund: cMax.toString(),
         accumulator: await this.nextAccumulator(publishedAccumulator, cMax),
       });
-      this.nullifierStore.rememberResponse(req.nullifier, signal, failure);
+      this.nullifierStore.rememberResponse(nullifier, signal, failure);
       throw failure;
     }
 
@@ -198,7 +198,7 @@ export class LongjingService {
       accumulator: await this.nextAccumulator(publishedAccumulator, refund),
       usage: sanitizedUsage,
     };
-    this.nullifierStore.rememberResponse(req.nullifier, signal, result);
+    this.nullifierStore.rememberResponse(nullifier, signal, result);
     return result;
   }
 
@@ -224,37 +224,6 @@ export class LongjingService {
       throw new ServiceUnavailableException(
         'Cannot read C_MAX from the contract',
       );
-    }
-  }
-
-  /**
-   * Recovers k from two signals that share a nullifier and slashes its note.
-   * A failed transaction is logged: the request is rejected either way.
-   */
-  private async slashRevealedKey(
-    signal1: { x: string; y: string },
-    signal2: { x: string; y: string },
-  ): Promise<void> {
-    if (!this.slashingService.isEnabled()) {
-      this.logger.warn(
-        'Slashing disabled - no contract or transaction signer (see docs/LOCAL_SETUP.md)',
-      );
-      return;
-    }
-    try {
-      const secretKey = SlashingService.recoverSecretKey(
-        {
-          x: parseFieldElement(signal1.x),
-          y: parseFieldElement(signal1.y),
-        },
-        {
-          x: parseFieldElement(signal2.x),
-          y: parseFieldElement(signal2.y),
-        },
-      );
-      await this.slashingService.slash(secretKey);
-    } catch (error) {
-      this.logger.error('Failed to slash the double-spent note', error);
     }
   }
 
