@@ -123,8 +123,7 @@ Key endpoints:
 - `GET /` - Swagger UI documentation
 - `GET /health` - Health check
 - `POST /longjing/request` - Submit anonymous Claude API request
-- `POST /longjing/redeem-refund` - Redeem refund ticket
-- `GET /longjing/server-pubkey` - Get server's EdDSA public key
+- `GET /longjing/server-pubkey` - Get the refund key the server signs accumulators with
 
 See [API_REFERENCE.md](./API_REFERENCE.md) for complete endpoint documentation.
 
@@ -213,7 +212,7 @@ longjing/
 - Anvil only: reads `ANVIL_RPC_URL`, and refuses to start if its chain id is not 31337. Without an RPC, or with Anvil down, contract interaction is disabled.
 - Signs contract transactions with `SERVER_TX_PRIVATE_KEY` (Anvil account #0 in `.env.template`).
 - Without the dstack socket, falls back to `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY` or the deterministic dev refund-signer key. Run the dstack simulator to derive keys instead, see [KEY_DERIVATION.md](./KEY_DERIVATION.md#development).
-- Mock TEE platform when no real one is detected, self-signed TLS from `./secrets`, CORS open to `*`, 100 requests per minute, the `api_request_local` circuit by default.
+- Mock TEE platform when no real one is detected, self-signed TLS from `./secrets`, CORS open to `*`, 100 requests per minute.
 
 Deploy the contract to Anvil with the same `NODE_ENV`:
 
@@ -228,7 +227,7 @@ cd contracts && NODE_ENV=development forge script script/DeployLongjingCredits.s
 - Requires `ETHEREUM_RPC_URLS` and `ZK_CONTRACT_ADDRESS`, refuses to start if the RPC is unreachable or on chain 31337, and never reads `ANVIL_RPC_URL`.
 - Every key is derived in the enclave, see [KEY_DERIVATION.md](./KEY_DERIVATION.md#production-policy). Contract transactions are signed by the derived transaction signer, so its address (`txSignerAddress` in `GET /attestation/manifest`) needs ETH for gas and must be the contract's `serverAddress`.
 - Refuses `ANVIL_RPC_URL`, `SERVER_TX_PRIVATE_KEY`, `DSTACK_SIMULATOR_ENDPOINT` and any placeholder: an Anvil key or address, Anvil's first deployment address `0x5FbDB…0aa3`, or an `example.com` URL.
-- dstack attestation only, TLS terminated in the enclave, sanitized logging, CORS disabled, 10 requests per minute, the `api_request` circuit only.
+- dstack attestation only, TLS terminated in the enclave, sanitized logging, CORS disabled, 10 requests per minute, and no start without the `request` verification key.
 
 `docker-compose.yml` sets `NODE_ENV=production` as a literal, so the attested compose hash commits to it.
 

@@ -14,57 +14,58 @@ Four actors take part:
 - **Alice**, an honest user
 - **The operator**, who runs the gateway and sees every request and its own database
 - **An observer**, who sees only the chain
-- **An attacker**, who holds a deposit and cheats
+- **An attacker**, who holds deposits and cheats
 
 The steps:
 
 1. Deploy `LongjingCredits` with `NODE_ENV=development`
 2. Start the server pointed at it
-3. Alice deposits 0.2 ETH and sends a request (`pnpm prove request`)
-4. The attacker replays Alice's request
-5. Alice proves her refund (`pnpm prove refund`). The attacker tries to redeem it to their own address, both as is and with the proof's recipient signal rewritten. Then Alice redeems it to a fresh address and tries again
-6. Alice sends a second request
-7. The operator tries to link Alice's two requests to each other and to her deposit, from the request bodies and, on Anvil, from its own nullifier database
-8. The observer tries to link Alice's refund redemption to her deposit from the onchain events, and checks that the contract still holds every active stake
-9. The attacker deposits and reuses a ticket index with a different payload. The operator recovers the attacker's secret key from the two signals (`pnpm prove slashing`) and calls `slashDoubleSpend` from a wallet that is not `serverAddress`
-10. Alice checks that no request body contains a secret key
+3. Alice deposits 0.01 ETH and sends a request, proved on her machine with the client `pnpm prove` runs
+4. Alice retries the request and gets the same accumulator back, then sends a second request from the signed accumulator
+5. The operator tries to link Alice's two requests to each other and to her deposit, from the request bodies and, on Anvil, from its own nullifier database. The observer checks that the contract logged nothing while they were served
+6. The attacker deposits and sends two requests at the same index. The server refuses the second; a wallet that is not `serverAddress` recovers the key from the two signals and calls `slash(k)`
+7. The attacker deposits again, makes two requests, and exits claiming one. The operator finds the exit's nullifier in its database and slashes the note within the window
+8. Alice exits: the attacker can't redirect her proof to another recipient. With the server stopped, she initiates the withdrawal with her own proof, and it pays `D + R − 2 · C_max` after the window
+9. Alice's closed note can make no request, and no request body contained a secret key
 
-At v0.4.1 the table reads:
+The table reads:
 
 | Goal | Status | Issue |
 |---|---|---|
-| A deposit is recorded onchain | verified | |
-| A request proof is against the onchain root | verified | |
-| A nullifier is accepted once, a replay is rejected | verified | |
-| A refund is `maxCost − actualCost`, signed by the key registered onchain, redeemable once | verified | |
-| A request can't be linked to the deposit | not met: every request publishes `idCommitment` and `initialDeposit`, and the operator's database stores `idCommitment` next to the nullifier | [#134](https://github.com/w3hc/longjing/issues/134) |
-| Two requests can't be linked to each other | not met, same fields | [#134](https://github.com/w3hc/longjing/issues/134) |
-| A refund redemption onchain can't be linked to the deposit | not met: `RefundRedeemed` publishes `idCommitment` | [#134](https://github.com/w3hc/longjing/issues/134) |
-| A refund can only be redeemed to the recipient in its proof | verified | |
-| Solvency is enforced | not met: after one refund, the contract holds less than the active stakes (LJ-01). D bound to the deposit (LJ-02) is not checked | [#134](https://github.com/w3hc/longjing/issues/134) |
-| A double-spend reveals `k` and anyone with the proof can slash the RLN stake | verified | |
+| A deposit is recorded onchain, bound into its leaf | verified | |
+| A request proof is against a recent onchain root | verified | |
+| A retry returns the same accumulator, a reused index is refused | verified | |
+| The accumulator grows by C_max − C_actual, signed by the key registered onchain | verified | |
+| A request can't be linked to the deposit | verified | |
+| Two requests can't be linked to each other | verified | |
+| A request's refund never appears onchain | verified | |
+| A withdrawal pays only the recipient in its proof | verified | |
+| Solvency is enforced: an exit pays D + R − n · C_max | verified | |
+| Anyone holding k slashes, and the caller gets the bounty, not the stake | verified | |
+| An exit that understates usage is slashed during the window | verified | |
+| A closed note can't make requests | verified | |
 | The client sends nothing that contains the secret key | verified | |
 | The client verifies the attestation before sending anything | not checked yet | [#99](https://github.com/w3hc/longjing/issues/99) |
 | Protocol, pricing and refunds work with any provider | not checked yet | |
-| A depositor can withdraw without the server | not met, no check yet | [#119](https://github.com/w3hc/longjing/issues/119), [#157](https://github.com/w3hc/longjing/issues/157) |
-| Every depositor can exit if the operator and every host disappear | not met, no check yet | [#157](https://github.com/w3hc/longjing/issues/157), [#135](https://github.com/w3hc/longjing/issues/135) |
+| A depositor can withdraw without the server | verified | |
+| Every depositor can exit if the operator and every host disappear | not met, no withdrawal page yet | [#157](https://github.com/w3hc/longjing/issues/157), [#135](https://github.com/w3hc/longjing/issues/135) |
 
 The demo exits non-zero only when a goal expected to be verified is not. Known gaps are reported, not hidden, and a gap that starts passing prints a note to update its expected status in [scripts/demo/demo.ts](../scripts/demo/demo.ts). A passing run says nothing about the goals it reports as not met or not checked yet.
 
-On Anvil, the server answers with mock responses: `ANTHROPIC_API_KEY` is ignored, so the demo costs nothing.
+On Anvil, the server answers with mock responses: `ANTHROPIC_API_KEY` is ignored, so the demo costs nothing, and the challenge window passes with `evm_increaseTime`.
 
 ### Against a deployment
 
 ```bash
-DEMO_PRIVATE_KEY=0x... pnpm demo --gateway https://<gateway> --contract 0x<LongjingCredits> --rpc https://<rpc> [--deposit 0.2]
+DEMO_PRIVATE_KEY=0x... pnpm demo --gateway https://<gateway> --contract 0x<LongjingCredits> --rpc https://<rpc> [--deposit 0.01]
 ```
 
-The demo skips the deployment and the local server, proves with `api_request`, and pays two deposits from the `DEMO_PRIVATE_KEY` wallet (at least `0.1` ETH each, so two requests fit under `maxCost = 0.05` ETH). Before you run it:
+The demo skips the deployment and the local server, and pays the deposits from the `DEMO_PRIVATE_KEY` wallet (at least `C_MAX` each). Before you run it:
 
 - The requests reach the provider and cost what they cost.
-- The attacker's deposit goes to the slasher: the `DEMO_SLASHER_PRIVATE_KEY` wallet, or the `DEMO_PRIVATE_KEY` wallet if that is unset. Alice's deposit stays locked until withdrawal works ([#119](https://github.com/w3hc/longjing/issues/119)).
-- A server with a transaction signer slashes the double-spend itself before it answers. The demo then checks for the `DoubleSpendSlashed` event instead of slashing from the slasher wallet.
-- The operator's database check runs only on Anvil, where the server runs in the demo's process.
+- The attacker's deposit goes to the operator, minus the bounty paid to the slasher: the `DEMO_SLASHER_PRIVATE_KEY` wallet, or the `DEMO_PRIVATE_KEY` wallet if that is unset.
+- Alice's exit is initiated but not finalized: call `finalizeWithdrawal` after the 3-day window.
+- The operator's database checks, and the understated exit, run only on Anvil, where the server runs in the demo's process.
 - The demo doesn't verify the attestation yet, so it can't tell that the gateway runs in an enclave with `NODE_ENV=production`.
 
 ## Overview
@@ -147,46 +148,21 @@ Jest sets `NODE_ENV=test`, and the tests deploy their own contract with it, so t
 - `ZK_CONTRACT_ADDRESS`, `ANVIL_RPC_URL`, `SERVER_TX_PRIVATE_KEY` and `ETHEREUM_RPC_URLS` are cleared before the app starts, so a sourced `.env.local` cannot point it at another contract.
 - The main flow test clears `ANTHROPIC_API_KEY`, so the service answers with mock responses and the run costs nothing.
 
-### Main Flow Test (`test/app.e2e-spec.ts`)
+### Settlement Test (`test/app.e2e-spec.ts`)
 
-The same steps as `pnpm demo`, as Jest assertions. The contract is deployed before the app starts, so the server checks the proof's root against the chain.
+The contract, the server and the client of `pnpm prove`, on Anvil. The contract is deployed before the app starts, so the server checks roots and `C_MAX` against the chain, and the server has a transaction signer, so it slashes.
 
-**Alice deposits with her secret**
-- Deposits 0.2 ETH under `Poseidon(secretKey)` and checks that the deposit is active on chain
+**Alice: two requests, then an honest exit**
+- `GET /longjing/server-pubkey` returns the refund key registered onchain
+- A first request from the genesis accumulator, then a retry that gets the same accumulator back, then a second request from the signed accumulator
+- The request body holds no commitment, deposit or secret key
+- An exit pays `D + R − 2 · C_MAX` after the window, and the closed note can make no request
 
-**Proves membership with that secret against the on-chain root**
-- Checks that `GET /longjing/server-pubkey` returns the refund key registered on chain
-- Runs `pnpm prove request` with the deposited secret, and checks that the proof's root is the contract's root
+**Bob: a double-spend**
+- Two requests at the same index: the second is refused, and the server slashes the note
 
-**Accepts the nullifier once and rejects a replay**
-- `POST /longjing/request` answers 200 with a refund ticket worth `maxCost` minus the actual cost
-- The same request again answers 403 `Nullifier already used`
-
-**Signs the refund ticket with serverPublicKey**
-- Verifies the ticket's EdDSA signature on the client, against the server's public key
-
-**Redeems the refund once with a real proof, and rejects a second redemption**
-- Runs `pnpm prove refund`, redeems the ticket on chain to a fresh address, and checks that its balance equals the refund
-- Checks that a second redemption reverts with `RefundAlreadyRedeemed`
-
-The suites share one Anvil chain and deployer, so they run one at a time.
-
-### On-chain Proofs Test (`test/onchain-proofs.e2e-spec.ts`)
-
-Deploys the real contract and verifiers, and submits one real proof per circuit:
-- Withdrawal: proves `withdrawal.circom` against the on-chain Merkle root and withdraws the deposit to a fresh address
-- Refund: signs a ticket with the dev refund-signer key, redeems it with a `refund_redemption.circom` proof, and checks that a second redemption reverts with `RefundAlreadyRedeemed`
-- Double spend: proves `double_spend_slashing.circom` from two signals with the same nullifier, and checks that the slasher gets the RLN stake
-
-### Proof Generation Test (`test/proof-generation.e2e-spec.ts`)
-
-Tests ZK proof generation internals:
-- Withdrawal proof generation
-- Refund proof generation
-- Double-spend slashing proof generation
-- RLN primitives (nullifiers, commitments)
-- Proof format compatibility with Solidity
-- Performance benchmarks
+**Carol: an exit that understates usage**
+- Two requests served, an exit claiming one: the server's watcher slashes the note within the window, and finalizing reverts
 
 ## Contract Tests
 
@@ -197,34 +173,29 @@ cd contracts
 forge test -vv
 ```
 
-**Test coverage:**
-- Deposit functionality
-- Merkle tree updates
-- Withdrawal verification
-- Refund redemption
-- Slashing mechanisms
-- Access control
+**Test coverage**, with the real `SettlementVerifier` on proofs from [settlement.json](../contracts/test/fixtures/settlement.json) (regenerate with `scripts/testing/generate-settlement-fixtures.ts`):
+- Deposits, the leaf `Poseidon(c, D)`, Merkle paths and the root history
+- Initiate and finalize: an honest exit, an exit from genesis, wrong recipient, inflated payout, wrong deposit, unknown refund key
+- Slashing: an understated exit within the window, a self-slash paying only the bounty, a bounty capped at D
+- Each note paying out at most D in total
+- Pausing never blocks an exit or a slash, and `claimExpired` is blocked while a note exits
+- The timelock, including refund key rotation
 
 ## Testing Scripts
 
 Helper scripts for manual testing and debugging.
 
-### Prove a Request or a Refund
+### The Client
 
 ```bash
-pnpm prove request <input.json>
-pnpm prove refund <input.json>
+pnpm prove note <note.json> <rpcUrl> <contract>
+pnpm prove request <note.json> <payload>
+pnpm prove receive <note.json> <response.json>
+pnpm prove withdrawal <note.json> <recipient> [n]
+pnpm prove slashing <signals.json>
 ```
 
-The client-side provers the demo and the main flow test use. The input formats are in [scripts/client/prove.ts](../scripts/client/prove.ts).
-
-### Generate a Test-Circuit Proof
-
-```bash
-npx ts-node scripts/testing/generate-proof.ts <secretKey> <ticketIndex> [payload]
-```
-
-Proves with the simplified `api_credit_proof_test` circuit against a zero Merkle root. The server only accepts it with `ZK_CIRCUIT=api_credit_proof_test`.
+The client the demo and the e2e test use, documented in [API_REFERENCE.md](./API_REFERENCE.md#client-implementation-guide).
 
 ### Compute Poseidon Hash
 
@@ -264,18 +235,11 @@ All tests must pass before merging PRs.
 - ✅ Rate limiting mechanisms
 - ✅ EdDSA signature generation
 
-### Main Flow Test Validates:
-- ✅ A deposit, a request and a refund by the same user, with the same secret
-- ✅ The request proof's Merkle root is the on-chain root
-- ✅ A nullifier is accepted once, and a replay is rejected
-- ✅ The refund ticket signature verifies against the server's public key, which is the one registered on chain
-- ✅ A real refund proof redeems the ticket, and the recipient's balance grows by the refund
-- ✅ A second redemption reverts
-
-### On-chain Proofs Test Validates:
-- ✅ One real proof per circuit accepted by the deployed verifiers: withdrawal, refund redemption, double-spend slashing
-- ✅ A second refund redemption reverts
-- ✅ The slasher receives the RLN stake
+### Settlement Test Validates:
+- ✅ Requests from a genesis then a signed accumulator, with nothing that identifies the note
+- ✅ A retry gets the same accumulator, a second signal at a used index gets the note slashed
+- ✅ An honest exit pays `D + R − n · C_MAX`, an understated one is slashed within the window
+- ✅ A closed note can make no request
 
 ### Contract Tests Validate:
 - ✅ Smart contract state transitions
@@ -284,37 +248,35 @@ All tests must pass before merging PRs.
 - ✅ Gas optimization
 - ✅ Edge cases and reverts
 
-### Proof Generation Tests Validate:
-- ✅ Withdrawal proof correctness
-- ✅ Refund proof correctness
-- ✅ Slashing proof correctness
-- ✅ RLN signal generation
-- ✅ Secret key recovery from double-spend
-- ✅ Proof format compatibility
+### Circuit Tests Validate:
+- ✅ Honest requests and settlements, from genesis and from a signed accumulator
+- ✅ Over-budget requests, foreign accumulators, forged signatures, `n < m` and negative payouts rejected
+- ✅ No request public signal reveals the commitment, the leaf, the deposit or the index
+- ✅ Real Groth16 proofs against the pinned keys, bound to their recipient and payout
 
 ## Zero-Knowledge Properties
 
 The test suite validates these ZK properties:
 
 ### Anonymity
-- Identity commitments hide secret keys
-- Merkle tree provides k-anonymity (k = number of deposits)
-- Server cannot link requests to deposit addresses: a design goal, not tested, and not true at v0.4.1, since `idCommitment` is a public signal ([#134](https://github.com/w3hc/longjing/issues/134))
+- A request proves membership among every note in the tree, whatever its amount
+- No public signal and no stored column holds the commitment, the leaf, D or the index
+- The published accumulator is re-randomized on every request
 
 ### Rate Limiting
 - Each nullifier can only be used once
-- Nullifiers computed as `Hash(Hash(secretKey, ticketIndex))`
+- Nullifiers computed as `Poseidon(Poseidon(k, i))`, fresh for every index
 - No centralized tracking needed
 
 ### Slashing
 - Two signals with same nullifier reveal secret key
 - RLN equation: `signalY = secretKey + a * signalX`
-- Economic deterrent via stake slashing
+- Anyone holding `k` slashes the note and gets a fixed bounty
 
 ### Refund Security
-- EdDSA signatures are unforgeable
-- Server's public key verified onchain
-- Refunds can only be redeemed once
+- The server signs each accumulator with EdDSA, and both circuits check the signature against the refund key
+- The client checks every accumulator against the key registered onchain before using it
+- A withdrawal pays at most D, whatever was signed
 
 ## Troubleshooting
 
@@ -355,22 +317,7 @@ Jest did not exit one second after test run
 
 ### Testing with Real Circuits
 
-Production circuits are in `circuits/`:
-- `withdrawal.circom` - Merkle membership + solvency proof
-- `refund_redemption.circom` - Refund ticket verification
-- `double_spend_slashing.circom` - Double-spend detection
-
-To test with real circuits:
-1. Compile circuits: `bash scripts/setup/compile-production-circuits.sh`
-2. Run trusted setup: `bash scripts/setup/run-trusted-setup.sh`
-3. E2E tests automatically use generated artifacts
-
-### Performance Testing
-
-The proof generation test includes performance benchmarks:
-- Proof generation should complete in < 5 seconds
-- Concurrent proof generation is supported
-- Memory usage is tracked
+The production circuits are `circuits/request.circom` and `circuits/settlement.circom`. `pnpm test:proof` compiles both with circom, checks their witnesses, and proves against the pinned keys. To regenerate the keys, see [ZK.md](./ZK.md#circuit-artifacts).
 
 ### Security Testing
 

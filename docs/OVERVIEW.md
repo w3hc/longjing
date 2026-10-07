@@ -274,8 +274,8 @@ While the system provides strong cryptographic privacy guarantees, users should 
 | **Proof generation** | 2-5 seconds | Client-side (browser/Node.js) |
 | **Proof verification** | 10-20ms | Server-side (SnarkJS) |
 | **Proof size** | 200-300 bytes | Groth16 constant size |
-| **Deposit gas cost** | ~150k gas | One-time per identity |
-| **Withdrawal gas** | ~350k + ~60k gas | `initiateWithdrawal` verifies a proof, `finalizeWithdrawal` pays |
+| **Deposit gas cost** | ~1.2M gas | One-time per note; 20 Poseidon hashes onchain |
+| **Withdrawal gas** | ~0.9M + ~65k gas | `initiateWithdrawal` verifies a proof and removes the leaf, `finalizeWithdrawal` pays |
 | **Max depositors** | ~1M | Depth-20 Merkle tree |
 
 ### Gas Optimization Notes
