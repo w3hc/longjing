@@ -41,11 +41,14 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     /// @notice Settings that can only be changed through the timelock
     enum Target {
         SettlementVerifier,
-        ServerAddress
+        ServerAddress,
+        RefundKey
     }
 
     struct PendingChange {
-        address value;
+        address value; // unused for RefundKey
+        bytes32 keyX; // RefundKey only
+        bytes32 keyY;
         uint256 eta; // 0 when nothing is pending
     }
 
@@ -159,6 +162,8 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     event NoteExpiredClaimed(bytes32 indexed commitment, uint256 amount);
     event OperatorBalanceWithdrawn(address indexed to, uint256 amount);
     event ServerAddressUpdated(address indexed oldAddress, address indexed newAddress);
+    event RefundKeyProposed(bytes32 x, bytes32 y, uint256 eta);
+    event RefundKeyUpdated(bytes32 x, bytes32 y);
     event ChangeProposed(Target indexed target, address value, uint256 eta);
     event ChangeExecuted(Target indexed target, address value);
     event ChangeCancelled(Target indexed target, address value);
@@ -177,6 +182,8 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     error InvalidProof();
     error Unauthorized();
     error ZeroAddress();
+    error ZeroKey();
+    error UseProposeRefundKey();
     error NoPendingChange();
     error TimelockNotExpired();
     error NoteNotExpired();
@@ -435,10 +442,23 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
      * @dev Overwrites any change already pending for the same target and restarts the delay
      */
     function proposeChange(Target _target, address _value) external onlyOwner {
+        if (_target == Target.RefundKey) revert UseProposeRefundKey();
         if (_value == address(0)) revert ZeroAddress();
         uint256 eta = block.timestamp + ADMIN_DELAY;
-        pendingChanges[_target] = PendingChange({value: _value, eta: eta});
+        pendingChanges[_target] = PendingChange({value: _value, keyX: 0, keyY: 0, eta: eta});
         emit ChangeProposed(_target, _value, eta);
+    }
+
+    /**
+     * @notice Queue a new refund signer key, executable after ADMIN_DELAY
+     * @dev Requests use the new key once executed. Every key ever accepted stays
+     *      accepted for withdrawals, so accumulators signed before still exit.
+     */
+    function proposeRefundKey(bytes32 _x, bytes32 _y) external onlyOwner {
+        if (_x == bytes32(0) && _y == bytes32(0)) revert ZeroKey();
+        uint256 eta = block.timestamp + ADMIN_DELAY;
+        pendingChanges[Target.RefundKey] = PendingChange({value: address(0), keyX: _x, keyY: _y, eta: eta});
+        emit RefundKeyProposed(_x, _y, eta);
     }
 
     function executeChange(Target _target) external onlyOwner {
@@ -449,6 +469,10 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
 
         if (_target == Target.SettlementVerifier) {
             settlementVerifier = SettlementVerifier(change.value);
+        } else if (_target == Target.RefundKey) {
+            serverPublicKey = EdDSAPublicKey({x: change.keyX, y: change.keyY});
+            acceptedRefundKeys[_refundKeyId(change.keyX, change.keyY)] = true;
+            emit RefundKeyUpdated(change.keyX, change.keyY);
         } else {
             emit ServerAddressUpdated(serverAddress, change.value);
             serverAddress = change.value;

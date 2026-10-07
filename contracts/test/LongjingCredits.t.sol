@@ -495,7 +495,7 @@ contract LongjingCreditsTest is Test {
         vm.warp(block.timestamp + 1);
         longjing.executeChange(LongjingCredits.Target.ServerAddress);
         assertEq(longjing.serverAddress(), user2);
-        (, uint256 eta) = longjing.pendingChanges(LongjingCredits.Target.ServerAddress);
+        (,,, uint256 eta) = longjing.pendingChanges(LongjingCredits.Target.ServerAddress);
         assertEq(eta, 0);
     }
 
@@ -505,6 +505,41 @@ contract LongjingCreditsTest is Test {
         vm.warp(block.timestamp + longjing.ADMIN_DELAY());
         longjing.executeChange(LongjingCredits.Target.SettlementVerifier);
         assertEq(address(longjing.settlementVerifier()), replacement);
+    }
+
+    function test_RefundKey_RotatesBehindTheTimelockAndOldKeysStillExit() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        bytes32 newX = bytes32(uint256(3));
+        bytes32 newY = bytes32(uint256(4));
+
+        vm.expectRevert(LongjingCredits.UseProposeRefundKey.selector);
+        longjing.proposeChange(LongjingCredits.Target.RefundKey, user2);
+
+        longjing.proposeRefundKey(newX, newY);
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY() - 1);
+        vm.expectRevert(LongjingCredits.TimelockNotExpired.selector);
+        longjing.executeChange(LongjingCredits.Target.RefundKey);
+        vm.warp(block.timestamp + 1);
+        longjing.executeChange(LongjingCredits.Target.RefundKey);
+
+        (bytes32 x, bytes32 y) = longjing.serverPublicKey();
+        assertEq(x, newX);
+        assertEq(y, newY);
+        assertTrue(longjing.acceptedRefundKeys(keccak256(abi.encode(newX, newY))));
+
+        // The accumulator was signed by the old key, which still exits
+        _initiate(e);
+        assertEq(uint256(longjing.getNote(e.commitment).status), uint256(LongjingCredits.Status.Exiting));
+    }
+
+    function test_ProposeRefundKey_OnlyOwnerAndNonZero() public {
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user1));
+        longjing.proposeRefundKey(bytes32(uint256(3)), bytes32(uint256(4)));
+
+        vm.expectRevert(LongjingCredits.ZeroKey.selector);
+        longjing.proposeRefundKey(bytes32(0), bytes32(0));
     }
 
     function test_ExecuteChange_RevertsWithoutProposal() public {
