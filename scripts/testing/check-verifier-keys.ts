@@ -39,6 +39,15 @@ const CIRCUITS: Record<string, Circuit> = {
     vkey: 'withdrawal_verification_key.json',
     verifier: 'WithdrawalVerifier.sol',
   },
+  request: {
+    zkey: 'request.zkey',
+    vkey: 'request_verification_key.json',
+  },
+  settlement: {
+    zkey: 'settlement.zkey',
+    vkey: 'settlement_verification_key.json',
+    verifier: 'SettlementVerifier.sol',
+  },
   double_spend_slashing: {
     zkey: 'double_spend_slashing_final.zkey',
     vkey: 'double_spend_slashing_verification_key.json',

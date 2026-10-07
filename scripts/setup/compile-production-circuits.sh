@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Compile production ZK circuits and generate Solidity verifiers
-# This script compiles: withdrawal, refund_redemption, and double_spend_slashing circuits
+# This script compiles: withdrawal, refund_redemption, double_spend_slashing and settlement circuits
 
 set -e
 
@@ -102,7 +102,7 @@ compile_circuit() {
 }
 
 # Compile all production circuits
-echo "Starting compilation of 3 production circuits..."
+echo "Starting compilation of 4 production circuits..."
 echo ""
 
 # 1. Withdrawal circuit
@@ -113,6 +113,9 @@ compile_circuit "refund_redemption" "RefundRedemptionVerifier"
 
 # 3. Double-spend slashing circuit
 compile_circuit "double_spend_slashing" "DoubleSpendSlashingVerifier"
+
+# 4. Settlement circuit
+compile_circuit "settlement" "SettlementVerifier"
 
 # Summary
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -138,6 +141,12 @@ echo "  • circuits/build/double_spend_slashing.r1cs"
 echo "  • circuits/build/double_spend_slashing_js/double_spend_slashing.wasm"
 echo "  • circuits/build/double_spend_slashing.zkey"
 echo "  • contracts/src/DoubleSpendSlashingVerifier.sol"
+echo ""
+echo "Settlement Circuit:"
+echo "  • circuits/build/settlement.r1cs"
+echo "  • circuits/build/settlement_js/settlement.wasm"
+echo "  • circuits/build/settlement.zkey"
+echo "  • contracts/src/SettlementVerifier.sol"
 echo ""
 echo "Next steps:"
 echo "  1. Review the generated Solidity verifier contracts"
