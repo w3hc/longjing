@@ -1,14 +1,22 @@
 import {
   Injectable,
   Logger,
+  BadGatewayException,
   BadRequestException,
   ForbiddenException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { LongjingRequestDto } from './dto/api-request.dto';
-import { LongjingResponseDto, UsageDto } from './dto/api-response.dto';
+import {
+  LongjingResponseDto,
+  SignedAccumulatorDto,
+  UsageDto,
+} from './dto/api-response.dto';
+import { applyRefund } from './accumulator';
+import { BlockchainService } from './blockchain.service';
 import { NullifierStoreService } from './nullifier-store.service';
 import { ProofVerifierService } from './proof-verifier.service';
 import { EthRateOracleService } from './eth-rate-oracle.service';
@@ -18,7 +26,7 @@ import { quantizeCost, quantizeUnits } from './utils/cost-quantization.util';
 import { padResponse } from './utils/response-padding.util';
 import {
   parseFieldElement,
-  signalXMatchesPayload,
+  signalXMatchesRequest,
 } from './utils/payload-signal.util';
 import {
   ClaudeModel,
@@ -48,6 +56,7 @@ export class LongjingService {
     private readonly ethRateOracle: EthRateOracleService,
     private readonly refundSigner: RefundSignerService,
     private readonly slashingService: SlashingService,
+    private readonly blockchain: BlockchainService,
   ) {
     // Example: Initialize Claude API client
     // Replace with your own API service client initialization
@@ -61,8 +70,10 @@ export class LongjingService {
   }
 
   /**
-   * Handle a Longjing request
-   * Implements the full protocol: nullifier check, proof verification, API call, refund
+   * Serve one request (docs/SETTLEMENT.md): check the proof against a recent
+   * root and C_MAX, record (N, x, y), call the provider, and return the next
+   * accumulator A' = A_pub + v·G + J, signed. Nothing in the request or what
+   * is stored identifies the note.
    */
   async handleRequest(req: LongjingRequestDto): Promise<LongjingResponseDto> {
     const model = req.model ?? DEFAULT_CLAUDE_MODEL;
@@ -77,69 +88,86 @@ export class LongjingService {
       );
     }
 
-    // 2. Bind the signal to the payload: x must equal Hash(payload)
-    if (!signalXMatchesPayload(req.signal.x, req.payload)) {
-      throw new BadRequestException('Signal x does not match payload hash');
+    // 2. Bind the signal to the payload: x = Poseidon(H(payload), ρ)
+    if (!(await signalXMatchesRequest(req.signal.x, req.payload, req.nonce))) {
+      throw new BadRequestException(
+        'Signal x does not match the payload and nonce',
+      );
     }
 
-    // 3. Verify ZK proof with cryptographic verification and public inputs
-    // Do this BEFORE nullifier check to prevent timing leaks
+    // 3. Reject before anything is consumed if C_MAX can't cover the worst case
+    const cMax = this.cMax();
+    const worstCaseCost = await this.worstCaseCostInETH(req.payload, model);
+    if (worstCaseCost > cMax) {
+      throw new BadRequestException(
+        `The worst-case cost of ${worstCaseCost} wei for ${model} exceeds C_MAX`,
+      );
+    }
+
+    // 4. Verify the proof against a recent root, C_MAX and this server's key
     const valid = await this.proofVerifier.verify(req.proof, {
-      merkleRoot: req.merkleRoot,
-      maxCost: req.maxCost,
-      initialDeposit: req.initialDeposit,
-      signalX: req.signal.x,
       nullifier: req.nullifier,
       signalY: req.signal.y,
-      idCommitment: req.idCommitment,
-      idCommitmentExpected: req.idCommitmentExpected,
+      accumulatorX: req.accumulator.x,
+      accumulatorY: req.accumulator.y,
+      merkleRoot: req.merkleRoot,
+      maxCost: cMax,
+      signalX: req.signal.x,
     });
     if (!valid) {
       throw new UnauthorizedException('Invalid ZK proof');
     }
 
-    // 4. Reject before the nullifier is consumed if maxCost can't cover the worst case
-    const maxCost = parseFieldElement(req.maxCost);
-    const worstCaseCost = await this.worstCaseCostInETH(req.payload, model);
-    if (maxCost < worstCaseCost) {
-      throw new BadRequestException(
-        `maxCost is below the worst-case cost of ${worstCaseCost} wei for ${model}`,
-      );
-    }
-
-    // 5. Atomically check nullifier and insert if new
-    // This prevents TOCTOU race conditions in concurrent scenarios
-    const existingSignal = this.nullifierStore.checkAndSet(req.nullifier, {
-      x: req.signal.x,
-      y: req.signal.y,
-    });
+    // 5. Atomically record (N, x, y), in canonical form
+    const signal = {
+      x: parseFieldElement(req.signal.x).toString(),
+      y: parseFieldElement(req.signal.y).toString(),
+    };
+    const existingSignal = this.nullifierStore.checkAndSet(
+      req.nullifier,
+      signal,
+    );
 
     if (existingSignal) {
-      if (
-        parseFieldElement(existingSignal.x) !== parseFieldElement(req.signal.x)
-      ) {
+      if (existingSignal.x !== signal.x) {
         // Two signals at one index reveal k, and knowing k is the slashing proof
         this.logger.error(
           `Double-spend detected for nullifier ${req.nullifier}`,
         );
-        await this.slashRevealedKey(existingSignal, req.signal);
+        await this.slashRevealedKey(existingSignal, signal);
         throw new ForbiddenException(
           'Double-spend detected. Your secret key has been extracted and you will be slashed.',
         );
       }
 
-      // Same nullifier with same signal = replay attack
+      // A retry of a request whose response was lost gets it back, once paid
+      const cached = this.nullifierStore.recallResponse<
+        LongjingResponseDto | BadGatewayException
+      >(req.nullifier, signal);
+      if (cached instanceof BadGatewayException) throw cached;
+      if (cached) return cached;
       throw new ForbiddenException('Nullifier already used');
     }
 
-    // 6. Execute API request (Claude example); if it fails, nothing was served,
-    // so give the ticket index back instead of burning it
+    const publishedAccumulator = [
+      parseFieldElement(req.accumulator.x),
+      parseFieldElement(req.accumulator.y),
+    ] as const;
+
+    // 6. Execute API request (Claude example). If it fails, nothing was
+    // served: refund all of C_MAX, so the note moves on without losing value.
     let response: Awaited<ReturnType<typeof this.executeClaudeRequest>>;
     try {
       response = await this.executeClaudeRequest(req.payload, model);
     } catch (error) {
-      this.nullifierStore.release(req.nullifier, req.signal.x);
-      throw error;
+      this.logger.error('Provider call failed, refunding C_MAX', error);
+      const failure = new BadGatewayException({
+        message: 'The provider call failed. The whole of C_MAX is refunded.',
+        refund: cMax.toString(),
+        accumulator: await this.nextAccumulator(publishedAccumulator, cMax),
+      });
+      this.nullifierStore.rememberResponse(req.nullifier, signal, failure);
+      throw failure;
     }
 
     // 7. Calculate actual cost in ETH (internal only)
@@ -149,21 +177,8 @@ export class LongjingService {
       model,
     );
 
-    // 8. Generate refund ticket, never negative
-    const refundValue = maxCost > actualCost ? maxCost - actualCost : 0n;
-    const refundTicket = await this.refundSigner.signRefund({
-      idCommitment: req.idCommitment,
-      nullifier: req.nullifier,
-      value: refundValue.toString(),
-      timestamp: Date.now(),
-    });
-
-    this.logger.log(
-      `Request processed. Cost: ${actualCost} wei, Refund: ${refundValue} wei`,
-    );
-
-    // Fixed: Apply response padding to prevent size-based linkability
-    const paddedResponse = padResponse(response.content);
+    // 8. v = C_MAX − C_actual, clamped to [0, C_MAX]
+    const refund = actualCost < cMax ? cMax - actualCost : 0n;
 
     // Fixed: Remove internal fields before returning to client
     const sanitizedUsage: UsageDto = {
@@ -176,12 +191,40 @@ export class LongjingService {
       // _internalUnits and _internalCostUSD are intentionally excluded
     };
 
-    return {
-      response: paddedResponse,
-      actualCost: actualCost.toString(),
-      refundTicket,
+    const result: LongjingResponseDto = {
+      // Fixed: Apply response padding to prevent size-based linkability
+      response: padResponse(response.content),
+      refund: refund.toString(),
+      accumulator: await this.nextAccumulator(publishedAccumulator, refund),
       usage: sanitizedUsage,
     };
+    this.nullifierStore.rememberResponse(req.nullifier, signal, result);
+    return result;
+  }
+
+  /** A' = A_pub + v·G + J, signed with the refund key */
+  private async nextAccumulator(
+    published: readonly [bigint, bigint],
+    refund: bigint,
+  ): Promise<SignedAccumulatorDto> {
+    const next = applyRefund(published, refund);
+    return {
+      x: next[0].toString(),
+      y: next[1].toString(),
+      signature: await this.refundSigner.signAccumulator(next),
+    };
+  }
+
+  /** C_MAX from the contract; requests can't be priced without it */
+  private cMax(): bigint {
+    try {
+      return this.blockchain.getCMax();
+    } catch (error) {
+      this.logger.error('C_MAX unavailable', error);
+      throw new ServiceUnavailableException(
+        'Cannot read C_MAX from the contract',
+      );
+    }
   }
 
   /**

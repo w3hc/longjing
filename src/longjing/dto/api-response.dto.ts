@@ -72,17 +72,11 @@ export class UsageDto {
   _internalOutputTokens?: number;
 }
 
+/** @deprecated A refund ticket of the old circuits, removed with them */
 export class RefundTicketDto {
-  @ApiProperty({ description: 'Nullifier this refund is for' })
   nullifier: string;
-
-  @ApiProperty({ description: 'Refund value in wei' })
   value: string;
-
-  @ApiProperty({ description: 'Timestamp when refund was issued' })
   timestamp: number;
-
-  @ApiProperty({ description: 'Server signature (EdDSA)' })
   signature: {
     R8x: string;
     R8y: string;
@@ -90,15 +84,42 @@ export class RefundTicketDto {
   };
 }
 
+export class AccumulatorSignatureDto {
+  @ApiProperty() R8x: string;
+  @ApiProperty() R8y: string;
+  @ApiProperty() S: string;
+}
+
+/** A' = A_pub + v·G + J and the server's signature on it */
+export class SignedAccumulatorDto {
+  @ApiProperty({ description: "A' x coordinate" })
+  x: string;
+
+  @ApiProperty({ description: "A' y coordinate" })
+  y: string;
+
+  @ApiProperty({
+    description: "EdDSA-Poseidon signature over Poseidon(A'.x, A'.y)",
+    type: AccumulatorSignatureDto,
+  })
+  signature: AccumulatorSignatureDto;
+}
+
 export class LongjingResponseDto {
   @ApiProperty({ description: 'External API response content' })
   response: string;
 
-  @ApiProperty({ description: 'Actual cost in wei' })
-  actualCost: string;
+  @ApiProperty({
+    description:
+      'v = C_MAX − actual cost in wei, which the client adds to its refund sum R',
+  })
+  refund: string;
 
-  @ApiProperty({ description: 'Signed refund ticket', type: RefundTicketDto })
-  refundTicket: RefundTicketDto;
+  @ApiProperty({
+    description: "The next accumulator, opening to (R + v, i + 1, c, s + s')",
+    type: SignedAccumulatorDto,
+  })
+  accumulator: SignedAccumulatorDto;
 
   @ApiProperty({
     description: 'Usage metrics (example: token counts)',

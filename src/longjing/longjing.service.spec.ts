@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  BadGatewayException,
   BadRequestException,
-  ForbiddenException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -19,10 +20,15 @@ import { LongjingRequestDto } from './dto/api-request.dto';
 import { SecretsService } from '../config/secrets.service';
 import { KeyDerivationService } from '../keys/key-derivation.service';
 import { AttestationService } from '../attestation/attestation.service';
-import { payloadToSignalX } from './utils/payload-signal.util';
+import { payloadSignalX } from './utils/payload-signal.util';
+import { applyRefund, genesis, rerandomize } from './accumulator';
+
+const C_MAX = 10n ** 15n;
 
 describe('LongjingService', () => {
   let service: LongjingService;
+  let refundSigner: RefundSignerService;
+  let blockchain: jest.Mocked<BlockchainService>;
   let nullifierStore: NullifierStoreService;
   let proofVerifier: ProofVerifierService;
   let ethRateOracle: EthRateOracleService;
@@ -74,8 +80,8 @@ describe('LongjingService', () => {
         {
           provide: BlockchainService,
           useValue: {
-            getMerkleRoot: jest.fn().mockResolvedValue('0x1234'),
             isAvailable: jest.fn().mockReturnValue(true),
+            getCMax: jest.fn(() => C_MAX),
           },
         },
         {
@@ -113,6 +119,8 @@ describe('LongjingService', () => {
     proofVerifier = module.get<ProofVerifierService>(ProofVerifierService);
     ethRateOracle = module.get<EthRateOracleService>(EthRateOracleService);
     proofGenService = module.get<ProofGenService>(ProofGenService);
+    refundSigner = module.get<RefundSignerService>(RefundSignerService);
+    blockchain = module.get(BlockchainService);
 
     // Initialize database
     await module.init();
@@ -131,58 +139,91 @@ describe('LongjingService', () => {
 
   describe('handleRequest', () => {
     const payload = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
-    const signalXHex = (p: string) => '0x' + payloadToSignalX(p).toString(16);
+    const NONCE = 7n;
+    const published = rerandomize(genesis(42n), 99n);
+    let validRequest: LongjingRequestDto;
 
-    const validRequest: LongjingRequestDto = {
-      payload,
-      nullifier: '0x1234567890abcdef',
-      signal: {
-        x: signalXHex(payload),
-        y: '0x11223344',
-      },
-      proof: '0xdeadbeef',
-      maxCost: '1000000000000000', // 0.001 ETH
-      merkleRoot:
-        '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-      initialDeposit: '10000000000000000', // 0.01 ETH
-      ticketIndex: '0',
-      idCommitment:
-        '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-      idCommitmentExpected:
-        '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-    };
+    beforeAll(async () => {
+      validRequest = {
+        payload,
+        nonce: NONCE.toString(),
+        nullifier: '0x1234567890abcdef',
+        signal: {
+          x: (await payloadSignalX(payload, NONCE)).toString(),
+          y: '0x11223344',
+        },
+        proof: '0xdeadbeef',
+        merkleRoot:
+          '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+        accumulator: {
+          x: published[0].toString(),
+          y: published[1].toString(),
+        },
+      };
+    });
 
-    it('should process valid request successfully', async () => {
-      // Mock proof verification
-      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+    // The worst case, then the actual cost
+    const costs = (worstCase: bigint, actual = worstCase) =>
+      jest
+        .spyOn(ethRateOracle, 'usdToWei')
+        .mockResolvedValueOnce(worstCase)
+        .mockResolvedValueOnce(actual);
 
-      // Mock ETH rate
-      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
+    it('returns the next accumulator with the refund added, signed', async () => {
+      const verify = jest
+        .spyOn(proofVerifier, 'verify')
+        .mockResolvedValue(true);
+      costs(10n ** 14n, 3n * 10n ** 14n);
 
       const result = await service.handleRequest(validRequest);
 
-      expect(result).toBeDefined();
-      expect(result.response).toBeDefined();
-      expect(result.actualCost).toBeDefined();
-      expect(result.refundTicket).toBeDefined();
+      expect(verify).toHaveBeenCalledWith(validRequest.proof, {
+        nullifier: validRequest.nullifier,
+        signalY: validRequest.signal.y,
+        accumulatorX: validRequest.accumulator.x,
+        accumulatorY: validRequest.accumulator.y,
+        merkleRoot: validRequest.merkleRoot,
+        maxCost: C_MAX,
+        signalX: validRequest.signal.x,
+      });
+      expect(result.refund).toBe((C_MAX - 3n * 10n ** 14n).toString());
+      const next = applyRefund(published, C_MAX - 3n * 10n ** 14n);
+      expect([result.accumulator.x, result.accumulator.y]).toEqual(
+        next.map(String),
+      );
+      await expect(
+        refundSigner.verifyAccumulator(next, result.accumulator.signature),
+      ).resolves.toBe(true);
       expect(result.usage).toBeDefined();
+      expect(result).not.toHaveProperty('actualCost');
     });
 
-    it('should reject a maxCost below the worst-case cost without consuming the nullifier', async () => {
+    it('stores only (x, y) under the nullifier', async () => {
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
-      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
+      costs(10n ** 14n);
 
-      await expect(
-        service.handleRequest({ ...validRequest, maxCost: '99999' }),
-      ).rejects.toThrow('maxCost is below the worst-case cost');
+      await service.handleRequest(validRequest);
+
+      expect(nullifierStore.get(validRequest.nullifier)).toEqual({
+        x: validRequest.signal.x,
+        y: BigInt(validRequest.signal.y).toString(),
+      });
+    });
+
+    it('rejects a request whose worst case exceeds C_MAX before consuming the nullifier', async () => {
+      const verify = jest.spyOn(proofVerifier, 'verify');
+      costs(C_MAX + 1n);
+
+      await expect(service.handleRequest(validRequest)).rejects.toThrow(
+        'exceeds C_MAX',
+      );
+      expect(verify).not.toHaveBeenCalled();
       expect(nullifierStore.exists(validRequest.nullifier)).toBe(false);
     });
 
-    it('should price the worst case on payload bytes and max output tokens', async () => {
+    it('prices the worst case on payload bytes and max output tokens', async () => {
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
-      const usdToWei = jest
-        .spyOn(ethRateOracle, 'usdToWei')
-        .mockResolvedValue(BigInt(100000));
+      const usdToWei = costs(10n ** 14n);
 
       await service.handleRequest({
         ...validRequest,
@@ -196,40 +237,73 @@ describe('LongjingService', () => {
       );
     });
 
-    it('should clamp the refund at zero when the actual cost exceeds maxCost', async () => {
+    it('clamps the refund at zero when the actual cost exceeds C_MAX', async () => {
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
-      jest
-        .spyOn(ethRateOracle, 'usdToWei')
-        .mockResolvedValueOnce(BigInt(100000))
-        .mockResolvedValueOnce(BigInt(200000));
+      costs(10n ** 14n, C_MAX + 5n);
 
-      const result = await service.handleRequest({
-        ...validRequest,
-        maxCost: '100000',
-      });
+      const result = await service.handleRequest(validRequest);
 
-      expect(result.actualCost).toBe('200000');
-      expect(result.refundTicket.value).toBe('0');
+      expect(result.refund).toBe('0');
     });
 
-    it('should release the nullifier when the upstream call fails', async () => {
+    it('refunds the whole of C_MAX when the provider fails, and a retry gets the same answer', async () => {
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
-      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
+      costs(10n ** 14n);
       const execute = jest
         .spyOn(service as any, 'executeClaudeRequest')
-        .mockRejectedValueOnce(new Error('upstream down'));
+        .mockRejectedValue(new Error('upstream down'));
 
-      await expect(service.handleRequest(validRequest)).rejects.toThrow(
-        'upstream down',
+      const failure = await service
+        .handleRequest(validRequest)
+        .catch((e: BadGatewayException) => e);
+      expect(failure).toBeInstanceOf(BadGatewayException);
+      const body = (failure as BadGatewayException).getResponse() as {
+        refund: string;
+        accumulator: { x: string; y: string };
+      };
+      expect(body.refund).toBe(C_MAX.toString());
+      expect([body.accumulator.x, body.accumulator.y]).toEqual(
+        applyRefund(published, C_MAX).map(String),
       );
-      expect(nullifierStore.exists(validRequest.nullifier)).toBe(false);
+      expect(nullifierStore.exists(validRequest.nullifier)).toBe(true);
 
-      execute.mockRestore();
-      const retry = await service.handleRequest(validRequest);
-      expect(retry.refundTicket).toBeDefined();
+      costs(10n ** 14n);
+      await expect(service.handleRequest(validRequest)).rejects.toBe(failure);
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
-    it('should reject a model with no pricing', async () => {
+    it('returns the same response to a retry and calls the provider once', async () => {
+      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+      const execute = jest.spyOn(service as any, 'executeClaudeRequest');
+      costs(10n ** 14n);
+      const first = await service.handleRequest(validRequest);
+
+      costs(10n ** 14n);
+      const retry = await service.handleRequest({
+        ...validRequest,
+        signal: {
+          x: '0x' + BigInt(validRequest.signal.x).toString(16),
+          y: validRequest.signal.y,
+        },
+      });
+
+      expect(retry).toBe(first);
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a reused nullifier once its response has expired', async () => {
+      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
+      costs(10n ** 14n);
+      await service.handleRequest(validRequest);
+      jest.spyOn(nullifierStore, 'recallResponse').mockReturnValue(null);
+
+      costs(10n ** 14n);
+      await expect(service.handleRequest(validRequest)).rejects.toThrow(
+        'Nullifier already used',
+      );
+    });
+
+    it('rejects a model with no pricing', async () => {
       await expect(
         service.handleRequest({
           ...validRequest,
@@ -238,27 +312,25 @@ describe('LongjingService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should reject invalid proof', async () => {
+    it('rejects an invalid proof', async () => {
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(false);
+      costs(10n ** 14n);
 
       await expect(service.handleRequest(validRequest)).rejects.toThrow(
         UnauthorizedException,
       );
     });
 
-    it('should reject signal x that does not match the payload', async () => {
+    it('rejects a signal x made with another nonce', async () => {
       const verify = jest.spyOn(proofVerifier, 'verify');
 
       await expect(
-        service.handleRequest({
-          ...validRequest,
-          signal: { ...validRequest.signal, x: '0xaabbccdd' },
-        }),
+        service.handleRequest({ ...validRequest, nonce: '8' }),
       ).rejects.toThrow(BadRequestException);
       expect(verify).not.toHaveBeenCalled();
     });
 
-    it('should reject a proof and signal replayed with another payload', async () => {
+    it('rejects a proof and signal replayed with another payload', async () => {
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
 
       await expect(
@@ -269,184 +341,63 @@ describe('LongjingService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should treat the same x in another encoding as a replay, not a double-spend', async () => {
-      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
-      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
+    it('refuses to serve without C_MAX', async () => {
+      blockchain.getCMax.mockImplementationOnce(() => {
+        throw new Error('not connected');
+      });
 
-      await service.handleRequest(validRequest);
-
-      await expect(
-        service.handleRequest({
-          ...validRequest,
-          signal: {
-            ...validRequest.signal,
-            x: payloadToSignalX(payload).toString(),
-          },
-        }),
-      ).rejects.toThrow('Nullifier already used');
-    });
-
-    it('should reject reused nullifier', async () => {
-      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
-      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
-
-      // First request succeeds
-      await service.handleRequest(validRequest);
-
-      // Second request with same nullifier fails
       await expect(service.handleRequest(validRequest)).rejects.toThrow(
-        ForbiddenException,
+        ServiceUnavailableException,
       );
     });
 
-    it('should detect double-spend (same nullifier, different signal)', async () => {
-      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
-      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
-
-      // First request
-      await service.handleRequest(validRequest);
-
-      // Second request with same nullifier but different payload and signal
-      const otherPayload = 'Who wrote the Chu Shi Biao?';
-      const doubleSpendRequest: LongjingRequestDto = {
-        ...validRequest,
-        payload: otherPayload,
-        signal: {
-          x: signalXHex(otherPayload),
-          y: '0x55667788',
-        },
-      };
-
-      await expect(service.handleRequest(doubleSpendRequest)).rejects.toThrow(
-        ForbiddenException,
-      );
-    });
-
-    it('should slash the note with the key two signals reveal', async () => {
+    it('slashes the note with the key two signals at one index reveal', async () => {
       const slashing = service[
         'slashingService'
       ] as jest.Mocked<SlashingService>;
       slashing.isEnabled.mockReturnValue(true);
-
-      // Generate two signals with the same secret key using ProofGenService
-      const secretKey = BigInt(12345);
-      const ticketIndex = BigInt(1);
-      const payload1 = 'first request';
-      const payload2 = 'second request';
-      const signalX1 = payloadToSignalX(payload1);
-      const signalX2 = payloadToSignalX(payload2);
-
-      const signal1 = await proofGenService.generateRLNSignal(
-        secretKey,
-        ticketIndex,
-        signalX1,
-      );
-      const signal2 = await proofGenService.generateRLNSignal(
-        secretKey,
-        ticketIndex,
-        signalX2,
-      );
-
-      // Create request that will trigger double-spend detection
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
-      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
 
-      const request1: LongjingRequestDto = {
-        ...validRequest,
-        payload: payload1,
-        signal: {
-          x: '0x' + signalX1.toString(16),
-          y: '0x' + signal1.signalY.toString(16),
-        },
+      const secretKey = 12345n;
+      const signalFor = async (p: string) => {
+        const x = await payloadSignalX(p, NONCE);
+        const { signalY } = await proofGenService.generateRLNSignal(
+          secretKey,
+          1n,
+          x,
+        );
+        return {
+          ...validRequest,
+          payload: p,
+          signal: { x: x.toString(), y: signalY.toString() },
+        };
       };
 
-      const request2: LongjingRequestDto = {
-        ...validRequest,
-        payload: payload2,
-        signal: {
-          x: '0x' + signalX2.toString(16),
-          y: '0x' + signal2.signalY.toString(16),
-        },
-      };
-
-      // First request succeeds
-      await service.handleRequest(request1);
-
-      // Second request should trigger secret key extraction
-      // We capture the error to verify the secret key was extracted
-      try {
-        await service.handleRequest(request2);
-        fail('Should have thrown ForbiddenException');
-      } catch (error) {
-        expect(error).toBeInstanceOf(ForbiddenException);
-        expect((error as Error).message).toContain('Double-spend detected');
-      }
+      costs(10n ** 14n);
+      await service.handleRequest(await signalFor('first request'));
+      costs(10n ** 14n);
+      await expect(
+        service.handleRequest(await signalFor('second request')),
+      ).rejects.toThrow('Double-spend detected');
 
       expect(slashing.slash.mock.calls).toEqual([[secretKey]]);
     });
 
-    it('should enforce per-nullifier rate limiting', async () => {
+    it('enforces per-nullifier rate limiting', async () => {
       jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
-      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
+      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(10n ** 14n);
 
-      // Create requests with different nullifiers (valid hex numbers)
-      const request1 = { ...validRequest, nullifier: '0xaaa111' };
-      const request2 = { ...validRequest, nullifier: '0xbbb222' };
-      const request3 = { ...validRequest, nullifier: '0xccc333' };
-      const request4 = { ...validRequest, nullifier: '0xddd444' };
-
-      // First 3 requests with different nullifiers should succeed
-      await service.handleRequest(request1);
-      await service.handleRequest(request2);
-      await service.handleRequest(request3);
-
-      // Clear nullifier store to allow reuse (we're testing rate limiting, not double-spend)
-      nullifierStore.clear();
-
-      // 4th request with a new nullifier that hasn't hit limit should succeed
-      await expect(service.handleRequest(request4)).resolves.toBeDefined();
-
-      // Now attempt 4 rapid requests with the same nullifier
       const rapidRequest = { ...validRequest, nullifier: '0x123456789abc' };
-      nullifierStore.clear();
-      await service.handleRequest(rapidRequest);
+      for (let i = 0; i < 3; i++) {
+        nullifierStore.clear();
+        await service.handleRequest(rapidRequest);
+      }
 
-      nullifierStore.clear();
-      await service.handleRequest(rapidRequest);
-
-      nullifierStore.clear();
-      await service.handleRequest(rapidRequest);
-
-      // 4th rapid request should be rate limited
       nullifierStore.clear();
       await expect(service.handleRequest(rapidRequest)).rejects.toThrow(
         'Rate limit exceeded for this nullifier',
       );
-    });
-
-    it('should allow requests after rate limit window expires', async () => {
-      jest.spyOn(proofVerifier, 'verify').mockResolvedValue(true);
-      jest.spyOn(ethRateOracle, 'usdToWei').mockResolvedValue(BigInt(100000));
-
-      // Use 3 attempts (valid hex number)
-      const request = { ...validRequest, nullifier: '0xfedcba987654' };
-      nullifierStore.clear();
-      await service.handleRequest(request);
-
-      nullifierStore.clear();
-      await service.handleRequest(request);
-
-      nullifierStore.clear();
-      await service.handleRequest(request);
-
-      // Check remaining attempts
-      expect(nullifierStore.getRemainingAttempts('0xfedcba987654')).toBe(0);
-
-      // Should be rate limited now
-      nullifierStore.clear();
-      await expect(service.handleRequest(request)).rejects.toThrow(
-        'Rate limit exceeded',
-      );
+      expect(nullifierStore.getRemainingAttempts('0x123456789abc')).toBe(0);
     });
   });
 

@@ -7,21 +7,20 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { BlockchainService } from './blockchain.service';
-import { ProofGenService } from './proof-gen.service';
 import { RefundSignerService } from './refund-signer.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 import { ComputeLimiterService } from './compute-limiter.service';
 import { isProd } from '../config/profile';
 
-type ApiRequestPublicInputs = {
-  merkleRoot: string;
-  maxCost: string;
-  initialDeposit: string;
-  signalX: string;
+/** What a request proof is checked against; none of it identifies the note */
+export type RequestPublicInputs = {
   nullifier: string;
   signalY: string;
-  idCommitment: string;
-  idCommitmentExpected: string;
+  accumulatorX: string;
+  accumulatorY: string;
+  merkleRoot: string;
+  maxCost: bigint;
+  signalX: string;
 };
 
 /**
@@ -38,7 +37,6 @@ export class ProofVerifierService {
 
   constructor(
     private readonly blockchainService: BlockchainService,
-    private readonly proofGenService: ProofGenService,
     private readonly snarkjsProofService: SnarkjsProofService,
     private readonly refundSignerService: RefundSignerService,
     private readonly computeLimiter: ComputeLimiterService,
@@ -77,7 +75,7 @@ export class ProofVerifierService {
    */
   async verify(
     proof: string,
-    publicInputs: ApiRequestPublicInputs,
+    publicInputs: RequestPublicInputs,
   ): Promise<boolean> {
     // CRITICAL: Production mode requires real cryptographic verification
     if (isProd() && !this.snarkjsProofService.isAvailable()) {
@@ -91,8 +89,7 @@ export class ProofVerifierService {
 
     this.logger.debug('Verifying proof with public inputs', {
       nullifier: publicInputs.nullifier.slice(0, 10) + '...',
-      maxCost: publicInputs.maxCost,
-      idCommitment: publicInputs.idCommitment.slice(0, 10) + '...',
+      maxCost: publicInputs.maxCost.toString(),
     });
 
     // 1. Verify proof structure
@@ -148,7 +145,7 @@ export class ProofVerifierService {
 
   private async verifyAgainstChainAndCircuit(
     proofData: any,
-    publicInputs: ApiRequestPublicInputs,
+    publicInputs: RequestPublicInputs,
   ): Promise<boolean> {
     // 2. The root must be one the contract recorded recently
     const knownRoot = await this.isKnownRoot(publicInputs.merkleRoot);
@@ -210,32 +207,21 @@ export class ProofVerifierService {
       this.logger.debug('Raw public inputs received:', publicInputs);
 
       try {
-        let signals: string[];
-        if (this.snarkjsProofService.getCircuit() !== 'api_credit_proof_test') {
-          // Refunds must be signed by this server, so the key never comes from the request
-          const serverKey = await this.refundSignerService.getPublicKey();
-          // [nullifier, signalY, idCommitment, merkleRoot, merkleRootExpected, maxCost, signalX, serverPublicKeyX, serverPublicKeyY]
-          signals = [
-            publicInputs.nullifier,
-            publicInputs.signalY,
-            publicInputs.idCommitment,
-            publicInputs.merkleRoot,
-            publicInputs.merkleRoot,
-            publicInputs.maxCost,
-            publicInputs.signalX,
-            serverKey.x,
-            serverKey.y,
-          ];
-        } else {
-          // [nullifier, signalY, idCommitment, signalX, idCommitmentExpected]
-          signals = [
-            publicInputs.nullifier,
-            publicInputs.signalY,
-            publicInputs.idCommitment,
-            publicInputs.signalX,
-            publicInputs.idCommitmentExpected,
-          ];
-        }
+        // Refunds must be signed by this server, so the key never comes from the request
+        const serverKey = await this.refundSignerService.getPublicKey();
+        // Outputs first, then inputs:
+        // [nullifier, signalY, accumulatorX, accumulatorY, merkleRoot, maxCost, signalX, serverPublicKeyX, serverPublicKeyY]
+        const signals = [
+          publicInputs.nullifier,
+          publicInputs.signalY,
+          publicInputs.accumulatorX,
+          publicInputs.accumulatorY,
+          publicInputs.merkleRoot,
+          publicInputs.maxCost.toString(),
+          publicInputs.signalX,
+          serverKey.x,
+          serverKey.y,
+        ];
         const publicSignals = signals.map((value) =>
           toBigInt(value).toString(),
         );

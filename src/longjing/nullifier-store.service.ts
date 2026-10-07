@@ -183,17 +183,6 @@ export class NullifierStoreService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Undo a checkAndSet whose request was never served, so the ticket index
-   * can be retried. Only removes the row if it still holds this signal's x.
-   */
-  release(nullifier: string, x: string): boolean {
-    const result = this.db
-      .prepare('DELETE FROM nullifiers WHERE nullifier = ? AND x = ?')
-      .run(nullifier, x);
-    return result.changes > 0;
-  }
-
-  /**
    * Keep a signed response for RESPONSE_TTL_MS, so a retry of the same signal
    * gets it back without a second provider call
    */

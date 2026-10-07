@@ -27,6 +27,20 @@ export class RlnSignalDto {
   y: string;
 }
 
+export class AccumulatorDto {
+  @ApiProperty({ description: 'Baby Jubjub x coordinate' })
+  @IsFieldElement()
+  x: string;
+
+  @ApiProperty({ description: 'Baby Jubjub y coordinate' })
+  @IsFieldElement()
+  y: string;
+}
+
+/**
+ * A request as docs/SETTLEMENT.md defines it: nothing in it identifies the
+ * note, its deposit or its index
+ */
 export class LongjingRequestDto {
   @ApiProperty({ description: 'Request payload for external API service' })
   @IsString()
@@ -34,12 +48,19 @@ export class LongjingRequestDto {
   @MaxLength(MAX_PAYLOAD_LENGTH)
   payload: string;
 
-  @ApiProperty({ description: 'RLN nullifier (prevents double-spend)' })
+  @ApiProperty({
+    description:
+      'Fresh nonce ρ in the field, so that x = Poseidon(SHA-256(payload) mod p, ρ) reveals nothing about the payload',
+  })
+  @IsFieldElement()
+  nonce: string;
+
+  @ApiProperty({ description: 'RLN nullifier N (prevents double-spend)' })
   @IsFieldElement()
   nullifier: string;
 
   @ApiProperty({
-    description: 'RLN signal for slashing detection',
+    description: 'RLN signal (x, y), which reveals k if N is reused',
     type: RlnSignalDto,
   })
   @IsObject()
@@ -47,38 +68,25 @@ export class LongjingRequestDto {
   @Type(() => RlnSignalDto)
   signal: RlnSignalDto;
 
-  @ApiProperty({ description: 'ZK-SNARK proof (Groth16)' })
+  @ApiProperty({ description: 'Groth16 proof of request.circom, as JSON' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(MAX_PROOF_LENGTH)
   proof: string;
 
-  @ApiProperty({ description: 'Maximum cost user is willing to pay (in wei)' })
-  @IsFieldElement()
-  maxCost: string;
-
-  @ApiProperty({ description: 'Merkle root from on-chain state' })
+  @ApiProperty({ description: 'A recent Merkle root of the contract' })
   @IsFieldElement()
   merkleRoot: string;
 
-  @ApiProperty({ description: 'Initial deposit amount (in wei)' })
-  @IsFieldElement()
-  initialDeposit: string;
-
-  @ApiProperty({ description: 'Ticket index for this request' })
-  @IsFieldElement()
-  ticketIndex: string;
-
-  @ApiProperty({ description: 'Identity commitment (Hash of secret key)' })
-  @IsFieldElement()
-  idCommitment: string;
-
   @ApiProperty({
     description:
-      'Expected identity commitment (public input for circuit constraint)',
+      'A_pub, the re-randomized accumulator the proof outputs, which the server adds the refund to',
+    type: AccumulatorDto,
   })
-  @IsFieldElement()
-  idCommitmentExpected: string;
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AccumulatorDto)
+  accumulator: AccumulatorDto;
 
   @ApiProperty({
     description: 'Model/service variant to use',

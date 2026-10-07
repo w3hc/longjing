@@ -5,7 +5,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ProofVerifierService } from './proof-verifier.service';
 import { ComputeLimiterService } from './compute-limiter.service';
 import { BlockchainService } from './blockchain.service';
-import { ProofGenService } from './proof-gen.service';
 import { RefundSignerService } from './refund-signer.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 
@@ -26,15 +25,14 @@ describe('ProofVerifierService', () => {
   });
 
   const mockPublicInputs = {
-    merkleRoot:
-      '0x1234567890123456789012345678901234567890123456789012345678901234',
-    maxCost: '1000000',
-    initialDeposit: '5000000',
-    signalX: '0x0064',
     nullifier: '0x9999',
     signalY: '0x8888',
-    idCommitment: '0x7777',
-    idCommitmentExpected: '0x7777', // Must match idCommitment for valid proof
+    accumulatorX: '0x7777',
+    accumulatorY: '0x6666',
+    merkleRoot:
+      '0x1234567890123456789012345678901234567890123456789012345678901234',
+    maxCost: 1000000n,
+    signalX: '0x0064',
   };
 
   const serverKey = { x: '0x0a', y: '0x0b' };
@@ -45,14 +43,9 @@ describe('ProofVerifierService', () => {
       isKnownRoot: jest.fn(),
     };
 
-    const mockProofGenService = {
-      verifyMockProof: jest.fn(),
-    };
-
     const mockSnarkjsProofService = {
       isAvailable: jest.fn().mockReturnValue(false),
       verifyProof: jest.fn(),
-      getCircuit: jest.fn().mockReturnValue('api_credit_proof_test'),
     };
 
     const mockRefundSignerService = {
@@ -64,7 +57,6 @@ describe('ProofVerifierService', () => {
         ProofVerifierService,
         ComputeLimiterService,
         { provide: BlockchainService, useValue: mockBlockchainService },
-        { provide: ProofGenService, useValue: mockProofGenService },
         { provide: SnarkjsProofService, useValue: mockSnarkjsProofService },
         { provide: RefundSignerService, useValue: mockRefundSignerService },
       ],
@@ -213,13 +205,11 @@ describe('ProofVerifierService', () => {
           pi_b: expect.any(Array) as unknown[][],
           pi_c: expect.any(Array) as unknown[],
         }),
-        // Test circuit format: [nullifier, signalY, idCommitment, signalX, idCommitmentExpected]
         expect.arrayContaining([
           BigInt(mockPublicInputs.nullifier).toString(),
           BigInt(mockPublicInputs.signalY).toString(),
-          BigInt(mockPublicInputs.idCommitment).toString(),
+          BigInt(mockPublicInputs.accumulatorX).toString(),
           BigInt(mockPublicInputs.signalX).toString(),
-          BigInt(mockPublicInputs.idCommitment).toString(), // idCommitmentExpected
         ]) as string[],
       );
     });
@@ -236,38 +226,21 @@ describe('ProofVerifierService', () => {
       return snarkjsProofService.verifyProof.mock.calls[0][1];
     };
 
-    it('orders test circuit signals', async () => {
+    it('orders the request circuit signals, outputs first, with this server key', async () => {
       await expect(signals()).resolves.toEqual(
         [
           mockPublicInputs.nullifier,
           mockPublicInputs.signalY,
-          mockPublicInputs.idCommitment,
+          mockPublicInputs.accumulatorX,
+          mockPublicInputs.accumulatorY,
+          mockPublicInputs.merkleRoot,
+          mockPublicInputs.maxCost,
           mockPublicInputs.signalX,
-          mockPublicInputs.idCommitmentExpected,
+          serverKey.x,
+          serverKey.y,
         ].map((v) => BigInt(v).toString()),
       );
     });
-
-    it.each(['api_request', 'api_request_local'])(
-      'orders %s signals with the server key',
-      async (circuit) => {
-        snarkjsProofService.getCircuit.mockReturnValue(circuit);
-
-        await expect(signals()).resolves.toEqual(
-          [
-            mockPublicInputs.nullifier,
-            mockPublicInputs.signalY,
-            mockPublicInputs.idCommitment,
-            mockPublicInputs.merkleRoot,
-            mockPublicInputs.merkleRoot,
-            mockPublicInputs.maxCost,
-            mockPublicInputs.signalX,
-            serverKey.x,
-            serverKey.y,
-          ].map((v) => BigInt(v).toString()),
-        );
-      },
-    );
   });
 
   describe('isProductionReady', () => {
