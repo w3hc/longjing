@@ -43,7 +43,7 @@ Before deploying to any TEE platform, ensure you have:
 
 ## Secret Management
 
-**Keys** (ML-KEM, refund signer, identity, TLS) are never secrets you manage: on dstack they are derived inside the enclave with `GetKey`, and production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env. See [KEY_DERIVATION.md](KEY_DERIVATION.md), including the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out.
+**Keys** (ML-KEM, refund signer, identity, transaction signer, TLS) are never secrets you manage: on dstack they are derived inside the enclave with `GetKey`, and production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `SERVER_TX_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env. See [KEY_DERIVATION.md](KEY_DERIVATION.md), including the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out.
 
 **Attestation** in production goes only through dstack. The server refuses to start without `/var/run/dstack.sock`, with `DSTACK_SIMULATOR_ENDPOINT` set, or with `TEE_PLATFORM` set to anything but `auto` or `phala`, and it checks that a first quote carries the requested `report_data` before serving.
 

@@ -70,7 +70,7 @@ services:
 
 **Important**:
 - The image is pinned by digest, so the attested compose hash commits to the code that runs. Never use a mutable tag such as `latest`
-- The `/var/run/dstack.sock` volume mount is **required**: the ML-KEM, refund signer, identity and TLS keys are derived through it with dstack v1 `GetKey` (dstack ≥ 0.6.0), and production refuses to start without it. See [KEY_DERIVATION.md](KEY_DERIVATION.md)
+- The `/var/run/dstack.sock` volume mount is **required**: the ML-KEM, refund signer, identity, transaction signer and TLS keys are derived through it with dstack v1 `GetKey` (dstack ≥ 0.6.0), and production refuses to start without it. See [KEY_DERIVATION.md](KEY_DERIVATION.md)
 
 ### .env.prod
 
@@ -85,7 +85,7 @@ ZK_CONTRACT_ADDRESS=<your-contract-address>
 ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,https://rpc.mevblocker.io/noreverts,https://rpc.mevblocker.io/fast,https://rpc.mevblocker.io,https://rpc.flashbots.net/fast,https://rpc.flashbots.net,https://mainnet.gateway.tenderly.co,https://ethereum-rpc.publicnode.com
 ```
 
-`NODE_ENV` comes from the compose file as a literal. Leave out `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY`, `ANVIL_RPC_URL` and `ANVIL_PRIVATE_KEY`: the keys are derived inside the enclave, and `NODE_ENV=production` refuses to start with them in env. Contract transactions, slashing included, are signed by the enclave's identity key, so fund its address (`GET /attestation/manifest`) for gas. Placeholder values, such as Anvil addresses or `example.com` URLs, are refused too, see [LOCAL_SETUP.md](LOCAL_SETUP.md#node_env).
+`NODE_ENV` comes from the compose file as a literal. Leave out `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY`, `ANVIL_RPC_URL` and `SERVER_TX_PRIVATE_KEY`: the keys are derived inside the enclave, and `NODE_ENV=production` refuses to start with them in env. Contract transactions, slashing included, are signed by the enclave's transaction signer, so fund its address (`txSignerAddress` in `GET /attestation/manifest`) for gas and set it as the contract's `serverAddress`. Placeholder values, such as Anvil addresses or `example.com` URLs, are refused too, see [LOCAL_SETUP.md](LOCAL_SETUP.md#node_env).
 
 **Important**: Add `.env.prod` to [.gitignore](../.gitignore) to prevent committing secrets.
 

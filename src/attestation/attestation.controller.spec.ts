@@ -76,7 +76,10 @@ describe('AttestationController', () => {
     });
 
     it('serves the signed manifest with public keys and signature chains', () => {
-      const signed = { manifest: { epoch: 1 }, signature: '0xsig' };
+      const signed = {
+        manifest: { txSignerAddress: '0xdef', epoch: 1 },
+        signature: '0xsig',
+      };
       keyDerivation.getKeyManifest.mockReturnValue(signed);
 
       const result = controller.getKeyManifest();

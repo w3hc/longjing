@@ -43,7 +43,7 @@ describe('BlockchainService', () => {
                 ANVIL_RPC_URL: 'http://localhost:8545',
                 ZK_CONTRACT_ADDRESS:
                   '0x1234567890123456789012345678901234567890',
-                ANVIL_PRIVATE_KEY:
+                SERVER_TX_PRIVATE_KEY:
                   '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
               };
               return config[key];
@@ -375,7 +375,7 @@ describe('BlockchainService', () => {
       );
     });
 
-    it('never reads ANVIL_PRIVATE_KEY in prod', async () => {
+    it('never reads SERVER_TX_PRIVATE_KEY in prod', async () => {
       chainId('0x1');
       // A closed port, so ethers fails fast instead of reaching the network
       const values: Record<string, string> = {
@@ -393,7 +393,7 @@ describe('BlockchainService', () => {
 
       await blockchain.onModuleInit().catch(() => undefined);
 
-      expect(get).not.toHaveBeenCalledWith('ANVIL_PRIVATE_KEY');
+      expect(get).not.toHaveBeenCalledWith('SERVER_TX_PRIVATE_KEY');
       expect(get).not.toHaveBeenCalledWith('ANVIL_RPC_URL');
     });
   });
@@ -407,12 +407,12 @@ describe('BlockchainService', () => {
 
     function signerFor(
       prod: boolean,
-      identity: ethers.Wallet | null,
-      values: Record<string, string> = { ANVIL_PRIVATE_KEY: ANVIL_KEY },
+      txSigner: ethers.Wallet | null,
+      values: Record<string, string> = { SERVER_TX_PRIVATE_KEY: ANVIL_KEY },
     ) {
       const get = jest.fn((key: string) => values[key]);
       const keyDerivation = {
-        getIdentitySigner: jest.fn(() => identity),
+        getTxSigner: jest.fn(() => txSigner),
       } as unknown as KeyDerivationService;
       const blockchain = new BlockchainService(
         { get } as unknown as ConfigService,
@@ -426,28 +426,28 @@ describe('BlockchainService', () => {
       return { signer, get };
     }
 
-    it('signs with the identity key in prod, never ANVIL_PRIVATE_KEY', () => {
-      const identity = ethers.Wallet.createRandom().connect(
+    it('signs with the derived transaction signer in prod, never SERVER_TX_PRIVATE_KEY', () => {
+      const txSigner = ethers.Wallet.createRandom().connect(
         provider,
       ) as unknown as ethers.Wallet;
 
-      const { signer, get } = signerFor(true, identity);
+      const { signer, get } = signerFor(true, txSigner);
 
-      expect(signer?.address).toBe(identity.address);
-      expect(get).not.toHaveBeenCalledWith('ANVIL_PRIVATE_KEY');
+      expect(signer?.address).toBe(txSigner.address);
+      expect(get).not.toHaveBeenCalledWith('SERVER_TX_PRIVATE_KEY');
     });
 
-    it('is read-only in prod without a derived identity', () => {
+    it('is read-only in prod without a derived transaction signer', () => {
       expect(signerFor(true, null).signer).toBeNull();
     });
 
-    it('signs with ANVIL_PRIVATE_KEY in local', () => {
+    it('signs with SERVER_TX_PRIVATE_KEY in local', () => {
       expect(signerFor(false, null).signer?.address).toBe(
         '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
       );
     });
 
-    it('is read-only in local without ANVIL_PRIVATE_KEY', () => {
+    it('is read-only in local without SERVER_TX_PRIVATE_KEY', () => {
       expect(signerFor(false, null, {}).signer).toBeNull();
     });
   });

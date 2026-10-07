@@ -28,6 +28,7 @@ const signedManifest = (
     refundSignerX: refundSigner.x,
     refundSignerY: refundSigner.y,
     tlsCertificateHash: sha256(certificate),
+    txSignerAddress: '0x2222222222222222222222222222222222222222',
     epoch: 1,
     ...overrides,
   };

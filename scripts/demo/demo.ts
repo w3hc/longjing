@@ -164,7 +164,7 @@ const goals = {
   attestation: goal(
     'The client verifies the attestation before sending anything',
     'not checked yet',
-    [99, 130],
+    [99],
   ),
   provider: goal(
     'Protocol, pricing and refunds work with any provider',
@@ -380,7 +380,7 @@ async function startServer(contract: string): Promise<INestApplication> {
   });
   for (const name of [
     'ANTHROPIC_API_KEY',
-    'ANVIL_PRIVATE_KEY',
+    'SERVER_TX_PRIVATE_KEY',
     'ETHEREUM_RPC_URLS',
     'DSTACK_SIMULATOR_ENDPOINT',
   ]) {

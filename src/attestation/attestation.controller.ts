@@ -42,7 +42,8 @@ export class AttestationController {
 
   /**
    * Returns the EIP-712 key manifest signed by the enclave's identity key,
-   * which binds the ML-KEM, refund signer and TLS keys to the app id, with
+   * which binds the ML-KEM, refund signer and TLS keys and the transaction
+   * signer address to the app id, with
    * the GetKey signature chains that tie the keys to the dstack KMS root.
    * See docs/KEY_DERIVATION.md.
    */

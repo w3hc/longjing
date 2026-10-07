@@ -21,6 +21,7 @@ import { isProd } from '../config/profile';
 export const MLKEM_DOMAIN = 'longjing/mlkem-1024/v1';
 export const REFUND_SIGNER_DOMAIN = 'longjing/refund-signer/babyjub/v1';
 export const IDENTITY_DOMAIN = 'longjing/identity/v1';
+export const TX_SIGNER_DOMAIN = 'longjing/tx-signer/v1';
 
 const HKDF_SALT = 'longjing';
 const MLKEM_SEED_INFO = lengthPrefixed('longjing-mlkem-1024-seed-v1');
@@ -34,6 +35,7 @@ export const KEY_MANIFEST_TYPES = {
     { name: 'refundSignerX', type: 'bytes32' },
     { name: 'refundSignerY', type: 'bytes32' },
     { name: 'tlsCertificateHash', type: 'bytes32' },
+    { name: 'txSignerAddress', type: 'address' },
     { name: 'epoch', type: 'uint64' },
   ],
 };
@@ -45,6 +47,8 @@ export interface KeyManifest {
   refundSignerY: string;
   /** SHA-256 of the served TLS leaf certificate (DER), or zero if none. */
   tlsCertificateHash: string;
+  /** Signs every contract transaction in production; needs gas. */
+  txSignerAddress: string;
   epoch: number;
 }
 
@@ -75,6 +79,7 @@ export class KeyDerivationService implements OnModuleInit {
   private refundSignerSignatureChain: Uint8Array[] = [];
   private identity: SigningKey | null = null;
   private identitySignatureChain: Uint8Array[] = [];
+  private txSigner: SigningKey | null = null;
   private appId: string | null = null;
   private keyManifest: SignedKeyManifest | null = null;
 
@@ -107,7 +112,7 @@ export class KeyDerivationService implements OnModuleInit {
       this.logger.warn('Keys derived from the dstack simulator (public root)');
     }
     this.logger.log(
-      `Keys derived: ML-KEM-1024 ${Buffer.from(this.mlkemPublicKey!).toString('base64').substring(0, 32)}..., identity ${this.getIdentityAddress()}`,
+      `Keys derived: ML-KEM-1024 ${Buffer.from(this.mlkemPublicKey!).toString('base64').substring(0, 32)}..., identity ${this.getIdentityAddress()}, tx signer ${this.getTxSignerAddress()}`,
     );
   }
 
@@ -139,6 +144,10 @@ export class KeyDerivationService implements OnModuleInit {
     const signingKey = new SigningKey(hexlify(identity.key));
     identity.key.fill(0);
 
+    const txSigner = await this.dstack.getKey(TX_SIGNER_DOMAIN, 'secp256k1');
+    const txSigningKey = new SigningKey(hexlify(txSigner.key));
+    txSigner.key.fill(0);
+
     const appId = await this.dstack.getAppId();
 
     this.mlkem = mlkem;
@@ -149,6 +158,7 @@ export class KeyDerivationService implements OnModuleInit {
     this.refundSignerSignatureChain = refundSigner.signatureChain;
     this.identity = signingKey;
     this.identitySignatureChain = identity.signatureChain;
+    this.txSigner = txSigningKey;
     this.appId = appId;
   }
 
@@ -156,7 +166,8 @@ export class KeyDerivationService implements OnModuleInit {
     return (
       this.mlkemSecretKey !== null &&
       this.refundSignerKey !== null &&
-      this.identity !== null
+      this.identity !== null &&
+      this.txSigner !== null
     );
   }
 
@@ -202,12 +213,16 @@ export class KeyDerivationService implements OnModuleInit {
     return this.identitySignatureChain;
   }
 
+  getTxSignerAddress(): string | null {
+    return this.txSigner ? computeAddress(this.txSigner.publicKey) : null;
+  }
+
   /**
-   * The identity key as a transaction signer. In production it is the only
-   * key that sends transactions, so its address needs gas.
+   * In production the only key that sends transactions, so its address
+   * needs gas and is the contract's serverAddress.
    */
-  getIdentitySigner(provider: Provider): Wallet | null {
-    return this.identity ? new Wallet(this.identity, provider) : null;
+  getTxSigner(provider: Provider): Wallet | null {
+    return this.txSigner ? new Wallet(this.txSigner, provider) : null;
   }
 
   /**
@@ -236,7 +251,12 @@ export class KeyDerivationService implements OnModuleInit {
     tlsCertificateHash: string,
     epoch = 1,
   ): SignedKeyManifest {
-    if (!this.identity || !this.mlkemPublicKey || !this.refundSignerPublicKey) {
+    if (
+      !this.identity ||
+      !this.txSigner ||
+      !this.mlkemPublicKey ||
+      !this.refundSignerPublicKey
+    ) {
       throw new Error('Keys not derived');
     }
     const manifest: KeyManifest = {
@@ -245,6 +265,7 @@ export class KeyDerivationService implements OnModuleInit {
       refundSignerX: this.refundSignerPublicKey.x,
       refundSignerY: this.refundSignerPublicKey.y,
       tlsCertificateHash,
+      txSignerAddress: computeAddress(this.txSigner.publicKey),
       epoch,
     };
     const digest = TypedDataEncoder.hash(

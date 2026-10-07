@@ -141,7 +141,7 @@ Server runs at `https://localhost:3000`, with the Swagger UI at its root. Outsid
 
 ### Deploy to production
 
-In production, Longjing runs on [dstack](https://github.com/Dstack-TEE/dstack) and derives every key inside the enclave with `GetKey`: the ML-KEM key, the refund signer, the TLS key and an identity key that signs a key manifest, served at `GET /attestation/manifest`. No one handles them, the operator included, and production refuses to start with key material in env. See [KEY_DERIVATION.md](docs/KEY_DERIVATION.md).
+In production, Longjing runs on [dstack](https://github.com/Dstack-TEE/dstack) and derives every key inside the enclave with `GetKey`: the ML-KEM key, the refund signer, the TLS key, the transaction signer that pays gas as the contract's `serverAddress`, and an identity key that signs a key manifest, served at `GET /attestation/manifest`. No one handles them, the operator included, and production refuses to start with key material in env. The upstream provider's API key (`ANTHROPIC_API_KEY`) is the exception: a third-party credential, it necessarily transits env. See [KEY_DERIVATION.md](docs/KEY_DERIVATION.md).
 
 ```
 docker compose up   # docker-compose.yml mounts /var/run/dstack.sock

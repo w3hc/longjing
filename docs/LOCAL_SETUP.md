@@ -44,7 +44,7 @@ MY_API_KEY=<your-api-key>
 # NODE_ENV=development reads only ANVIL_RPC_URL, on chain 31337:
 ZK_CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
 ANVIL_RPC_URL=http://127.0.0.1:8545
-ANVIL_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+SERVER_TX_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
 # NODE_ENV=production reads only ETHEREUM_RPC_URLS (comma-separated, one is picked at random):
 # ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,https://rpc.flashbots.net,https://ethereum-rpc.publicnode.com
@@ -211,7 +211,7 @@ longjing/
 ### Local (`NODE_ENV=development` or `test`)
 
 - Anvil only: reads `ANVIL_RPC_URL`, and refuses to start if its chain id is not 31337. Without an RPC, or with Anvil down, contract interaction is disabled.
-- Signs contract transactions with `ANVIL_PRIVATE_KEY` (Anvil account #0 in `.env.template`).
+- Signs contract transactions with `SERVER_TX_PRIVATE_KEY` (Anvil account #0 in `.env.template`).
 - Without the dstack socket, falls back to `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY` or the deterministic dev refund-signer key. Run the dstack simulator to derive keys instead, see [KEY_DERIVATION.md](./KEY_DERIVATION.md#development).
 - Mock TEE platform when no real one is detected, self-signed TLS from `./secrets`, CORS open to `*`, 100 requests per minute, the `api_request_local` circuit by default.
 
@@ -226,8 +226,8 @@ cd contracts && NODE_ENV=development forge script script/DeployLongjingCredits.s
 ### Production (`NODE_ENV=production`)
 
 - Requires `ETHEREUM_RPC_URLS` and `ZK_CONTRACT_ADDRESS`, refuses to start if the RPC is unreachable or on chain 31337, and never reads `ANVIL_RPC_URL`.
-- Every key is derived in the enclave, see [KEY_DERIVATION.md](./KEY_DERIVATION.md#production-policy). Contract transactions are signed by the identity key, so its address (`GET /attestation/manifest`) needs ETH for gas.
-- Refuses `ANVIL_RPC_URL`, `ANVIL_PRIVATE_KEY`, `DSTACK_SIMULATOR_ENDPOINT` and any placeholder: an Anvil key or address, Anvil's first deployment address `0x5FbDB…0aa3`, or an `example.com` URL.
+- Every key is derived in the enclave, see [KEY_DERIVATION.md](./KEY_DERIVATION.md#production-policy). Contract transactions are signed by the derived transaction signer, so its address (`txSignerAddress` in `GET /attestation/manifest`) needs ETH for gas and must be the contract's `serverAddress`.
+- Refuses `ANVIL_RPC_URL`, `SERVER_TX_PRIVATE_KEY`, `DSTACK_SIMULATOR_ENDPOINT` and any placeholder: an Anvil key or address, Anvil's first deployment address `0x5FbDB…0aa3`, or an `example.com` URL.
 - dstack attestation only, TLS terminated in the enclave, sanitized logging, CORS disabled, 10 requests per minute, the `api_request` circuit only.
 
 `docker-compose.yml` sets `NODE_ENV=production` as a literal, so the attested compose hash commits to it.

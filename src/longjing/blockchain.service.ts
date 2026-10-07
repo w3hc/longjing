@@ -109,17 +109,17 @@ export class BlockchainService implements OnModuleInit {
   }
 
   /**
-   * prod signs with the enclave-derived identity key, local with
-   * ANVIL_PRIVATE_KEY. Neither falls back to the other.
+   * prod signs with the enclave-derived transaction signer, local with
+   * SERVER_TX_PRIVATE_KEY. Neither falls back to the other.
    */
   private createSigner(
     prod: boolean,
     provider: ethers.Provider,
   ): ethers.Wallet | null {
     if (prod) {
-      return this.keyDerivation.getIdentitySigner(provider);
+      return this.keyDerivation.getTxSigner(provider);
     }
-    const privateKey = this.configService.get<string>('ANVIL_PRIVATE_KEY');
+    const privateKey = this.configService.get<string>('SERVER_TX_PRIVATE_KEY');
     return privateKey ? new ethers.Wallet(privateKey, provider) : null;
   }
 
