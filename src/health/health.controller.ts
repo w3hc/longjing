@@ -1,4 +1,6 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { isProd } from '../config/profile';
+import { BlockchainService } from '../longjing/blockchain.service';
 
 /**
  * Health check endpoint for monitoring and load balancers.
@@ -6,6 +8,8 @@ import { Controller, Get } from '@nestjs/common';
  */
 @Controller('health')
 export class HealthController {
+  constructor(private readonly blockchain: BlockchainService) {}
+
   /**
    * Basic health check endpoint.
    * @returns Health status object
@@ -20,12 +24,16 @@ export class HealthController {
 
   /**
    * Readiness probe - indicates if the service is ready to accept traffic.
+   * In production it fails until LongjingCredits answers.
    * @returns Readiness status
    */
   @Get('ready')
   ready() {
-    // In a real implementation, check if KMS secrets are loaded,
-    // database connections are ready, etc.
+    if (isProd() && !this.blockchain.isAvailable()) {
+      throw new ServiceUnavailableException(
+        'LongjingCredits does not answer yet',
+      );
+    }
     return {
       status: 'ready',
       timestamp: new Date().toISOString(),
