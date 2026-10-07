@@ -7,8 +7,12 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {LongjingCredits} from "../src/LongjingCredits.sol";
 import {PoseidonHasher} from "../src/PoseidonHasher.sol";
 
+/// Deploys at the fixtures' address with their server key, so the real
+/// SettlementVerifier accepts the proofs in test/fixtures/settlement.json
+/// (regenerate with scripts/testing/generate-settlement-fixtures.ts)
 contract LongjingCreditsTest is Test {
     LongjingCredits public longjing;
+    string internal fixtures;
 
     address public server;
     address public user1;
@@ -27,7 +31,14 @@ contract LongjingCreditsTest is Test {
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
 
-        longjing = new LongjingCredits(server, bytes32(uint256(1)), bytes32(uint256(2)), C_MAX);
+        fixtures = vm.readFile("test/fixtures/settlement.json");
+        assertEq(C_MAX, vm.parseJsonUint(fixtures, ".cMax"));
+        assertEq(DEPOSIT, vm.parseJsonUint(fixtures, ".deposit"));
+        address at = vm.parseJsonAddress(fixtures, ".contract");
+        deployCodeTo(
+            "LongjingCredits.sol:LongjingCredits", abi.encode(server, _refundKey().x, _refundKey().y, C_MAX), at
+        );
+        longjing = LongjingCredits(at);
 
         commitment1 = bytes32(PoseidonHasher.hash(uint256(keccak256("secret1")) % FIELD_MODULUS));
         commitment2 = bytes32(PoseidonHasher.hash(uint256(keccak256("secret2")) % FIELD_MODULUS));
@@ -117,6 +128,141 @@ contract LongjingCreditsTest is Test {
         assertFalse(longjing.isKnownRoot(empty));
         assertFalse(longjing.isKnownRoot(first));
         assertTrue(longjing.isKnownRoot(longjing.merkleRoot()));
+    }
+
+    // ============ Withdrawal ============
+
+    function test_InitiateWithdrawal_StartsTheWindowAndRemovesTheLeaf() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        _deposit(commitment2, DEPOSIT);
+
+        vm.expectEmit(true, true, false, true);
+        emit LongjingCredits.WithdrawalInitiated(
+            e.commitment, e.nullifier, e.signalX, e.signalY, e.payout, _recipient(), block.timestamp + 3 days
+        );
+        _initiate(e);
+
+        assertEq(uint256(longjing.getNote(e.commitment).status), uint256(LongjingCredits.Status.Exiting));
+        assertEq(longjing.leaves(0), bytes32(0));
+        assertEq(_rootFrom(1, longjing.leaves(1)), longjing.merkleRoot());
+        (uint256 nullifier,,, uint256 payout, address recipient, uint256 exitAt) = longjing.exits(e.commitment);
+        assertEq(nullifier, e.nullifier);
+        assertEq(payout, e.payout);
+        assertEq(recipient, _recipient());
+        assertEq(exitAt, block.timestamp + longjing.CHALLENGE_WINDOW());
+    }
+
+    function test_FinalizeWithdrawal_PaysDPlusRMinusSpendingAfterTheWindow() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        _initiate(e);
+
+        vm.warp(block.timestamp + longjing.CHALLENGE_WINDOW() - 1);
+        vm.expectRevert(LongjingCredits.ChallengeWindowOpen.selector);
+        longjing.finalizeWithdrawal(e.commitment);
+
+        vm.warp(block.timestamp + 1);
+        vm.prank(user2);
+        longjing.finalizeWithdrawal(e.commitment);
+
+        // Two requests at C_MAX each, refunded 0.001 ether in total
+        assertEq(e.payout, DEPOSIT + C_MAX - 2 * C_MAX);
+        assertEq(_recipient().balance, e.payout);
+        assertEq(longjing.operatorBalance(), DEPOSIT - e.payout);
+        assertEq(address(longjing).balance, DEPOSIT - e.payout);
+        assertEq(uint256(longjing.getNote(e.commitment).status), uint256(LongjingCredits.Status.Closed));
+
+        vm.expectRevert(LongjingCredits.NoteNotExiting.selector);
+        longjing.finalizeWithdrawal(e.commitment);
+    }
+
+    function test_Withdrawal_FromGenesisPaysTheWholeDeposit() public {
+        Exit memory e = _exit(".genesis");
+        _deposit(e.commitment, DEPOSIT);
+        _initiate(e);
+        vm.warp(block.timestamp + longjing.CHALLENGE_WINDOW());
+        longjing.finalizeWithdrawal(e.commitment);
+        assertEq(_recipient().balance, DEPOSIT);
+        assertEq(longjing.operatorBalance(), 0);
+    }
+
+    function test_InitiateWithdrawal_RejectsAnotherRecipient() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        vm.expectRevert(LongjingCredits.InvalidProof.selector);
+        longjing.initiateWithdrawal(e.commitment, user2, _refundKey(), e.proof, e.nullifier, e.signalY, e.payout);
+    }
+
+    function test_InitiateWithdrawal_RejectsAnInflatedPayout() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        vm.expectRevert(LongjingCredits.InvalidProof.selector);
+        longjing.initiateWithdrawal(e.commitment, _recipient(), _refundKey(), e.proof, e.nullifier, e.signalY, DEPOSIT);
+    }
+
+    function test_InitiateWithdrawal_RejectsAPayoutAboveTheDeposit() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        vm.expectRevert(LongjingCredits.PayoutExceedsDeposit.selector);
+        longjing.initiateWithdrawal(
+            e.commitment, _recipient(), _refundKey(), e.proof, e.nullifier, e.signalY, DEPOSIT + 1
+        );
+    }
+
+    function test_InitiateWithdrawal_RejectsAnotherDeposit() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT + 1);
+        vm.expectRevert(LongjingCredits.InvalidProof.selector);
+        _initiate(e);
+    }
+
+    function test_InitiateWithdrawal_RejectsAnUnknownRefundKey() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        vm.expectRevert(LongjingCredits.UnknownRefundKey.selector);
+        longjing.initiateWithdrawal(
+            e.commitment,
+            _recipient(),
+            LongjingCredits.EdDSAPublicKey(bytes32(uint256(1)), bytes32(uint256(2))),
+            e.proof,
+            e.nullifier,
+            e.signalY,
+            e.payout
+        );
+    }
+
+    function test_InitiateWithdrawal_RevertsTwice() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        _initiate(e);
+        vm.expectRevert(LongjingCredits.NoteNotActive.selector);
+        _initiate(e);
+    }
+
+    function test_Withdrawal_StaysOpenWhilePaused() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        longjing.pause();
+        _initiate(e);
+        vm.warp(block.timestamp + longjing.CHALLENGE_WINDOW());
+        longjing.finalizeWithdrawal(e.commitment);
+        assertEq(_recipient().balance, e.payout);
+    }
+
+    function test_ClaimExpired_RevertsWhileExiting() public {
+        Exit memory e = _exit(".honest");
+        _deposit(e.commitment, DEPOSIT);
+        vm.warp(longjing.noteExpiry(e.commitment) - 1);
+        _initiate(e);
+        vm.warp(block.timestamp + 1);
+        vm.prank(server);
+        vm.expectRevert(LongjingCredits.NoteNotActive.selector);
+        longjing.claimExpired(e.commitment);
+    }
+
+    function test_WithdrawalSignalX_MatchesTheFixture() public view {
+        assertEq(longjing.withdrawalSignalX(_recipient()), _exit(".honest").signalX);
     }
 
     // ============ Expiry ============
@@ -270,6 +416,44 @@ contract LongjingCreditsTest is Test {
     }
 
     // ============ Helpers ============
+
+    struct Exit {
+        bytes32 commitment;
+        uint256[8] proof;
+        uint256 nullifier;
+        uint256 signalX;
+        uint256 signalY;
+        uint256 payout;
+    }
+
+    function _exit(string memory _name) internal view returns (Exit memory e) {
+        e.commitment = bytes32(vm.parseJsonUint(fixtures, string.concat(_name, ".commitment")));
+        uint256[] memory proof = vm.parseJsonUintArray(fixtures, string.concat(_name, ".proof"));
+        for (uint256 i = 0; i < 8; i++) {
+            e.proof[i] = proof[i];
+        }
+        e.nullifier = vm.parseJsonUint(fixtures, string.concat(_name, ".nullifier"));
+        e.signalX = vm.parseJsonUint(fixtures, string.concat(_name, ".signalX"));
+        e.signalY = vm.parseJsonUint(fixtures, string.concat(_name, ".signalY"));
+        e.payout = vm.parseJsonUint(fixtures, string.concat(_name, ".payout"));
+    }
+
+    function _initiate(Exit memory _e) internal {
+        longjing.initiateWithdrawal(
+            _e.commitment, _recipient(), _refundKey(), _e.proof, _e.nullifier, _e.signalY, _e.payout
+        );
+    }
+
+    function _recipient() internal view returns (address) {
+        return vm.parseJsonAddress(fixtures, ".recipient");
+    }
+
+    function _refundKey() internal view returns (LongjingCredits.EdDSAPublicKey memory) {
+        return LongjingCredits.EdDSAPublicKey(
+            bytes32(vm.parseJsonUint(fixtures, ".serverPublicKeyX")),
+            bytes32(vm.parseJsonUint(fixtures, ".serverPublicKeyY"))
+        );
+    }
 
     function _deposit(bytes32 _commitment, uint256 _amount) internal {
         vm.prank(user1);

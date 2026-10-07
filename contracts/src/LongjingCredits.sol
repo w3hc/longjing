@@ -54,6 +54,16 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         bytes32 y;
     }
 
+    /// @notice A pending exit, challengeable until exitAt
+    struct Exit {
+        uint256 nullifier; // N, the RLN nullifier at the claimed index n
+        uint256 signalX; // x = Poseidon(Poseidon(recipient, chainId), contract)
+        uint256 signalY; // y = k + a · x
+        uint256 payout; // P = D + R − n · C_MAX
+        address recipient;
+        uint256 exitAt;
+    }
+
     // ============ Constants ============
 
     /// @notice 20-level Merkle tree depth (supports ~1M notes)
@@ -72,6 +82,10 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     /// @dev Counted from the deposit, excluding any time the contract spent paused
     uint256 public constant NOTE_TTL = 365 days;
 
+    /// @notice W: how long an exit can be challenged before it pays out
+    /// @dev Shorter than ADMIN_DELAY, so no admin change can land during an exit started before it
+    uint256 public constant CHALLENGE_WINDOW = 3 days;
+
     uint256 internal constant FIELD_MODULUS =
         21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
@@ -83,6 +97,11 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     // ============ State ============
 
     mapping(bytes32 => Note) public notes;
+
+    mapping(bytes32 => Exit) public exits;
+
+    /// @notice Refund signer keys a withdrawal may present, keyed by keccak256(x, y)
+    mapping(bytes32 => bool) public acceptedRefundKeys;
 
     /// @notice Leaves in insertion order; a closed note's leaf is the empty value 0
     bytes32[] public leaves;
@@ -121,6 +140,16 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     // ============ Events ============
 
     event Deposited(bytes32 indexed commitment, uint256 amount, uint256 leafIndex);
+    event WithdrawalInitiated(
+        bytes32 indexed commitment,
+        uint256 nullifier,
+        uint256 signalX,
+        uint256 signalY,
+        uint256 payout,
+        address indexed recipient,
+        uint256 exitAt
+    );
+    event WithdrawalFinalized(bytes32 indexed commitment, address indexed recipient, uint256 payout);
     event MerkleRootUpdated(bytes32 indexed newRoot, uint256 leafCount);
     event NoteExpiredClaimed(bytes32 indexed commitment, uint256 amount);
     event OperatorBalanceWithdrawn(address indexed to, uint256 amount);
@@ -135,6 +164,11 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     error InvalidCommitment();
     error NoteAlreadyExists();
     error NoteNotActive();
+    error NoteNotExiting();
+    error ChallengeWindowOpen();
+    error UnknownRefundKey();
+    error PayoutExceedsDeposit();
+    error InvalidProof();
     error Unauthorized();
     error ZeroAddress();
     error NoPendingChange();
@@ -151,6 +185,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         if (_serverAddress == address(0)) revert ZeroAddress();
         serverAddress = _serverAddress;
         serverPublicKey = EdDSAPublicKey({x: _serverPubKeyX, y: _serverPubKeyY});
+        acceptedRefundKeys[_refundKeyId(_serverPubKeyX, _serverPubKeyY)] = true;
         C_MAX = _cMax;
         settlementVerifier = new SettlementVerifier();
 
@@ -186,6 +221,82 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         _updateLeaf(leafIndex);
 
         emit Deposited(_commitment, msg.value, leafIndex);
+    }
+
+    /**
+     * @notice Start an exit: pay out D + R − n · C_MAX after the challenge window
+     * @param _commitment The note's commitment c
+     * @param _recipient Who gets the payout, bound into the proof through x
+     * @param _refundKey The key that signed the accumulator, any key ever accepted
+     * @param _proof Groth16 proof [pA, pB, pC] from settlement.circom
+     * @param _nullifier N, the RLN nullifier at the claimed index n
+     * @param _signalY y, the RLN signal at n
+     * @param _payout P
+     * @dev Open while paused. The leaf goes now, so no new request proof can use
+     *      the note. The contract can't see n, so the server has the window to
+     *      show that index n was already used, which reveals k (see slash).
+     */
+    function initiateWithdrawal(
+        bytes32 _commitment,
+        address _recipient,
+        EdDSAPublicKey calldata _refundKey,
+        uint256[8] calldata _proof,
+        uint256 _nullifier,
+        uint256 _signalY,
+        uint256 _payout
+    ) external nonReentrant {
+        if (_recipient == address(0)) revert ZeroAddress();
+        Note storage note = notes[_commitment];
+        if (note.status != Status.Active) revert NoteNotActive();
+        if (!acceptedRefundKeys[_refundKeyId(_refundKey.x, _refundKey.y)]) revert UnknownRefundKey();
+        if (_payout > note.amount) revert PayoutExceedsDeposit();
+
+        uint256 signalX = withdrawalSignalX(_recipient);
+        // [nullifier, signalY, payout, commitment, deposit, maxCost, serverPublicKeyX, serverPublicKeyY, recipient, signalX]
+        uint256[10] memory publicSignals = [
+            _nullifier,
+            _signalY,
+            _payout,
+            uint256(_commitment),
+            note.amount,
+            C_MAX,
+            uint256(_refundKey.x),
+            uint256(_refundKey.y),
+            uint256(uint160(_recipient)),
+            signalX
+        ];
+        if (!settlementVerifier.verifySettlementProof(_proof, publicSignals)) revert InvalidProof();
+
+        uint256 exitAt = block.timestamp + CHALLENGE_WINDOW;
+        note.status = Status.Exiting;
+        exits[_commitment] = Exit({
+            nullifier: _nullifier,
+            signalX: signalX,
+            signalY: _signalY,
+            payout: _payout,
+            recipient: _recipient,
+            exitAt: exitAt
+        });
+        _removeLeaf(note.leafIndex);
+
+        emit WithdrawalInitiated(_commitment, _nullifier, signalX, _signalY, _payout, _recipient, exitAt);
+    }
+
+    /**
+     * @notice Pay an exit once its window has passed unchallenged
+     * @dev Anyone can call it, also while paused
+     */
+    function finalizeWithdrawal(bytes32 _commitment) external nonReentrant {
+        Note storage note = notes[_commitment];
+        if (note.status != Status.Exiting) revert NoteNotExiting();
+        Exit memory exit = exits[_commitment];
+        if (block.timestamp < exit.exitAt) revert ChallengeWindowOpen();
+
+        note.status = Status.Closed;
+        operatorBalance += note.amount - exit.payout;
+        _pay(exit.recipient, exit.payout);
+
+        emit WithdrawalFinalized(_commitment, exit.recipient, exit.payout);
     }
 
     /**
@@ -227,6 +338,15 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         Note storage note = notes[_commitment];
         if (note.status == Status.None) revert NoteNotActive();
         return note.depositedAt + NOTE_TTL + _pausedTime() - pausedTimeAtDeposit[_commitment];
+    }
+
+    /**
+     * @notice The RLN signal x a withdrawal to this recipient must use
+     * @dev Poseidon(Poseidon(recipient, chainId), contract): the proof is bound
+     *      to the recipient, the chain and this deployment
+     */
+    function withdrawalSignalX(address _recipient) public view returns (uint256) {
+        return PoseidonHasher.hash3(uint256(uint160(_recipient)), block.chainid, uint256(uint160(address(this))));
     }
 
     function getNote(bytes32 _commitment) external view returns (Note memory) {
@@ -326,6 +446,10 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     /// @notice Total time spent paused, including the current pause
     function _pausedTime() internal view returns (uint256) {
         return paused() ? totalPausedTime + block.timestamp - pausedAt : totalPausedTime;
+    }
+
+    function _refundKeyId(bytes32 _x, bytes32 _y) internal pure returns (bytes32) {
+        return keccak256(abi.encode(_x, _y));
     }
 
     function _pay(address _to, uint256 _amount) internal {

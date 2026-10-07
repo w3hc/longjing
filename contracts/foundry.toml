@@ -2,6 +2,7 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+fs_permissions = [{ access = "read", path = "./test/fixtures" }]
 
 [lint]
 lint_on_build = false
