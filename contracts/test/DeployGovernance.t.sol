@@ -2,9 +2,11 @@
 pragma solidity 0.8.35;
 
 import {Test} from "forge-std/Test.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {IDstackApp} from "../src/IDstackApp.sol";
 import {LongjingAppOwner} from "../src/LongjingAppOwner.sol";
+import {LongjingCredits} from "../src/LongjingCredits.sol";
 import {DeployGovernance} from "../script/DeployGovernance.s.sol";
 
 contract DeployGovernanceTest is Test {
@@ -29,5 +31,47 @@ contract DeployGovernanceTest is Test {
         assertEq(address(appOwner.app()), app);
         assertEq(appOwner.timelock(), address(timelock));
         assertEq(appOwner.guardian(), guardian);
+    }
+
+    function test_handsTheCreditsOverToTheTimelock() public {
+        DeployGovernance script = new DeployGovernance();
+        LongjingCredits credits =
+            new LongjingCredits(makeAddr("server"), bytes32(uint256(1)), bytes32(uint256(2)), 0.001 ether, 0);
+        // The script broadcasts as the deployer, which it stands in for here
+        credits.transferOwnership(address(script));
+
+        TimelockController timelock = script.deployTimelock(safe, 7 days);
+        script.handOverCredits(credits, timelock);
+        assertEq(credits.owner(), address(timelock));
+
+        vm.prank(address(script));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(script)));
+        credits.pause();
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+        credits.proposeChange(LongjingCredits.Target.ServerAddress, makeAddr("attacker"));
+
+        bytes memory pause = abi.encodeCall(LongjingCredits.pause, ());
+        vm.prank(safe);
+        timelock.schedule(address(credits), 0, pause, bytes32(0), bytes32(0), 7 days);
+        vm.warp(block.timestamp + 7 days - 1);
+        vm.prank(safe);
+        vm.expectRevert();
+        timelock.execute(address(credits), 0, pause, bytes32(0), bytes32(0));
+
+        vm.warp(block.timestamp + 1);
+        vm.prank(safe);
+        timelock.execute(address(credits), 0, pause, bytes32(0), bytes32(0));
+        assertTrue(credits.paused());
+    }
+
+    function test_refusesAHandoverByAnotherAccount() public {
+        DeployGovernance script = new DeployGovernance();
+        LongjingCredits credits =
+            new LongjingCredits(makeAddr("server"), bytes32(uint256(1)), bytes32(uint256(2)), 0.001 ether, 0);
+        TimelockController timelock = script.deployTimelock(safe, 7 days);
+
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(script)));
+        script.handOverCredits(credits, timelock);
+        assertEq(credits.owner(), address(this));
     }
 }

@@ -2,6 +2,8 @@
 
 Longjing's keys are derived from the dstack KMS, which releases them only to builds whose compose hash is allowed on Longjing's `DstackApp` contract ([KEY_DERIVATION.md](./KEY_DERIVATION.md#summary)). Whoever can call `addComposeHash` can therefore ship a build that prints the keys. This document sets who that is and how slowly they can act, so that every addition is public for a full delay before it can boot.
 
+The same applies to `LongjingCredits`: its owner can replace the settlement verifier, `serverAddress` and the refund key. A timelock behind the Safe owns it too, so every such change is public for the timelock delay before it is even queued.
+
 - [Roles](#roles)
 - [Contracts](#contracts)
 - [Setup](#setup)
@@ -17,6 +19,7 @@ Longjing's keys are derived from the dstack KMS, which releases them only to bui
 | [Safe](https://safe.global/) multisig | Propose, execute and cancel timelock operations | — |
 | `TimelockController` | Any call to the `DstackApp` through `LongjingAppOwner`: add or remove compose hashes, upgrade, change settings, hand the app over. Change its own roles and delay, and the guardian | 7 days by default |
 | Guardian (the Safe by default) | `removeComposeHash` only | None |
+| `TimelockController` on Ethereum | Every `LongjingCredits` owner call: `proposeChange`, `proposeRefundKey`, `executeChange`, `cancelChange`, `pause`, `unpause`, `transferOwnership` | 7 days by default, then `ADMIN_DELAY` (7 days) for a change |
 
 Adding a compose hash always takes the full delay. Removing one can be immediate, since it only ever shrinks the set of builds that can derive the keys.
 
@@ -25,7 +28,7 @@ Adding a compose hash always takes the full delay. Removing one can be immediate
 The Foundry project in [`contracts/`](../contracts) holds:
 
 - [`LongjingAppOwner.sol`](../contracts/src/LongjingAppOwner.sol): the `DstackApp` owner. `execute(bytes)` forwards any call from the timelock, `removeComposeHash` is the guardian's emergency path, `setGuardian` is timelocked, and `acceptOwnership` completes the app's two-step handover.
-- [`DeployGovernance.s.sol`](../contracts/script/DeployGovernance.s.sol): deploys an OpenZeppelin `TimelockController` and the `LongjingAppOwner`. The Safe is the only proposer, executor and canceller, and the timelock administers itself, so changing its roles or delay is also delayed.
+- [`DeployGovernance.s.sol`](../contracts/script/DeployGovernance.s.sol): deploys an OpenZeppelin `TimelockController`, then the `LongjingAppOwner` with `DSTACK_APP`, and hands `LongjingCredits` over to the timelock with `LONGJING_CREDITS`. The Safe is the only proposer, executor and canceller, and the timelock administers itself, so changing its roles or delay is also delayed.
 
 ```bash
 cd contracts
@@ -45,7 +48,13 @@ On Base, against the on-chain `DstackKms`, once the `DstackApp` exists and runs 
    `GUARDIAN` defaults to the Safe, `TIMELOCK_DELAY` to 604800 seconds. Verify the contracts on Basescan, so anyone can check they are this source.
 2. **Tighten** the app while the current owner still can: `setRequireTcbUpToDate(true)`, and remove every compose hash but the running one.
 3. **Hand over**: the current owner calls `transferOwnership(<LongjingAppOwner>)`, then anyone calls `LongjingAppOwner.acceptOwnership()`. From then on, only the timelock can add builds.
-4. **Check** with `pnpm verify:attestation <url> --app <DstackApp> --from-block <app creation block>`.
+4. **Hand over `LongjingCredits`** on Ethereum, where it is deployed, broadcasting from the account that deployed it:
+   ```bash
+   LONGJING_CREDITS=0x... SAFE=0x... forge script script/DeployGovernance.s.sol \
+     --rpc-url $ETHEREUM_RPC_URL --broadcast --verify
+   ```
+   This deploys a second timelock with the same roles, since a timelock on Base cannot call a contract on Ethereum, and transfers ownership to it in one step. If `LongjingCredits` and the `DstackApp` are on the same chain, set both variables in step 1 instead: they share one timelock.
+5. **Check** with `pnpm verify:attestation <url> --app <DstackApp> --from-block <app creation block> --credits <LongjingCredits>`.
 
 ## Releases
 
@@ -75,17 +84,21 @@ The timelock can change the guardian with `setGuardian`, or disable the path wit
 ```bash
 pnpm verify:attestation https://<longjing>/attestation \
   --app <DstackApp> --from-block <app creation block> \
+  --credits <LongjingCredits> [--credits-rpc <url>] \
   [--rpc <url>] [--min-delay <seconds>]
 ```
+
+`--rpc` reads Base, `--credits-rpc` reads the chain `LongjingCredits` is on (the first of `ETHEREUM_RPC_URLS` by default).
 
 It fails unless:
 
 - the key manifest names that `DstackApp`,
 - the app is owned by a `LongjingAppOwner` for that app, whose timelock delay is at least `--min-delay` (7 days by default),
 - `requireTcbUpToDate` is set,
-- the compose hash in the event log is allowed.
+- the compose hash in the event log is allowed,
+- `LongjingCredits` is owned by a timelock whose delay is at least `--min-delay`.
 
-It warns about a pending ownership transfer, a timelock with another admin, no guardian, several allowed hashes and implementation upgrades, and lists every compose hash ever added, with the blocks it was added and removed at. The compose hash is read from the event log once it replays to the quote's RTMRs ([ATTESTATION.md](./ATTESTATION.md#verification)). The script checks the owner's interface, not its bytecode: check it is the verified `LongjingAppOwner` source on Basescan once.
+It warns about a pending ownership transfer, a timelock with another admin (for either contract), a paused `LongjingCredits`, no guardian, several allowed hashes and implementation upgrades, and lists every compose hash ever added, with the blocks it was added and removed at. The compose hash is read from the event log once it replays to the quote's RTMRs ([ATTESTATION.md](./ATTESTATION.md#verification)). The script checks the owner's interface, not its bytecode: check it is the verified `LongjingAppOwner` source on Basescan once.
 
 ## Limits
 
@@ -93,3 +106,4 @@ It warns about a pending ownership transfer, a timelock with another admin, no g
 - `DstackApp` is upgradeable by its owner, so the timelock can also replace its logic, with the same delay. `Upgraded` events are listed by the verifier.
 - Freezing the set of builds for good needs `renounceOwnership()` through the timelock, after which nothing can be added or removed ([dstack#1293](https://github.com/Dstack-TEE/dstack/issues/1293)). Only worth it for a finished, audited version.
 - The `DstackKms` owner (Phala) and the KMS itself stay in the trust set.
+- A `LongjingCredits` change waits for the timelock, then for `ADMIN_DELAY`: 14 days by default. `pause` waits for the timelock too, so it is no emergency stop. It only closes deposits and expiry claims, never an exit.

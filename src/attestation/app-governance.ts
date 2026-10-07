@@ -108,20 +108,32 @@ async function readAppOwner(
   if (governed !== app) {
     return undefined;
   }
-  const [minDelay, timelockSelfAdministered] = await Promise.all([
+  const { minDelay, selfAdministered } = await readTimelock(reader, timelock);
+  return {
+    address: owner,
+    timelock,
+    guardian,
+    minDelay,
+    timelockSelfAdministered: selfAdministered,
+  };
+}
+
+/**
+ * Reads a TimelockController's delay, and whether it administers itself, so
+ * that changing its roles is delayed too. Rejects when the address is not one.
+ */
+export async function readTimelock(
+  reader: ChainReader,
+  timelock: string,
+): Promise<{ minDelay: bigint; selfAdministered: boolean }> {
+  const [minDelay, selfAdministered] = await Promise.all([
     call<bigint>(reader, timelock, TIMELOCK, 'getMinDelay'),
     call<boolean>(reader, timelock, TIMELOCK, 'hasRole', [
       DEFAULT_ADMIN_ROLE,
       timelock,
     ]),
   ]);
-  return {
-    address: owner,
-    timelock,
-    guardian,
-    minDelay,
-    timelockSelfAdministered,
-  };
+  return { minDelay, selfAdministered };
 }
 
 async function readHistory(
@@ -187,7 +199,7 @@ async function readHistory(
   return { composeHashes, upgrades };
 }
 
-async function call<T>(
+export async function call<T>(
   reader: ChainReader,
   to: string,
   iface: Interface,

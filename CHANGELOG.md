@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `DeployGovernance.s.sol` hands `LongjingCredits` over to a timelock behind the Safe with `LONGJING_CREDITS`, and `pnpm verify:attestation --credits <address>` fails unless a timelock of at least `--min-delay` owns it. The deployer no longer holds the verifiers, `serverAddress` and the refund key ([#160](https://github.com/w3hc/longjing/issues/160)).
 - Production refuses to start when `LongjingCredits.serverPublicKey` isn't the key the refund signer signs with, and logs a warning when `serverAddress` isn't the transaction signer ([#161](https://github.com/w3hc/longjing/issues/161)).
 - Note settlement in `LongjingCredits` (LJ-01, LJ-02): `deposit(c)` computes the leaf `Poseidon(c, D)` from `msg.value`, `initiateWithdrawal` verifies a settlement proof paying `D + R − n · C_MAX` and opens a 3-day challenge window, `finalizeWithdrawal` pays the recipient and credits the rest to `operatorBalance`, and `slash(k)` pays a fixed `SLASH_BOUNTY` to whoever holds the revealed key. Pausing never blocks an exit or a slash, and a pending exit can't be claimed as expired. The contract keeps the last 30 roots, removes a closed note's leaf, and accepts every refund key it ever registered, rotated through the timelock ([#168](https://github.com/w3hc/longjing/issues/168)).
 - An exit watcher: the server records each `WithdrawalInitiated` nullifier and slashes an exit whose claimed index a request already used ([#169](https://github.com/w3hc/longjing/issues/169)).
