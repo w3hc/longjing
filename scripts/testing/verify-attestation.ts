@@ -25,7 +25,8 @@
  *   3. The served TLS certificate is the bound one — proves TLS terminates
  *      inside the attested enclave
  *   4. The event log replays to the quote's RTMR0–3
- *   5. The key manifest signs the same keys
+ *   5. The key manifest signs the same keys, and names the transaction
+ *      signer that LongjingCredits.serverAddress should be
  *   6. Quote structure validity and measurement extraction
  *   7. With --app: the key manifest names that DstackApp, a LongjingAppOwner
  *      behind a timelock of at least --min-delay owns it, requireTcbUpToDate
@@ -239,6 +240,7 @@ function verifyBinding(
   }
   if (keyManifest) {
     success('The key manifest signs the same keys');
+    info(`  Transaction signer: ${keyManifest.manifest.txSignerAddress} (fund it for gas, LongjingCredits.serverAddress should be it)`);
   }
   return true;
 }
