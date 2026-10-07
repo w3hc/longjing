@@ -164,7 +164,7 @@ const goals = {
   attestation: goal(
     'The client verifies the attestation before sending anything',
     'not checked yet',
-    [99, 130],
+    [99],
   ),
   provider: goal(
     'Protocol, pricing and refunds work with any provider',
