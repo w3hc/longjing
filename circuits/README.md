@@ -69,6 +69,42 @@ Proves that a user double-spent a ticket, allowing anyone to extract and verify 
 - Public inputs: `secretKeyClaimed`, `nullifierExpected`
 - Outputs: `idCommitment`, `nullifier`
 
+## Settlement Circuits
+
+The circuits of [docs/SETTLEMENT.md](../docs/SETTLEMENT.md). Nothing uses them yet: the contract and the server move to them in [#168](https://github.com/w3hc/longjing/issues/168) and [#169](https://github.com/w3hc/longjing/issues/169), which also remove the circuits above.
+
+Both open the note's refund accumulator `A = R·G + m·J + c·K + s·H`, a Pedersen commitment on Baby Jubjub ([templates/accumulator.circom](templates/accumulator.circom)). It is either the genesis accumulator `c·K`, or one the server signed with EdDSA-Poseidon over `Poseidon(A.x, A.y)`. The generators are hashed to the curve from the seeds `longjing/accumulator/{G,J,K,H}` by [src/longjing/accumulator.ts](../src/longjing/accumulator.ts), and a test checks the constants against it.
+
+### Request Circuit ([request.circom](request.circom))
+
+**Proves**:
+- `Poseidon(Poseidon(k), D)` is a leaf under the public root, so D is what was deposited
+- The accumulator opens to `(R, i, Poseidon(k), s)` and is genesis or signed
+- `A_pub = A + s'·H`, a fresh point the server can't match to the accumulator it signed
+- Solvency: `(i + 1) · C_MAX ≤ D + R`, with `i < 2^32` and D, R, `C_MAX < 2^128`
+- The RLN signal at index `i`
+
+**Parameters**:
+- Merkle tree depth: 20, constraints: ~37K
+- Public inputs: `merkleRoot`, `maxCost`, `signalX`, `serverPublicKeyX`, `serverPublicKeyY`
+- Outputs: `nullifier`, `signalY`, `accumulatorX`, `accumulatorY`
+- No commitment, leaf, deposit, index or refund sum is public
+
+### Settlement Circuit ([settlement.circom](settlement.circom))
+
+**Proves**:
+- `Poseidon(k)` equals the public commitment `c`
+- The accumulator opens to `(R, m, c, s)` and is genesis or signed
+- The claimed index count `n` is at least `m`, with `n < 2^32`
+- The payout `P = D + R − n · C_MAX` is not negative
+- The RLN signal at index `n`, which the server can challenge if `n` was used
+
+**Parameters**:
+- Constraints: ~22K, no Merkle path
+- Public inputs: `commitment`, `deposit`, `maxCost`, `serverPublicKeyX`, `serverPublicKeyY`, `recipient` (bound by an explicit constraint), `signalX`
+- Outputs: `nullifier`, `signalY`, `payout`
+- Verifier: [SettlementVerifier.sol](../contracts/src/SettlementVerifier.sol)
+
 ### Local Request Circuit ([api_request_local.circom](api_request_local.circom))
 
 The API request circuit with 2 refund slots instead of 10 (~32K constraints), the default `ZK_CIRCUIT` outside production. Production refuses it.

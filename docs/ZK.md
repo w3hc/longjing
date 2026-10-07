@@ -532,7 +532,7 @@ See [OVERVIEW.md](./OVERVIEW.md#implementation-alignment-with-original-proposal)
 
 ## Circuit Artifacts
 
-Circuit artifacts are not tracked in Git. They are published as assets of the [`circuits-v1.2` release](https://github.com/w3hc/longjing/releases/tag/circuits-v1.2), and [`circuits/artifacts.json`](../circuits/artifacts.json) pins each one by sha256. Fetch them into `circuits/build/` with:
+Circuit artifacts are not tracked in Git. They are published as assets of the [`circuits-v2` release](https://github.com/w3hc/longjing/releases/tag/circuits-v2), and [`circuits/artifacts.json`](../circuits/artifacts.json) pins each one by sha256. Fetch them into `circuits/build/` with:
 
 ```bash
 pnpm circuits:fetch
@@ -550,7 +550,9 @@ The server verifies requests with `api_request`. Its artifacts:
 
 `api_request_local` ships the same three files under its own name, for local development.
 
-The `api_request`, `api_request_local`, `withdrawal` and `refund_redemption` keys come from the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) (`ppot_0080_17.ptau`, sha256 `f807e065…a367c`) plus a single local phase 2 contribution. That is enough for testnets; mainnet needs a multi-party phase 2 ceremony (see [TRUSTED_SETUP_CEREMONY.md](./TRUSTED_SETUP_CEREMONY.md)).
+`request` and `settlement` are the circuits of [SETTLEMENT.md](./SETTLEMENT.md), with the same three files each. Nothing uses them yet: the server still verifies `api_request`, and the contract still verifies `withdrawal`. `contracts/src/SettlementVerifier.sol` is generated from `settlement.zkey` for the contract to adopt.
+
+The `api_request`, `api_request_local`, `withdrawal`, `refund_redemption`, `request` and `settlement` keys come from the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) (`ppot_0080_17.ptau`, sha256 `f807e065…a367c`) plus a single local phase 2 contribution. That is enough for testnets; mainnet needs a multi-party phase 2 ceremony (see [TRUSTED_SETUP_CEREMONY.md](./TRUSTED_SETUP_CEREMONY.md)).
 
 **To regenerate them** after changing the circuit:
 
@@ -563,7 +565,7 @@ npx snarkjs zkey contribute build/api_request_0000.zkey build/api_request.zkey -
 npx snarkjs zkey export verificationkey build/api_request.zkey build/api_request_verification_key.json
 ```
 
-Repeat for `api_request_local`, `withdrawal` and `refund_redemption`. For the last two, also export the Solidity verifier with `npx snarkjs zkey export solidityverifier`, rename `Groth16Verifier` to `WithdrawalVerifier` or `RefundRedemptionVerifier`, run `forge fmt` on it, and keep the `verifyWithdrawalProof` or `verifyRefundProof` wrapper at the end of the contract.
+Repeat for `api_request_local`, `withdrawal`, `refund_redemption`, `request` and `settlement`. For `withdrawal`, `refund_redemption` and `settlement`, also export the Solidity verifier with `npx snarkjs zkey export solidityverifier`, rename `Groth16Verifier` to `WithdrawalVerifier`, `RefundRedemptionVerifier` or `SettlementVerifier`, run `forge fmt` on it, and keep the `verifyWithdrawalProof`, `verifyRefundProof` or `verifySettlementProof` wrapper at the end of the contract.
 
 After regenerating, publish the changed files as assets of a new release, then update the release URL and hashes in `circuits/artifacts.json` (`shasum -a 256 <file>`).
 

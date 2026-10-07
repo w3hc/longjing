@@ -1,5 +1,5 @@
 {
-  "release": "https://github.com/w3hc/longjing/releases/download/circuits-v1.2",
+  "release": "https://github.com/w3hc/longjing/releases/download/circuits-v2",
   "files": {
     "api_request_js/api_request.wasm": "9cd812cfdfd3d12aa922fcae35a0971e7901d70777f7a630ae5bea7f9e607b9d",
     "api_request.zkey": "65ab4519b2c5c06a94d4749be09cc278fdf9d8213c130f94b5f0af769f7ace78",
@@ -18,6 +18,12 @@
     "double_spend_slashing_verification_key.json": "ad09c48da52e18eae1c2963d5a0325bbb3db6b0f6b89699721e26ac0b926912c",
     "withdrawal_js/withdrawal.wasm": "60f900d9559c2fa2de77d65d07d8d40d35d39d18fc4659bcda9bc8e5aba616f9",
     "withdrawal.zkey": "5f21e0479431d1ce324fd3dc093e494b0241f39109a4627ed1f967b57cfdad93",
-    "withdrawal_verification_key.json": "47ac204bced141b0cf3ed4e604a0da2eb435c9e86ee2a168250c9b78ecec7bd1"
+    "withdrawal_verification_key.json": "47ac204bced141b0cf3ed4e604a0da2eb435c9e86ee2a168250c9b78ecec7bd1",
+    "request_js/request.wasm": "7e50663c3c22aae9da6f3296a4736418bc325f1d930f703e642c78bde9ac62cd",
+    "request.zkey": "2a42d01d5919e45331ec17fe52e45670f81e7f08bae444cea62a3d9dd7443352",
+    "request_verification_key.json": "70c51f705cda74d0da2bbb79fae73c9117c48e3a9c9361ba3485569332538927",
+    "settlement_js/settlement.wasm": "e3f4f0dc3699f30c536b678f6374862086d03b2ed592fbb4a073d69b10e4939f",
+    "settlement.zkey": "8ffbe69909beafee10eb0e217cd9b309cf73d2edb0627382a2d15fb01bdbe8e7",
+    "settlement_verification_key.json": "6a8121be004b4b6c54e109cac800197133f4652efe3c444c29fdf32f503b17cf"
   }
 }
