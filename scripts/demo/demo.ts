@@ -1,7 +1,8 @@
 #!/usr/bin/env ts-node
 /**
- * Runs one user, Alice, from deposit to refund against Anvil, and asserts
- * every step. Exits non-zero on the first failed check.
+ * Checks Longjing's goals against a deployment and prints one line per goal:
+ * verified, not met (with its issue) or not checked yet. Exits non-zero only
+ * when a goal expected to be verified is not.
  *
  * Usage:
  *   anvil        # in another terminal
@@ -10,10 +11,10 @@
  * 1. Deploy LongjingCredits with NODE_ENV=development
  * 2. Start the server pointed at it
  * 3. Alice deposits with her secret
- * 4. She proves membership with that secret against the on-chain root
+ * 4. She proves membership with that secret against the onchain root
  *    (pnpm prove request)
  * 5. POST /longjing/request, then replay it
- * 6. She proves the refund (pnpm prove refund), redeems it on chain, then
+ * 6. She proves the refund (pnpm prove refund), redeems it onchain, then
  *    tries again
  *
  * The server answers with mock responses: ANTHROPIC_API_KEY is ignored.
@@ -42,6 +43,7 @@ const ALICE_KEY =
 const DEPOSIT = ethers.parseEther('0.2');
 const MAX_COST = ethers.parseEther('0.05');
 const PAYLOAD = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
+const ISSUES = 'https://github.com/w3hc/longjing/issues';
 
 const ABI = [
   'function deposit(bytes32 _idCommitment) payable',
@@ -59,18 +61,142 @@ interface RefundTicket {
   signature: { R8x: string; R8y: string; S: string };
 }
 
-const passed: string[] = [];
+type Status = 'verified' | 'not met' | 'not checked yet';
 
-function check(label: string, ok: boolean, detail = ''): void {
-  if (!ok) {
-    throw new Error(`${label}${detail ? `: ${detail}` : ''}`);
+interface Goal {
+  label: string;
+  expected: Status;
+  issues?: number[];
+  status?: Status;
+  detail?: string;
+}
+
+const goal = (
+  label: string,
+  expected: Status,
+  issues?: number[],
+  detail?: string,
+): Goal => ({ label, expected, issues, detail });
+
+const goals = {
+  deposit: goal('A deposit is recorded onchain', 'verified'),
+  root: goal('A request proof is against the onchain root', 'verified'),
+  nullifier: goal(
+    'A nullifier is accepted once, a replay is rejected',
+    'verified',
+  ),
+  refund: goal(
+    'A refund is maxCost − actualCost, signed by the key registered onchain, redeemable once',
+    'verified',
+  ),
+  requestToDeposit: goal(
+    "A request can't be linked to the deposit",
+    'not met',
+    [134],
+    'every request publishes idCommitment',
+  ),
+  requestToRequest: goal(
+    "Two requests can't be linked to each other",
+    'not met',
+    [134],
+    'every request publishes idCommitment',
+  ),
+  solvency: goal(
+    'Solvency is enforced: spending is deducted, D is bound to the deposit',
+    'not checked yet',
+    [134],
+  ),
+  slashing: goal(
+    'A double-spend reveals k and anyone can slash the RLN stake',
+    'not checked yet',
+  ),
+  secretKey: goal('The secret key never reaches the server', 'not checked yet'),
+  attestation: goal(
+    'The client verifies the attestation before sending anything',
+    'not checked yet',
+    [99, 130],
+  ),
+  provider: goal(
+    'Protocol, pricing and refunds work with any provider',
+    'not checked yet',
+  ),
+  withdrawal: goal(
+    'A depositor can withdraw without the server',
+    'not met',
+    [119, 157],
+    'known, no check yet',
+  ),
+  walkaway: goal(
+    'Every depositor can exit if the operator and every host disappear',
+    'not met',
+    [157, 135],
+    'known, no check yet',
+  ),
+};
+
+function check(target: Goal, label: string, ok: boolean, detail = ''): void {
+  console.log(
+    `  ${ok ? '✓' : '✗'} ${label}${!ok && detail ? `: ${detail}` : ''}`,
+  );
+  if (ok) {
+    target.status ??= 'verified';
+  } else {
+    target.status = 'not met';
+    target.detail = detail ? `${label}: ${detail}` : label;
   }
-  passed.push(label);
-  console.log(`  ✓ ${label}`);
+}
+
+/** Runs the checks of one goal; an error marks the goal not met */
+async function verify(target: Goal, checks: () => Promise<void>) {
+  try {
+    await checks();
+  } catch (error) {
+    check(
+      target,
+      error instanceof Error ? error.message : String(error),
+      false,
+    );
+  }
+}
+
+function required<T>(value: T | undefined, what: string): T {
+  if (value === undefined)
+    throw new Error(`no ${what}, an earlier goal failed`);
+  return value;
 }
 
 function step(title: string): void {
   console.log(`\n${title}`);
+}
+
+const MARKS: Record<Status, string> = {
+  verified: '✓',
+  'not met': '✗',
+  'not checked yet': '–',
+};
+
+/** Prints the goal table and returns whether a goal expected to be verified is not */
+function report(): boolean {
+  console.log('\nGoals');
+  const width = Math.max(...Object.keys(MARKS).map((s) => s.length));
+  let regressed = false;
+  for (const g of Object.values(goals)) {
+    const status =
+      g.status ?? (g.expected === 'verified' ? 'not met' : g.expected);
+    const detail =
+      g.detail ?? (g.expected === 'verified' && !g.status ? 'not run' : '');
+    const issues = (g.issues ?? []).map((n) => `${ISSUES}/${n}`).join(' ');
+    console.log(
+      `  ${MARKS[status]} ${status.padEnd(width)}  ${g.label}` +
+        (detail ? ` (${detail})` : '') +
+        (issues ? `  ${issues}` : ''),
+    );
+    if (g.expected === 'verified' && status !== 'verified') regressed = true;
+    if (g.expected !== 'verified' && status === 'verified') {
+      console.log(`    now verified: update its expected status in demo.ts`);
+    }
+  }
+  return regressed;
 }
 
 const workDir = mkdtempSync(join(tmpdir(), 'longjing-demo-'));
@@ -201,7 +327,6 @@ async function main() {
   console.log(`  Listening on ${url}`);
 
   try {
-    step('3. Alice deposits with her secret');
     const secretKey =
       '0x' +
       (
@@ -212,128 +337,149 @@ async function main() {
       poseidon.F.toObject(poseidon([BigInt(secretKey)])) as bigint,
       32,
     );
-    await (await contract.deposit(idCommitment, { value: DEPOSIT })).wait();
-    const deposit = await contract.getDeposit(idCommitment);
-    check(
-      'the deposit is active on chain',
-      deposit.active && deposit.rlnStake + deposit.policyStake === DEPOSIT,
-    );
+
+    step('3. Alice deposits with her secret');
+    await verify(goals.deposit, async () => {
+      await (await contract.deposit(idCommitment, { value: DEPOSIT })).wait();
+      const deposit = await contract.getDeposit(idCommitment);
+      check(
+        goals.deposit,
+        'the deposit is active onchain',
+        deposit.active && deposit.rlnStake + deposit.policyStake === DEPOSIT,
+      );
+    });
 
     step('4. Alice proves membership with that secret (pnpm prove request)');
-    const serverPublicKey = (await (
-      await fetch(`${url}/longjing/server-pubkey`)
-    ).json()) as { x: string; y: string };
-    const onChainKey = await contract.serverPublicKey();
-    check(
-      "the server's refund key is the one registered on chain",
-      BigInt(serverPublicKey.x) === BigInt(onChainKey.x) &&
-        BigInt(serverPublicKey.y) === BigInt(onChainKey.y),
-    );
-    const body = await prove('request', {
-      secretKey,
-      ticketIndex: '0x00',
-      payload: PAYLOAD,
-      maxCost: MAX_COST.toString(),
-      rpcUrl: RPC_URL,
-      contract: address,
-      serverPublicKey,
-      circuit: 'api_request_local',
+    let serverPublicKey: { x: string; y: string } | undefined;
+    let body: Record<string, any> | undefined;
+    await verify(goals.root, async () => {
+      serverPublicKey = (await (
+        await fetch(`${url}/longjing/server-pubkey`)
+      ).json()) as { x: string; y: string };
+      body = await prove('request', {
+        secretKey,
+        ticketIndex: '0x00',
+        payload: PAYLOAD,
+        maxCost: MAX_COST.toString(),
+        rpcUrl: RPC_URL,
+        contract: address,
+        serverPublicKey,
+        circuit: 'api_request_local',
+      });
+      check(
+        goals.root,
+        "the proof's root matches the chain",
+        body.merkleRoot === (await contract.merkleRoot()),
+      );
     });
-    check(
-      "the proof's root matches the chain",
-      body.merkleRoot === (await contract.merkleRoot()),
-    );
-    check(
-      'the proof is for the deposited secret',
-      body.idCommitment === idCommitment,
-    );
 
     step('5. POST /longjing/request, then replay it');
-    const send = () =>
-      fetch(`${url}/longjing/request`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-    const first = await send();
-    const response = (await first.json()) as {
-      actualCost: string;
-      refundTicket: RefundTicket;
-    };
-    check(
-      'the nullifier is accepted once',
-      first.status === 200,
-      `HTTP ${first.status} ${JSON.stringify(response)}`,
-    );
-    const replay = await send();
-    check(
-      'a replay is rejected',
-      replay.status === 403 &&
-        ((await replay.json()) as { message: string }).message ===
-          'Nullifier already used',
-      `HTTP ${replay.status}`,
-    );
-
-    const ticket = response.refundTicket;
-    check(
-      'the refund is maxCost minus the actual cost',
-      BigInt(ticket.value) === MAX_COST - BigInt(response.actualCost) &&
-        BigInt(ticket.value) > 0n,
-      `${ticket.value} wei`,
-    );
-    check(
-      'the refund ticket signature verifies against serverPublicKey',
-      await verifyTicket(ticket, idCommitment, serverPublicKey),
-    );
+    let response:
+      { actualCost: string; refundTicket: RefundTicket } | undefined;
+    await verify(goals.nullifier, async () => {
+      const request = JSON.stringify(required(body, 'request proof'));
+      const send = () =>
+        fetch(`${url}/longjing/request`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: request,
+        });
+      const first = await send();
+      const json = (await first.json()) as typeof response;
+      check(
+        goals.nullifier,
+        'the nullifier is accepted once',
+        first.status === 200,
+        `HTTP ${first.status} ${JSON.stringify(json)}`,
+      );
+      if (first.status === 200) response = json;
+      const replay = await send();
+      check(
+        goals.nullifier,
+        'a replay is rejected',
+        replay.status === 403 &&
+          ((await replay.json()) as { message: string }).message ===
+            'Nullifier already used',
+        `HTTP ${replay.status}`,
+      );
+    });
 
     step('6. Alice proves the refund (pnpm prove refund) and redeems it');
-    const recipient = ethers.Wallet.createRandom().address;
-    const refund = await prove('refund', {
-      secretKey,
-      ticketIndex: '0x00',
-      payload: PAYLOAD,
-      recipient,
-      refundTicket: ticket,
-      serverPublicKey,
+    await verify(goals.refund, async () => {
+      const key = required(serverPublicKey, 'server public key');
+      const { actualCost, refundTicket: ticket } = required(
+        response,
+        'refund ticket',
+      );
+      const onChainKey = await contract.serverPublicKey();
+      check(
+        goals.refund,
+        "the server's refund key is the one registered onchain",
+        BigInt(key.x) === BigInt(onChainKey.x) &&
+          BigInt(key.y) === BigInt(onChainKey.y),
+      );
+      check(
+        goals.refund,
+        'the refund is maxCost minus the actual cost',
+        BigInt(ticket.value) === MAX_COST - BigInt(actualCost) &&
+          BigInt(ticket.value) > 0n,
+        `${ticket.value} wei`,
+      );
+      check(
+        goals.refund,
+        'the refund ticket signature verifies against serverPublicKey',
+        await verifyTicket(ticket, idCommitment, key),
+      );
+
+      const recipient = ethers.Wallet.createRandom().address;
+      const refund = await prove('refund', {
+        secretKey,
+        ticketIndex: '0x00',
+        payload: PAYLOAD,
+        recipient,
+        refundTicket: ticket,
+        serverPublicKey: key,
+      });
+      const args = [
+        ethers.toBeHex(BigInt(refund.idCommitment), 32),
+        ethers.toBeHex(BigInt(refund.nullifier), 32),
+        refund.value,
+        recipient,
+        refund.proof,
+        refund.publicSignals,
+      ];
+      const before = await provider.getBalance(recipient);
+      await (await contract.redeemRefund(...args)).wait();
+      const after = await provider.getBalance(recipient);
+      check(
+        goals.refund,
+        'the balance changes by the refund',
+        after - before === BigInt(ticket.value),
+        `${after - before} wei`,
+      );
+      let revert = '';
+      try {
+        await contract.redeemRefund.staticCall(...args);
+      } catch (error) {
+        revert = (error as { revert?: { name: string } }).revert?.name ?? '';
+      }
+      check(
+        goals.refund,
+        'a second redemption reverts',
+        revert === 'RefundAlreadyRedeemed',
+        revert || 'it succeeded',
+      );
     });
-    const args = [
-      ethers.toBeHex(BigInt(refund.idCommitment), 32),
-      ethers.toBeHex(BigInt(refund.nullifier), 32),
-      refund.value,
-      recipient,
-      refund.proof,
-      refund.publicSignals,
-    ];
-    const before = await provider.getBalance(recipient);
-    await (await contract.redeemRefund(...args)).wait();
-    const after = await provider.getBalance(recipient);
-    check(
-      'the balance changes by the refund',
-      after - before === BigInt(ticket.value),
-      `${after - before} wei`,
-    );
-    let revert = '';
-    try {
-      await contract.redeemRefund.staticCall(...args);
-    } catch (error) {
-      revert = (error as { revert?: { name: string } }).revert?.name ?? '';
-    }
-    check(
-      'a second redemption reverts',
-      revert === 'RefundAlreadyRedeemed',
-      revert || 'it succeeded',
-    );
   } finally {
     await app.close();
   }
 
-  console.log(`\nProven, ${passed.length} checks:`);
-  for (const label of passed) console.log(`  ✓ ${label}`);
+  return report();
 }
 
 // snarkjs keeps worker threads alive, so exit explicitly
 main()
-  .then(() => process.exit(0))
+  .then((regressed) => process.exit(regressed ? 1 : 0))
   .catch((error: unknown) => {
     console.error(`\n  ✗ ${error instanceof Error ? error.message : error}`);
     process.exit(1);
