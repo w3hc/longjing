@@ -1,5 +1,7 @@
 import { KeyDerivationService } from '../keys/key-derivation.service';
 import { RefundSignerService } from './refund-signer.service';
+import { genesis } from './accumulator';
+import { buildNoteFixture, SERVER_PRV_KEY } from './note.fixture';
 
 describe('RefundSignerService', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -39,6 +41,30 @@ describe('RefundSignerService', () => {
     expect(derivedKey).not.toEqual(await fromEnv.getPublicKey());
     const signed = await derived.signRefund(ticket);
     expect(await derived.verifyRefund(signed, ticket.idCommitment)).toBe(true);
+  }, 30000);
+
+  // note.fixture's signer is the one the circuit tests prove with
+  it('signs accumulators as the circuits verify them', async () => {
+    const signer = create(SERVER_PRV_KEY);
+    const fx = await buildNoteFixture();
+    const accumulator = genesis(42n);
+
+    const signature = await signer.signAccumulator(accumulator);
+    const expected = fx.signerFor(SERVER_PRV_KEY).sign(accumulator);
+    expect(Object.values(signature).map(BigInt)).toEqual([
+      expected.R8x,
+      expected.R8y,
+      expected.S,
+    ]);
+    const key = await signer.getPublicKey();
+    expect([BigInt(key.x), BigInt(key.y)]).toEqual(fx.serverKey);
+
+    await expect(
+      signer.verifyAccumulator(accumulator, signature),
+    ).resolves.toBe(true);
+    await expect(
+      signer.verifyAccumulator(genesis(43n), signature),
+    ).resolves.toBe(false);
   }, 30000);
 
   it('refuses to fall back in production without a derived key', async () => {

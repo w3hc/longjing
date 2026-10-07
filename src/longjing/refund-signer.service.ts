@@ -121,6 +121,36 @@ export class RefundSignerService implements OnModuleInit {
   }
 
   /**
+   * Sign a refund accumulator A' = A_pub + v·G + J (docs/SETTLEMENT.md), with
+   * EdDSA-Poseidon over Poseidon(A'.x, A'.y), the message request.circom and
+   * settlement.circom check
+   */
+  async signAccumulator(accumulator: readonly [bigint, bigint]): Promise<{
+    R8x: string;
+    R8y: string;
+    S: string;
+  }> {
+    await this.ensureInitialized();
+    return this.sign(this.accumulatorMessage(accumulator));
+  }
+
+  /**
+   * Verify an accumulator signature against this signer's key
+   */
+  async verifyAccumulator(
+    accumulator: readonly [bigint, bigint],
+    signature: { R8x: string; R8y: string; S: string },
+  ): Promise<boolean> {
+    await this.ensureInitialized();
+    return this.verify(this.accumulatorMessage(accumulator), signature);
+  }
+
+  private accumulatorMessage([x, y]: readonly [bigint, bigint]): bigint {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+    return this.poseidon.F.toObject(this.poseidon([x, y]));
+  }
+
+  /**
    * Get the server's public key for signature verification
    */
   async getPublicKey(): Promise<{ x: string; y: string }> {
