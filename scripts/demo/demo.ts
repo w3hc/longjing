@@ -18,7 +18,10 @@
  *    tries again
  * 7. She sends a second request, and the demo compares what the two
  *    requests publish with each other and with her deposit
- * 8. It checks that no request body it sent contains her secret key
+ * 8. Carol deposits and double-spends her first ticket. Bob, who only sees
+ *    the two public signals, recovers her secret key (pnpm prove slashing)
+ *    and slashes her
+ * 9. The demo checks that no request body it sent contains a secret key
  *
  * The server answers with mock responses: ANTHROPIC_API_KEY is ignored.
  */
@@ -43,10 +46,14 @@ const RPC_URL = 'http://127.0.0.1:8545';
 // Anvil account #1; #0 deploys
 const ALICE_KEY =
   '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
+// Anvil account #2
+const BOB_KEY =
+  '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a';
 const DEPOSIT = ethers.parseEther('0.2');
 const MAX_COST = ethers.parseEther('0.05');
 const PAYLOAD = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
 const PAYLOAD_2 = 'Who wrote 出師表?';
+const PAYLOAD_DOUBLE = 'What does 鞠躬盡瘁 mean?';
 // The same for every request at a given time, so they identify no one
 const SHARED_BY_DESIGN = new Set(['merkleRoot', 'maxCost']);
 const ISSUES = 'https://github.com/w3hc/longjing/issues';
@@ -57,8 +64,14 @@ const ABI = [
   'function getAllIdentityCommitments() view returns (bytes32[])',
   'function serverPublicKey() view returns (bytes32 x, bytes32 y)',
   'function getDeposit(bytes32 _idCommitment) view returns (tuple(bytes32 idCommitment, uint256 rlnStake, uint256 policyStake, uint256 timestamp, bool active))',
+  'function slashingVerifier() view returns (address)',
+  'function slashDoubleSpend(bytes32 _secretKey, bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[4] _publicSignals)',
   'function redeemRefund(bytes32 _idCommitment, bytes32 _nullifier, uint256 _refundValue, address _recipient, uint256[8] _proof, uint256[8] _publicSignals)',
   'error RefundAlreadyRedeemed()',
+];
+
+const VERIFIER_ABI = [
+  'function verifySlashingProof(uint256[8] _proof, uint256[4] _publicSignals) view returns (bool)',
 ];
 
 interface RefundTicket {
@@ -108,12 +121,12 @@ const goals = {
   ),
   solvency: goal(
     'Solvency is enforced: spending is deducted, D is bound to the deposit',
-    'not checked yet',
+    'not met',
     [134],
   ),
   slashing: goal(
     'A double-spend reveals k and anyone can slash the RLN stake',
-    'not checked yet',
+    'verified',
   ),
   secretKey: goal(
     'The client sends nothing that contains the secret key',
@@ -230,7 +243,7 @@ function publicFields(body: Record<string, unknown>): Map<string, string> {
 
 const workDir = mkdtempSync(join(tmpdir(), 'longjing-demo-'));
 
-async function prove(kind: 'request' | 'refund', input: object) {
+async function prove(kind: 'request' | 'refund' | 'slashing', input: object) {
   const file = join(workDir, `${kind}.json`);
   writeFileSync(file, JSON.stringify(input, null, 2));
   const { stdout } = await run('pnpm', ['-s', 'prove', kind, file], {
@@ -366,16 +379,21 @@ async function main() {
   };
 
   try {
-    const secretKey =
-      '0x' +
-      (
-        BigInt('0x' + randomBytes(32).toString('hex')) % BN254_SCALAR_FIELD
-      ).toString(16);
     const poseidon = await circomlibjs.buildPoseidon();
-    const idCommitment = ethers.toBeHex(
-      poseidon.F.toObject(poseidon([BigInt(secretKey)])) as bigint,
-      32,
-    );
+    const newIdentity = () => {
+      const secret =
+        '0x' +
+        (
+          BigInt('0x' + randomBytes(32).toString('hex')) % BN254_SCALAR_FIELD
+        ).toString(16);
+      const commitment = ethers.toBeHex(
+        poseidon.F.toObject(poseidon([BigInt(secret)])) as bigint,
+        32,
+      );
+      return { secret, commitment };
+    };
+    const { secret: secretKey, commitment: idCommitment } = newIdentity();
+    const secrets = [secretKey];
 
     step('3. Alice deposits with her secret');
     await verify(goals.deposit, async () => {
@@ -504,6 +522,20 @@ async function main() {
         revert || 'it succeeded',
       );
     });
+    await verify(goals.solvency, async () => {
+      let owed = 0n;
+      for (const c of (await contract.getAllIdentityCommitments()) as string[]) {
+        const deposit = await contract.getDeposit(c);
+        if (deposit.active) owed += deposit.rlnStake + deposit.policyStake;
+      }
+      const held = await provider.getBalance(address);
+      check(
+        goals.solvency,
+        'after the refund, the contract still holds every active stake',
+        held >= owed,
+        `it holds ${ethers.formatEther(held)} ETH and owes ${ethers.formatEther(owed)} ETH`,
+      );
+    });
 
     step('7. Alice sends a second request and compares what they publish');
     await verify(goals.requestToRequest, async () => {
@@ -550,16 +582,114 @@ async function main() {
       );
     });
 
-    step('8. Check what the client sent the server');
+    step('8. Carol deposits and double-spends, Bob slashes her');
+    await verify(goals.slashing, async () => {
+      const carol = newIdentity();
+      secrets.push(carol.secret);
+      await (
+        await contract.deposit(carol.commitment, { value: DEPOSIT })
+      ).wait();
+      const before = await contract.getDeposit(carol.commitment);
+      const requestFor = (payload: string) =>
+        prove('request', {
+          secretKey: carol.secret,
+          ticketIndex: '0x00',
+          payload,
+          maxCost: MAX_COST.toString(),
+          rpcUrl: RPC_URL,
+          contract: address,
+          serverPublicKey: required(serverPublicKey, 'server public key'),
+          circuit: 'api_request_local',
+        });
+      const first = await requestFor(PAYLOAD);
+      const accepted = await post(first);
+      if (accepted.status !== 200) {
+        throw new Error(
+          `Carol's first request failed: HTTP ${accepted.status} ${await accepted.text()}`,
+        );
+      }
+      const doubleSpend = await requestFor(PAYLOAD_DOUBLE);
+      check(
+        goals.slashing,
+        'the second signal reuses the nullifier',
+        doubleSpend.nullifier === first.nullifier,
+      );
+      const res = await post(doubleSpend);
+      const { message } = (await res.json()) as { message?: string };
+      check(
+        goals.slashing,
+        'the server rejects it as a double-spend',
+        res.status === 403 && !!message?.startsWith('Double-spend detected'),
+        `HTTP ${res.status} ${message}`,
+      );
+
+      // Bob sees only the two public signals
+      const slash = await prove('slashing', {
+        ticketIndex: '0x00',
+        signal1: first.signal,
+        signal2: doubleSpend.signal,
+      });
+      check(
+        goals.slashing,
+        'the two signals reveal the secret key',
+        BigInt(slash.secretKey) === BigInt(carol.secret),
+      );
+      const verifier = new ethers.Contract(
+        (await contract.slashingVerifier()) as string,
+        VERIFIER_ABI,
+        provider,
+      );
+      check(
+        goals.slashing,
+        'the onchain verifier accepts the slashing proof',
+        (await verifier.verifySlashingProof(
+          slash.proof,
+          slash.publicSignals,
+        )) as boolean,
+      );
+
+      const bob = new ethers.Wallet(BOB_KEY, provider);
+      const balance = await provider.getBalance(bob.address);
+      const receipt = (await (
+        await (
+          new ethers.Contract(address, ABI, bob) as ethers.Contract
+        ).slashDoubleSpend(
+          slash.secretKey,
+          slash.nullifier,
+          slash.idCommitment,
+          slash.proof,
+          slash.publicSignals,
+        )
+      ).wait()) as ethers.TransactionReceipt;
+      const reward =
+        (await provider.getBalance(bob.address)) -
+        balance +
+        receipt.gasUsed * receipt.gasPrice;
+      check(
+        goals.slashing,
+        'Bob, not the server, receives the RLN and policy stakes',
+        reward === before.rlnStake + before.policyStake,
+        `${reward} wei`,
+      );
+      check(
+        goals.slashing,
+        'the deposit is no longer active',
+        !(await contract.getDeposit(carol.commitment)).active,
+      );
+    });
+
+    step('9. Check what the client sent the server');
     await verify(goals.secretKey, async () => {
-      const key = BigInt(secretKey);
-      const forms = [key.toString(), key.toString(16)];
+      const forms = secrets.flatMap((secret) => {
+        const key = BigInt(secret);
+        return [key.toString(), key.toString(16)];
+      });
       const leaked = sent.filter((json) =>
         forms.some((form) => json.toLowerCase().includes(form)),
       );
       check(
         goals.secretKey,
-        `none of the ${sent.length} request bodies contains the secret key`,
+        `none of the ${sent.length} request bodies contains a secret key`,
         sent.length > 0 && leaked.length === 0,
         `${leaked.length} do`,
       );
