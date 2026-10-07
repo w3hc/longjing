@@ -4,10 +4,7 @@ import {
   IsObject,
   ValidateNested,
   IsOptional,
-  IsArray,
   IsIn,
-  ArrayMinSize,
-  ArrayMaxSize,
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -30,6 +27,20 @@ export class RlnSignalDto {
   y: string;
 }
 
+export class AccumulatorDto {
+  @ApiProperty({ description: 'Baby Jubjub x coordinate' })
+  @IsFieldElement()
+  x: string;
+
+  @ApiProperty({ description: 'Baby Jubjub y coordinate' })
+  @IsFieldElement()
+  y: string;
+}
+
+/**
+ * A request as docs/SETTLEMENT.md defines it: nothing in it identifies the
+ * note, its deposit or its index
+ */
 export class LongjingRequestDto {
   @ApiProperty({ description: 'Request payload for external API service' })
   @IsString()
@@ -37,12 +48,19 @@ export class LongjingRequestDto {
   @MaxLength(MAX_PAYLOAD_LENGTH)
   payload: string;
 
-  @ApiProperty({ description: 'RLN nullifier (prevents double-spend)' })
+  @ApiProperty({
+    description:
+      'Fresh nonce ρ in the field, so that x = Poseidon(SHA-256(payload) mod p, ρ) reveals nothing about the payload',
+  })
+  @IsFieldElement()
+  nonce: string;
+
+  @ApiProperty({ description: 'RLN nullifier N (prevents double-spend)' })
   @IsFieldElement()
   nullifier: string;
 
   @ApiProperty({
-    description: 'RLN signal for slashing detection',
+    description: 'RLN signal (x, y), which reveals k if N is reused',
     type: RlnSignalDto,
   })
   @IsObject()
@@ -50,38 +68,25 @@ export class LongjingRequestDto {
   @Type(() => RlnSignalDto)
   signal: RlnSignalDto;
 
-  @ApiProperty({ description: 'ZK-SNARK proof (Groth16)' })
+  @ApiProperty({ description: 'Groth16 proof of request.circom, as JSON' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(MAX_PROOF_LENGTH)
   proof: string;
 
-  @ApiProperty({ description: 'Maximum cost user is willing to pay (in wei)' })
-  @IsFieldElement()
-  maxCost: string;
-
-  @ApiProperty({ description: 'Merkle root from on-chain state' })
+  @ApiProperty({ description: 'A recent Merkle root of the contract' })
   @IsFieldElement()
   merkleRoot: string;
 
-  @ApiProperty({ description: 'Initial deposit amount (in wei)' })
-  @IsFieldElement()
-  initialDeposit: string;
-
-  @ApiProperty({ description: 'Ticket index for this request' })
-  @IsFieldElement()
-  ticketIndex: string;
-
-  @ApiProperty({ description: 'Identity commitment (Hash of secret key)' })
-  @IsFieldElement()
-  idCommitment: string;
-
   @ApiProperty({
     description:
-      'Expected identity commitment (public input for circuit constraint)',
+      'A_pub, the re-randomized accumulator the proof outputs, which the server adds the refund to',
+    type: AccumulatorDto,
   })
-  @IsFieldElement()
-  idCommitmentExpected: string;
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AccumulatorDto)
+  accumulator: AccumulatorDto;
 
   @ApiProperty({
     description: 'Model/service variant to use',
@@ -91,83 +96,4 @@ export class LongjingRequestDto {
   @IsOptional()
   @IsIn(CLAUDE_MODELS)
   model?: string;
-}
-
-export class RefundSignatureDto {
-  @ApiProperty({ description: 'EdDSA signature R8x component' })
-  @IsString()
-  @IsNotEmpty()
-  R8x: string;
-
-  @ApiProperty({ description: 'EdDSA signature R8y component' })
-  @IsString()
-  @IsNotEmpty()
-  R8y: string;
-
-  @ApiProperty({ description: 'EdDSA signature S component' })
-  @IsString()
-  @IsNotEmpty()
-  S: string;
-}
-
-export class RedeemRefundRequestDto {
-  @ApiProperty({ description: 'Identity commitment (Hash of secret key)' })
-  @IsFieldElement()
-  idCommitment: string;
-
-  @ApiProperty({ description: 'Nullifier from the API request' })
-  @IsFieldElement()
-  nullifier: string;
-
-  @ApiProperty({ description: 'Refund value in wei' })
-  @IsFieldElement()
-  value: string;
-
-  @ApiProperty({ description: 'Recipient address for the refund' })
-  @IsString()
-  @IsNotEmpty()
-  recipient: string;
-
-  @ApiProperty({
-    description: 'Groth16 ZK proof (array of 8 hex strings)',
-    type: [String],
-    example: [
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-    ],
-  })
-  @IsArray()
-  @ArrayMinSize(8)
-  @ArrayMaxSize(8)
-  @IsString({ each: true })
-  @MaxLength(80, { each: true })
-  proof: string[];
-
-  @ApiProperty({
-    description:
-      'Public signals in snarkjs order (array of 8 hex strings): nullifier, signalY, idCommitment, signalX, refundValueClaimed, serverPublicKeyX, serverPublicKeyY, recipient',
-    type: [String],
-    example: [
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-    ],
-  })
-  @IsArray()
-  @ArrayMinSize(8)
-  @ArrayMaxSize(8)
-  @IsString({ each: true })
-  @MaxLength(80, { each: true })
-  publicSignals: string[];
 }

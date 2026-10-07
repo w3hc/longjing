@@ -26,28 +26,24 @@ contract DeployLongjingCredits is Script {
     bytes32 constant DEV_PUBKEY_X = 0x2de05716d2326de41468ba1ee14d34a5c74c348b112c1743798dd68ce7715115;
     bytes32 constant DEV_PUBKEY_Y = 0x1150d8e55cc05caef9ddb06b484ad5f7fea37e315dc3d27b727f681982cccce1;
 
-    // Min stakes: 0.1 ETH for RLN, 0.1 ETH for policy (0.2 ETH total minimum deposit)
-    uint256 constant MIN_RLN_STAKE = 0.1 ether;
-    uint256 constant MIN_POLICY_STAKE = 0.1 ether;
+    // C_max: the most one request may cost, and the smallest deposit
+    uint256 constant C_MAX = 0.001 ether;
+    // What whoever slashes a note gets, the rest goes to the operator
+    uint256 constant SLASH_BOUNTY = 0.0001 ether;
 
     function run() external {
         Config memory c = config();
 
         vm.startBroadcast(c.deployerPrivateKey);
         LongjingCredits longjing =
-            new LongjingCredits(c.serverAddress, MIN_RLN_STAKE, MIN_POLICY_STAKE, c.serverPubKeyX, c.serverPubKeyY);
+            new LongjingCredits(c.serverAddress, c.serverPubKeyX, c.serverPubKeyY, C_MAX, SLASH_BOUNTY);
         vm.stopBroadcast();
 
         console.log("LongjingCredits deployed at:", address(longjing));
         console.log("Server address:", c.serverAddress);
-        console.log("Min RLN stake:", MIN_RLN_STAKE);
-        console.log("Min Policy stake:", MIN_POLICY_STAKE);
-
-        // Groth16 verifiers are deployed in the constructor
-        console.log("\nVerifiers deployed:");
-        console.log("Withdrawal verifier:", address(longjing.withdrawalVerifier()));
-        console.log("Refund verifier:", address(longjing.refundVerifier()));
-        console.log("Slashing verifier:", address(longjing.slashingVerifier()));
+        console.log("C_MAX:", C_MAX);
+        console.log("SLASH_BOUNTY:", SLASH_BOUNTY);
+        console.log("Settlement verifier:", address(longjing.settlementVerifier()));
     }
 
     function config() public view returns (Config memory) {

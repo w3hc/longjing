@@ -5,12 +5,11 @@ Solidity smart contracts for privacy-preserving API credits system using Zero-Kn
 ## Overview
 
 The LongjingCredits contract implements:
-- **Anonymous deposits** with identity commitments (Poseidon hash)
-- **Dual staking** mechanism (RLN + Policy stakes)
-- **Merkle tree** anonymity set using Poseidon hashing
-- **Double-spend slashing** via RLN secret key extraction
-- **Policy stake slashing** for ToS enforcement, a trusted-operator action
-- **Refund ticket redemption** with EdDSA signatures
+- **Notes** keyed by commitment, with the leaf `Poseidon(c, D)` computed onchain from the deposit
+- **Merkle tree** anonymity set using Poseidon hashing, with the last 30 roots
+- **Settlement**: a ZK withdrawal of `D + R − n · C_MAX` after a 3-day challenge window
+- **Slashing** by revealed secret key, for a fixed bounty
+- **Timelocked admin**: verifier, server address and refund key changes wait 7 days
 
 ## Contracts
 
@@ -18,26 +17,22 @@ The LongjingCredits contract implements:
 Main contract implementing the RLN-based usage-credits protocol.
 
 **Key Functions:**
-- `deposit(bytes32 idCommitment)` - Deposit ETH with anonymous identity
-- `withdraw(bytes32 idCommitment, address payable recipient, uint256[8] proof, uint256[7] publicSignals)` - Withdraw funds with ZK proof
-- `slashDoubleSpend(bytes32 secretKey, bytes32 nullifier, bytes32 idCommitment, uint256[8] proof, uint256[4] publicSignals)` - Slash double-spenders and reward reporters
-- `slashPolicyStake(bytes32 nullifier, bytes32 idCommitment)` - Burn a ToS violator's policy stake (server only, no proof: trusted, guarded only by the 7-day timelock on the server address)
-- `redeemRefund(bytes32 idCommitment, bytes32 nullifier, uint256 refundValue, address payable recipient, uint256[8] proof, uint256[8] publicSignals)` - Redeem server-signed refund tickets
+- `deposit(bytes32 commitment)` - Open a note worth `msg.value`, between `C_MAX` and 2^128 wei
+- `initiateWithdrawal(bytes32 commitment, address recipient, EdDSAPublicKey refundKey, uint256[8] proof, uint256 nullifier, uint256 signalY, uint256 payout)` - Start an exit with a settlement proof
+- `finalizeWithdrawal(bytes32 commitment)` - Pay an exit after the challenge window; anyone can call it
+- `slash(uint256 secretKey)` - Slash the note of a revealed key, for `SLASH_BOUNTY`
+- `claimExpired(bytes32 commitment)` / `withdrawOperatorBalance()` - The operator's revenue
+- `isKnownRoot(bytes32 root)`, `getNote`, `getLeaves`, `getMerkleProof` - Reads for clients and the server
 
-`publicSignals` are passed in the order snarkjs emits them: the circuit's outputs first, then its public inputs, each group in declaration order. `pnpm check:verifiers` checks that each verifier contract embeds its circuit's current verification key.
+The settlement proof's public signals are `[nullifier, signalY, payout, commitment, deposit, C_MAX, refundKeyX, refundKeyY, recipient, x]`, in the order snarkjs emits them; the contract fills in everything but the outputs. `pnpm check:verifiers` checks that `SettlementVerifier.sol` embeds the circuit's current verification key.
 
 ### Supporting Contracts
 
 #### PoseidonHasher.sol
 Wrapper library for Poseidon hash functions (uses poseidon-solidity). Provides convenience functions for hashing 1-5 field elements.
 
-#### BabyJubJub.sol
-Baby Jubjub elliptic curve operations for EdDSA signature verification. Implements point addition, scalar multiplication, and curve validation.
-
 #### Verifier Contracts
-- `WithdrawalVerifier.sol` - Groth16 verifier for withdrawal proofs
-- `RefundRedemptionVerifier.sol` - Groth16 verifier for refund redemption proofs
-- `DoubleSpendSlashingVerifier.sol` - Groth16 verifier for double-spend slashing proofs
+- `SettlementVerifier.sol` - Groth16 verifier for withdrawal proofs, with a `verifySettlementProof` wrapper
 
 **Critical:** All contracts use Poseidon hashing to maintain compatibility with the ZK circuits. Using Keccak256 would break proof verification.
 
@@ -84,19 +79,7 @@ forge test --gas-report
 forge coverage
 ```
 
-**Test Results:**
-```
-✅ All 24 tests passing
-✅ 85.47% statement coverage on LongjingCredits.sol
-✅ 86.96% function coverage on LongjingCredits.sol
-✅ 50.00% branch coverage on LongjingCredits.sol
-✅ Identity commitments use Poseidon hash
-✅ Merkle tree uses Poseidon hash with full node storage
-✅ Merkle proof generation verified for >2 leaves
-✅ Refund redemption with EdDSA signature verification
-✅ Double-spend slashing with secret key extraction
-✅ Policy stake slashing (server-only, trusted)
-```
+**Test Results:** the suite deposits, exits, slashes and rotates keys against the real `SettlementVerifier`, on proofs from `test/fixtures/settlement.json`. Regenerate them with `scripts/testing/generate-settlement-fixtures.ts` after changing the settlement circuit or its keys.
 
 ## Hash Function Compatibility ⚠️
 
@@ -104,9 +87,9 @@ forge coverage
 
 | Operation | Hash Function | Reason |
 |-----------|---------------|--------|
-| Identity commitments | Poseidon | Must match ZK circuit |
+| Note commitments and leaves | Poseidon | Must match ZK circuit |
 | Merkle tree | Poseidon | Must match ZK circuit |
-| Refund signatures | Poseidon | Must match ZK circuit |
+| Withdrawal signal `x` | Poseidon | Must match the settlement proof |
 | Double-spend detection | Poseidon | Must match ZK circuit |
 
 The circuit uses `circomlib/Poseidon`, and the contract uses `poseidon-solidity`. These are cryptographically identical.
@@ -151,11 +134,11 @@ forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits \
 
 ```solidity
 constructor(
-    address _serverAddress,      // Server address for policy slashing
-    uint256 _minRlnStake,        // Minimum RLN stake (e.g., 0.005 ether)
-    uint256 _minPolicyStake,     // Minimum policy stake (e.g., 0.005 ether)
-    bytes32 _serverPubKeyX,      // Server EdDSA public key X coordinate
-    bytes32 _serverPubKeyY       // Server EdDSA public key Y coordinate
+    address _serverAddress,      // Operator: claims expired notes and operator revenue
+    bytes32 _serverPubKeyX,      // Refund key, X coordinate
+    bytes32 _serverPubKeyY,      // Refund key, Y coordinate
+    uint256 _cMax,               // C_MAX, the most one request costs and the smallest deposit (e.g. 0.001 ether)
+    uint256 _slashBounty         // SLASH_BOUNTY, what a slasher gets (e.g. 0.0001 ether)
 )
 ```
 
@@ -180,14 +163,14 @@ forge-std/=lib/forge-std/src/
 ## Gas Optimization
 
 Current gas costs (approximate):
-- Deposit: ~220k gas
-- Withdraw: ~225k gas
-- Redeem refund: ~150k gas
-- Slash double-spend: ~265k gas
+Measured with `forge test -vvvv`:
+- Deposit: ~1.2M gas (20 Poseidon hashes plus node storage)
+- Initiate withdrawal: ~0.9M gas (proof verification and leaf removal)
+- Finalize withdrawal: ~65k gas
+- Slash: ~0.7M gas (leaf removal)
 
 **Future optimizations:**
-- Incremental Merkle tree for cheaper deposits
-- Batch refund redemption
+- Cheaper Poseidon for the tree
 - Storage packing
 
 ## Security
@@ -197,13 +180,13 @@ Current gas costs (approximate):
 
 ### Known Limitations
 1. **Merkle tree storage cost** - Stores all nodes on-chain for correct proof generation (gas intensive for large trees)
-2. **Admin privileges** - Contract owner can change minimum stakes instantly, and verifier contracts and the server address through `proposeChange` / `executeChange` after a 7-day `ADMIN_DELAY`
+2. **Admin privileges** - the contract owner can change the settlement verifier, the server address and the refund key, only after a 7-day `ADMIN_DELAY`, longer than an exit takes. `C_MAX` and `SLASH_BOUNTY` are immutable
 
 ### Security Model
-- **RLN stake** - Claimable by anyone proving double-spend
-- **Policy stake** - Burned (sent to address(0)) for ToS violations
-- **Refund nullifiers** - Prevents double-redemption
-- **Secret key extraction** - Enables slashing of double-spenders
+- **One stake** - the whole deposit D; each note pays out at most D in total
+- **Challenge window** - an exit that understates usage is slashed before it pays out
+- **Bounty, not stake** - a slasher gets `SLASH_BOUNTY`, so self-slashing recovers no spending
+- **Pause** - blocks deposits and expiry claims, never an exit or a slash
 
 ## Development Commands
 
@@ -240,15 +223,10 @@ contracts/
 ├── src/
 │   ├── LongjingCredits.sol                    # Main contract
 │   ├── PoseidonHasher.sol                  # Poseidon hash wrapper
-│   ├── BabyJubJub.sol                      # EdDSA curve operations
-│   ├── WithdrawalVerifier.sol              # Withdrawal proof verifier (auto-generated)
-│   ├── RefundRedemptionVerifier.sol        # Refund proof verifier (auto-generated)
-│   └── DoubleSpendSlashingVerifier.sol     # Slashing proof verifier (auto-generated)
+│   └── SettlementVerifier.sol              # Settlement proof verifier (auto-generated)
 ├── test/
-│   ├── LongjingCredits.t.sol                  # Foundry tests (24 tests)
-│   ├── MockWithdrawalVerifier.sol          # Mock verifier for testing
-│   ├── MockRefundVerifier.sol              # Mock verifier for testing
-│   └── MockSlashingVerifier.sol            # Mock verifier for testing
+│   ├── LongjingCredits.t.sol                  # Foundry tests, on the real verifier
+│   └── fixtures/settlement.json            # Real settlement proofs for the tests
 ├── script/
 │   └── DeployLongjingCredits.s.sol           # Deployment script
 ├── lib/                                    # Foundry dependencies

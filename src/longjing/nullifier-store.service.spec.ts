@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import Database from 'better-sqlite3';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { Test, TestingModule } from '@nestjs/testing';
 import { NullifierStoreService } from './nullifier-store.service';
 
@@ -134,7 +139,7 @@ describe('NullifierStoreService - Rate Limiting', () => {
       const nullifier = '0xbasic1';
       const signal = { x: '0xaaa', y: '0xbbb' };
 
-      service.set(nullifier, signal);
+      service.checkAndSet(nullifier, signal);
 
       const retrieved = service.get(nullifier);
       expect(retrieved).toBeDefined();
@@ -148,39 +153,20 @@ describe('NullifierStoreService - Rate Limiting', () => {
 
       expect(service.exists(nullifier)).toBe(false);
 
-      service.set(nullifier, signal);
+      service.checkAndSet(nullifier, signal);
 
       expect(service.exists(nullifier)).toBe(true);
     });
 
     it('should clear all data', () => {
-      service.set('0x1', { x: '0xa', y: '0xb' });
-      service.set('0x2', { x: '0xc', y: '0xd' });
+      service.checkAndSet('0x1', { x: '0xa', y: '0xb' });
+      service.checkAndSet('0x2', { x: '0xc', y: '0xd' });
 
       expect(service.count()).toBe(2);
 
       service.clear();
 
       expect(service.count()).toBe(0);
-    });
-  });
-
-  describe('release', () => {
-    it('should free a nullifier for reuse', () => {
-      service.checkAndSet('0xrelease1', { x: '0xaaa', y: '0xbbb' });
-
-      expect(service.release('0xrelease1', '0xaaa')).toBe(true);
-      expect(service.exists('0xrelease1')).toBe(false);
-      expect(
-        service.checkAndSet('0xrelease1', { x: '0xaaa', y: '0xbbb' }),
-      ).toBeNull();
-    });
-
-    it('should keep a nullifier stored with another signal', () => {
-      service.checkAndSet('0xrelease2', { x: '0xaaa', y: '0xbbb' });
-
-      expect(service.release('0xrelease2', '0xccc')).toBe(false);
-      expect(service.exists('0xrelease2')).toBe(true);
     });
   });
 
@@ -218,29 +204,6 @@ describe('NullifierStoreService - Rate Limiting', () => {
       const stored = service.get(nullifier);
       expect(stored?.x).toBe(signal1.x);
       expect(stored?.y).toBe(signal1.y);
-    });
-
-    it('should preserve all signal fields atomically', () => {
-      const nullifier = '0xatomic3';
-      const signal = {
-        x: '0x777',
-        y: '0x888',
-        rlnShare_a: '0xabc',
-        payloadHash: '0xdef',
-        ticketIndex: '42',
-        idCommitment: '0xghi',
-      };
-
-      const result = service.checkAndSet(nullifier, signal);
-      expect(result).toBeNull();
-
-      const stored = service.get(nullifier);
-      expect(stored?.x).toBe(signal.x);
-      expect(stored?.y).toBe(signal.y);
-      expect(stored?.rlnShare_a).toBe(signal.rlnShare_a);
-      expect(stored?.payloadHash).toBe(signal.payloadHash);
-      expect(stored?.ticketIndex).toBe(signal.ticketIndex);
-      expect(stored?.idCommitment).toBe(signal.idCommitment);
     });
 
     it('should handle concurrent-like sequential calls', () => {
@@ -291,17 +254,80 @@ describe('NullifierStoreService - Rate Limiting', () => {
 
       expect(service.count()).toBe(3);
     });
+  });
 
-    it('should maintain atomicity with timestamp', () => {
-      const nullifier = '0xtime1';
-      const signal = { x: '0xt1', y: '0xt2' };
+  describe('retry cache', () => {
+    const signal = { x: '0x1', y: '0x2' };
 
-      const result = service.checkAndSet(nullifier, signal);
-      expect(result).toBeNull();
-
-      const stored = service.get(nullifier);
-      expect(stored?.timestamp).toBeDefined();
-      expect(stored?.timestamp).toBeGreaterThan(Date.now() - 1000);
+    it('returns the kept response to a retry of the same signal', () => {
+      service.rememberResponse('0xn1', signal, { accumulator: 'A' });
+      expect(service.recallResponse('0xn1', { ...signal })).toEqual({
+        accumulator: 'A',
+      });
     });
+
+    it('returns nothing for another signal at the same nullifier', () => {
+      service.rememberResponse('0xn2', signal, { accumulator: 'A' });
+      expect(service.recallResponse('0xn2', { x: '0x3', y: '0x4' })).toBeNull();
+    });
+
+    it('forgets responses after RESPONSE_TTL_MS', () => {
+      jest.useFakeTimers();
+      service.rememberResponse('0xn3', signal, { accumulator: 'A' });
+      jest.advanceTimersByTime(service.RESPONSE_TTL_MS);
+      expect(service.recallResponse('0xn3', signal)).toBeNull();
+      jest.useRealTimers();
+    });
+  });
+});
+
+describe('NullifierStoreService - migration', () => {
+  const originalDataDir = process.env.DATA_DIR;
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'nullifiers-'));
+    process.env.DATA_DIR = dir;
+  });
+
+  afterEach(() => {
+    process.env.DATA_DIR = originalDataDir;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('keeps (N, x, y) and drops every identifier', () => {
+    const legacy = new Database(join(dir, 'nullifiers.db'));
+    legacy.exec(`
+      CREATE TABLE nullifiers (
+        nullifier TEXT PRIMARY KEY, x TEXT NOT NULL, y TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, rln_share_a TEXT, payload_hash TEXT,
+        ticket_index TEXT, id_commitment TEXT
+      );
+      CREATE INDEX idx_nullifiers_timestamp ON nullifiers(timestamp);
+      INSERT INTO nullifiers VALUES ('0xn', '0xx', '0xy', 1, NULL, '0xhash', '3', '0xcommitment');
+      CREATE TABLE redeemed_refunds (nullifier TEXT PRIMARY KEY, id_commitment TEXT);
+    `);
+    legacy.close();
+
+    const service = new NullifierStoreService();
+    (service as any).logger = { log: jest.fn() };
+    service.onModuleInit();
+
+    expect(service.get('0xn')).toEqual({ x: '0xx', y: '0xy' });
+    const db = (service as any).db as Database.Database;
+    const columns = (
+      db.prepare("PRAGMA table_info('nullifiers')").all() as Array<{
+        name: string;
+      }>
+    ).map((c) => c.name);
+    expect(columns).toEqual(['nullifier', 'x', 'y']);
+    expect(
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE name IN ('redeemed_refunds', 'idx_nullifiers_timestamp')",
+        )
+        .all(),
+    ).toEqual([]);
+    service.onModuleDestroy();
   });
 });

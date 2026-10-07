@@ -8,16 +8,6 @@
         "internalType": "address"
       },
       {
-        "name": "_minRlnStake",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_minPolicyStake",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
         "name": "_serverPubKeyX",
         "type": "bytes32",
         "internalType": "bytes32"
@@ -26,6 +16,16 @@
         "name": "_serverPubKeyY",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "_cMax",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_slashBounty",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "nonpayable"
@@ -33,6 +33,32 @@
   {
     "type": "function",
     "name": "ADMIN_DELAY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "CHALLENGE_WINDOW",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "C_MAX",
     "inputs": [],
     "outputs": [
       {
@@ -58,6 +84,32 @@
   },
   {
     "type": "function",
+    "name": "ROOT_HISTORY_SIZE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "SLASH_BOUNTY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "TREE_DEPTH",
     "inputs": [],
     "outputs": [
@@ -65,6 +117,25 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "acceptedRefundKeys",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -87,7 +158,7 @@
     "name": "claimExpired",
     "inputs": [
       {
-        "name": "_idCommitment",
+        "name": "_commitment",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -97,55 +168,29 @@
   },
   {
     "type": "function",
+    "name": "currentRootIndex",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "deposit",
     "inputs": [
       {
-        "name": "_idCommitment",
+        "name": "_commitment",
         "type": "bytes32",
         "internalType": "bytes32"
       }
     ],
     "outputs": [],
     "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "deposits",
-    "inputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "idCommitment",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "rlnStake",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "policyStake",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "timestamp",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "active",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -162,91 +207,83 @@
   },
   {
     "type": "function",
-    "name": "filledSubtrees",
+    "name": "exits",
     "inputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
       {
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
       }
     ],
+    "outputs": [
+      {
+        "name": "nullifier",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "signalX",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "signalY",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "payout",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "exitAt",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "getAllIdentityCommitments",
+    "name": "finalizeWithdrawal",
+    "inputs": [
+      {
+        "name": "_commitment",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getLeafCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getLeaves",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "bytes32[]",
         "internalType": "bytes32[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getAnonymitySetSize",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getDeposit",
-    "inputs": [
-      {
-        "name": "_idCommitment",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct LongjingCredits.Deposit",
-        "components": [
-          {
-            "name": "idCommitment",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "rlnStake",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "policyStake",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "timestamp",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "active",
-            "type": "bool",
-            "internalType": "bool"
-          }
-        ]
       }
     ],
     "stateMutability": "view"
@@ -277,7 +314,122 @@
   },
   {
     "type": "function",
-    "name": "identityCommitments",
+    "name": "getNote",
+    "inputs": [
+      {
+        "name": "_commitment",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct LongjingCredits.Note",
+        "components": [
+          {
+            "name": "amount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "depositedAt",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "leafIndex",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "status",
+            "type": "uint8",
+            "internalType": "enum LongjingCredits.Status"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "initiateWithdrawal",
+    "inputs": [
+      {
+        "name": "_commitment",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_recipient",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_refundKey",
+        "type": "tuple",
+        "internalType": "struct LongjingCredits.EdDSAPublicKey",
+        "components": [
+          {
+            "name": "x",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "y",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      },
+      {
+        "name": "_proof",
+        "type": "uint256[8]",
+        "internalType": "uint256[8]"
+      },
+      {
+        "name": "_nullifier",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_signalY",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_payout",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isKnownRoot",
+    "inputs": [
+      {
+        "name": "_root",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "leaves",
     "inputs": [
       {
         "name": "",
@@ -290,25 +442,6 @@
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isNullifierUsed",
-    "inputs": [
-      {
-        "name": "_nullifier",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -328,40 +461,61 @@
   },
   {
     "type": "function",
-    "name": "minPolicyStake",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "minRlnStake",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "noteExpiry",
     "inputs": [
       {
-        "name": "_idCommitment",
+        "name": "_commitment",
         "type": "bytes32",
         "internalType": "bytes32"
       }
     ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "notes",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "depositedAt",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "leafIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "status",
+        "type": "uint8",
+        "internalType": "enum LongjingCredits.Status"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "operatorBalance",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
@@ -453,6 +607,16 @@
         "internalType": "address"
       },
       {
+        "name": "keyX",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "keyY",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
         "name": "eta",
         "type": "uint256",
         "internalType": "uint256"
@@ -480,73 +644,21 @@
   },
   {
     "type": "function",
-    "name": "redeemRefund",
+    "name": "proposeRefundKey",
     "inputs": [
       {
-        "name": "_idCommitment",
+        "name": "_x",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "_nullifier",
+        "name": "_y",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "_refundValue",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_recipient",
-        "type": "address",
-        "internalType": "address payable"
-      },
-      {
-        "name": "_proof",
-        "type": "uint256[8]",
-        "internalType": "uint256[8]"
-      },
-      {
-        "name": "_publicSignals",
-        "type": "uint256[8]",
-        "internalType": "uint256[8]"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "redeemedRefunds",
-    "inputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "refundVerifier",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract RefundRedemptionVerifier"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -557,19 +669,19 @@
   },
   {
     "type": "function",
-    "name": "revealedSecretKeys",
+    "name": "roots",
     "inputs": [
       {
         "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
       {
         "name": "",
-        "type": "bool",
-        "internalType": "bool"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -607,104 +719,29 @@
   },
   {
     "type": "function",
-    "name": "setMinStakes",
-    "inputs": [
-      {
-        "name": "_minRlnStake",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_minPolicyStake",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "slashDoubleSpend",
-    "inputs": [
-      {
-        "name": "_secretKey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "_nullifier",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "_idCommitment",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "_proof",
-        "type": "uint256[8]",
-        "internalType": "uint256[8]"
-      },
-      {
-        "name": "_publicSignals",
-        "type": "uint256[4]",
-        "internalType": "uint256[4]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "slashPolicyStake",
-    "inputs": [
-      {
-        "name": "_nullifier",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "_idCommitment",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "slashedNullifiers",
-    "inputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "slashingVerifier",
+    "name": "settlementVerifier",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "address",
-        "internalType": "contract DoubleSpendSlashingVerifier"
+        "internalType": "contract SettlementVerifier"
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "slash",
+    "inputs": [
+      {
+        "name": "_secretKey",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -741,41 +778,26 @@
   },
   {
     "type": "function",
-    "name": "withdraw",
-    "inputs": [
-      {
-        "name": "_idCommitment",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "_recipient",
-        "type": "address",
-        "internalType": "address payable"
-      },
-      {
-        "name": "_proof",
-        "type": "uint256[8]",
-        "internalType": "uint256[8]"
-      },
-      {
-        "name": "_publicSignals",
-        "type": "uint256[7]",
-        "internalType": "uint256[7]"
-      }
-    ],
+    "name": "withdrawOperatorBalance",
+    "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "withdrawalVerifier",
-    "inputs": [],
+    "name": "withdrawalSignalX",
+    "inputs": [
+      {
+        "name": "_recipient",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "outputs": [
       {
         "name": "",
-        "type": "address",
-        "internalType": "contract WithdrawalVerifier"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -864,59 +886,22 @@
   },
   {
     "type": "event",
-    "name": "DepositMade",
+    "name": "Deposited",
     "inputs": [
       {
-        "name": "idCommitment",
+        "name": "commitment",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
       },
       {
-        "name": "rlnStake",
+        "name": "amount",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "policyStake",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "timestamp",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DoubleSpendSlashed",
-    "inputs": [
-      {
-        "name": "secretKey",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "nullifier",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "slasher",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "reward",
+        "name": "leafIndex",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -948,7 +933,7 @@
     "name": "NoteExpiredClaimed",
     "inputs": [
       {
-        "name": "idCommitment",
+        "name": "commitment",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
@@ -958,12 +943,25 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OperatorBalanceWithdrawn",
+    "inputs": [
       {
-        "name": "operator",
+        "name": "to",
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1002,22 +1000,22 @@
   },
   {
     "type": "event",
-    "name": "PolicyStakeSlashed",
+    "name": "RefundKeyProposed",
     "inputs": [
       {
-        "name": "nullifier",
+        "name": "x",
         "type": "bytes32",
-        "indexed": true,
+        "indexed": false,
         "internalType": "bytes32"
       },
       {
-        "name": "idCommitment",
+        "name": "y",
         "type": "bytes32",
-        "indexed": true,
+        "indexed": false,
         "internalType": "bytes32"
       },
       {
-        "name": "amountBurned",
+        "name": "eta",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1027,31 +1025,19 @@
   },
   {
     "type": "event",
-    "name": "RefundRedeemed",
+    "name": "RefundKeyUpdated",
     "inputs": [
       {
-        "name": "idCommitment",
+        "name": "x",
         "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "nullifier",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
         "indexed": false,
-        "internalType": "uint256"
+        "internalType": "bytes32"
       },
       {
-        "name": "recipient",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
+        "name": "y",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -1077,6 +1063,31 @@
   },
   {
     "type": "event",
+    "name": "Slashed",
+    "inputs": [
+      {
+        "name": "commitment",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "slasher",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "bounty",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Unpaused",
     "inputs": [
       {
@@ -1090,16 +1101,59 @@
   },
   {
     "type": "event",
-    "name": "WithdrawalMade",
+    "name": "WithdrawalFinalized",
     "inputs": [
       {
-        "name": "idCommitment",
+        "name": "commitment",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
       },
       {
-        "name": "amount",
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "payout",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "WithdrawalInitiated",
+    "inputs": [
+      {
+        "name": "commitment",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "nullifier",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "signalX",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "signalY",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "payout",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1109,23 +1163,19 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      },
+      {
+        "name": "exitAt",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
   },
   {
     "type": "error",
-    "name": "AlreadySlashed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "DepositAlreadyExists",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "DepositNotFound",
+    "name": "ChallengeWindowOpen",
     "inputs": []
   },
   {
@@ -1140,7 +1190,12 @@
   },
   {
     "type": "error",
-    "name": "InsufficientDeposit",
+    "name": "InvalidCommitment",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidDepositAmount",
     "inputs": []
   },
   {
@@ -1155,12 +1210,22 @@
   },
   {
     "type": "error",
-    "name": "InvalidSignature",
+    "name": "NoPendingChange",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "NoPendingChange",
+    "name": "NoteAlreadyExists",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoteNotActive",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoteNotExiting",
     "inputs": []
   },
   {
@@ -1192,12 +1257,12 @@
   },
   {
     "type": "error",
-    "name": "ReentrancyGuardReentrantCall",
+    "name": "PayoutExceedsDeposit",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "RefundAlreadyRedeemed",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
@@ -1207,12 +1272,37 @@
   },
   {
     "type": "error",
+    "name": "TransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TreeFull",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "Unauthorized",
     "inputs": []
   },
   {
     "type": "error",
+    "name": "UnknownRefundKey",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UseProposeRefundKey",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ZeroAddress",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroKey",
     "inputs": []
   }
 ]

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Compile production ZK circuits and generate Solidity verifiers
-# This script compiles: withdrawal, refund_redemption, double_spend_slashing and settlement circuits
+# This script compiles the settlement circuit, the one the contract verifies
 
 set -e
 
@@ -102,19 +102,9 @@ compile_circuit() {
 }
 
 # Compile all production circuits
-echo "Starting compilation of 4 production circuits..."
+echo "Starting compilation of the settlement circuit..."
 echo ""
 
-# 1. Withdrawal circuit
-compile_circuit "withdrawal" "WithdrawalVerifier"
-
-# 2. Refund redemption circuit
-compile_circuit "refund_redemption" "RefundRedemptionVerifier"
-
-# 3. Double-spend slashing circuit
-compile_circuit "double_spend_slashing" "DoubleSpendSlashingVerifier"
-
-# 4. Settlement circuit
 compile_circuit "settlement" "SettlementVerifier"
 
 # Summary
@@ -124,24 +114,6 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "Summary of generated files:"
 echo ""
-echo "Withdrawal Circuit:"
-echo "  • circuits/build/withdrawal.r1cs"
-echo "  • circuits/build/withdrawal_js/withdrawal.wasm"
-echo "  • circuits/build/withdrawal.zkey"
-echo "  • contracts/src/WithdrawalVerifier.sol"
-echo ""
-echo "Refund Redemption Circuit:"
-echo "  • circuits/build/refund_redemption.r1cs"
-echo "  • circuits/build/refund_redemption_js/refund_redemption.wasm"
-echo "  • circuits/build/refund_redemption.zkey"
-echo "  • contracts/src/RefundRedemptionVerifier.sol"
-echo ""
-echo "Double-Spend Slashing Circuit:"
-echo "  • circuits/build/double_spend_slashing.r1cs"
-echo "  • circuits/build/double_spend_slashing_js/double_spend_slashing.wasm"
-echo "  • circuits/build/double_spend_slashing.zkey"
-echo "  • contracts/src/DoubleSpendSlashingVerifier.sol"
-echo ""
 echo "Settlement Circuit:"
 echo "  • circuits/build/settlement.r1cs"
 echo "  • circuits/build/settlement_js/settlement.wasm"
@@ -150,7 +122,7 @@ echo "  • contracts/src/SettlementVerifier.sol"
 echo ""
 echo "Next steps:"
 echo "  1. Review the generated Solidity verifier contracts"
-echo "  2. Update LongjingCredits.sol to use production verifiers"
+echo "  2. Keep the verifySettlementProof wrapper at the end of SettlementVerifier.sol"
 echo "  3. Run contract tests to verify integration"
 echo "  4. Consider running a Phase 2 trusted setup ceremony for production"
 echo ""

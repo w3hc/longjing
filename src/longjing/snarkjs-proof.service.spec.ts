@@ -279,43 +279,10 @@ describe('SnarkjsProofService', () => {
     });
   });
 
-  describe('circuit selection', () => {
-    const env = { ...process.env };
-
-    afterEach(() => {
-      process.env = { ...env };
-    });
-
-    const withEnv = (nodeEnv: string, circuit?: string) => {
-      process.env.NODE_ENV = nodeEnv;
-      if (circuit) process.env.ZK_CIRCUIT = circuit;
-      else delete process.env.ZK_CIRCUIT;
-      return new SnarkjsProofService();
-    };
-
-    it('defaults to the local request circuit outside production', () => {
-      const info = withEnv('test').getCircuitInfo();
-
-      expect(info.circuit).toBe('api_request_local');
-      expect(info.vKeyPath).toMatch(
-        /api_request_local_verification_key\.json$/,
-      );
-    });
-
-    it('defaults to the request circuit in production', () => {
-      const info = withEnv('production').getCircuitInfo();
-
-      expect(info.circuit).toBe('api_request');
-      expect(info.vKeyPath).toMatch(/api_request_verification_key\.json$/);
-    });
-
-    it('honours ZK_CIRCUIT', () => {
-      expect(withEnv('test', 'api_request').getCircuit()).toBe('api_request');
-    });
-
-    it('rejects an unknown ZK_CIRCUIT', () => {
-      expect(() => withEnv('test', 'nope')).toThrow('Unknown ZK_CIRCUIT: nope');
-    });
+  it('verifies with the request circuit', () => {
+    expect(service.getCircuitInfo().vKeyPath).toMatch(
+      /circuits\/build\/request_verification_key\.json$/,
+    );
   });
 
   describe('onModuleInit', () => {
@@ -331,10 +298,8 @@ describe('SnarkjsProofService', () => {
       process.env = { ...env };
     });
 
-    const production = (circuit?: string) => {
+    const production = () => {
       process.env.NODE_ENV = 'production';
-      if (circuit) process.env.ZK_CIRCUIT = circuit;
-      else delete process.env.ZK_CIRCUIT;
       const prod = new SnarkjsProofService();
       jest.spyOn(prod['logger'], 'warn').mockImplementation();
       return prod;
@@ -355,22 +320,6 @@ describe('SnarkjsProofService', () => {
       await expect(production().onModuleInit()).rejects.toThrow(
         /verification key missing/,
       );
-    });
-
-    it('refuses to start in production with the local request circuit', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-
-      await expect(
-        production('api_request_local').onModuleInit(),
-      ).rejects.toThrow(/not allowed in production/);
-    });
-
-    it('refuses to start in production with the test circuit', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-
-      await expect(
-        production('api_credit_proof_test').onModuleInit(),
-      ).rejects.toThrow(/not allowed in production/);
     });
 
     it('keeps running outside production without the verification key', async () => {

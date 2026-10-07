@@ -1,26 +1,32 @@
 import {
   Injectable,
   Logger,
+  BadGatewayException,
   BadRequestException,
   ForbiddenException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { createHash } from 'crypto';
 import { LongjingRequestDto } from './dto/api-request.dto';
-import { LongjingResponseDto, UsageDto } from './dto/api-response.dto';
+import {
+  LongjingResponseDto,
+  SignedAccumulatorDto,
+  UsageDto,
+} from './dto/api-response.dto';
+import { applyRefund } from './accumulator';
+import { BlockchainService } from './blockchain.service';
 import { NullifierStoreService } from './nullifier-store.service';
 import { ProofVerifierService } from './proof-verifier.service';
 import { EthRateOracleService } from './eth-rate-oracle.service';
 import { RefundSignerService } from './refund-signer.service';
 import { SlashingService } from './slashing.service';
-import { SlashingProofService } from './slashing-proof.service';
 import { quantizeCost, quantizeUnits } from './utils/cost-quantization.util';
 import { padResponse } from './utils/response-padding.util';
 import {
   parseFieldElement,
-  signalXMatchesPayload,
+  signalXMatchesRequest,
 } from './utils/payload-signal.util';
 import {
   ClaudeModel,
@@ -42,8 +48,6 @@ const MESSAGE_OVERHEAD_TOKENS = 32;
 export class LongjingService {
   private readonly logger = new Logger(LongjingService.name);
   private readonly anthropic: Anthropic;
-  private poseidon: any;
-  private initPromise: Promise<void> | null = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -52,7 +56,7 @@ export class LongjingService {
     private readonly ethRateOracle: EthRateOracleService,
     private readonly refundSigner: RefundSignerService,
     private readonly slashingService: SlashingService,
-    private readonly slashingProofService: SlashingProofService,
+    private readonly blockchain: BlockchainService,
   ) {
     // Example: Initialize Claude API client
     // Replace with your own API service client initialization
@@ -66,39 +70,10 @@ export class LongjingService {
   }
 
   /**
-   * Initialize Poseidon hash (lazy initialization)
-   */
-  private async initialize() {
-    if (this.poseidon) {
-      return;
-    }
-
-    if (this.initPromise) {
-      return this.initPromise;
-    }
-
-    this.initPromise = (async () => {
-      try {
-        // Use require instead of dynamic import to avoid ESM issues
-        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
-        const circomlibjs = require('circomlibjs');
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        this.poseidon = await circomlibjs.buildPoseidon();
-        this.logger.debug(
-          'Poseidon hash initialized for secret key extraction',
-        );
-      } catch (error) {
-        this.logger.error('Failed to initialize Poseidon hash', error);
-        throw error;
-      }
-    })();
-
-    return this.initPromise;
-  }
-
-  /**
-   * Handle a Longjing request
-   * Implements the full protocol: nullifier check, proof verification, API call, refund
+   * Serve one request (docs/SETTLEMENT.md): check the proof against a recent
+   * root and C_MAX, record (N, x, y), call the provider, and return the next
+   * accumulator A' = A_pub + v·G + J, signed. Nothing in the request or what
+   * is stored identifies the note.
    */
   async handleRequest(req: LongjingRequestDto): Promise<LongjingResponseDto> {
     const model = req.model ?? DEFAULT_CLAUDE_MODEL;
@@ -106,146 +81,93 @@ export class LongjingService {
       throw new BadRequestException(`Unsupported model: ${model}`);
     }
 
+    // Stored in canonical form, as the exit watcher stores exit nullifiers
+    const nullifier = parseFieldElement(req.nullifier).toString();
+
     // 1. Check per-nullifier rate limit (before expensive operations)
-    if (!this.nullifierStore.checkRateLimit(req.nullifier)) {
+    if (!this.nullifierStore.checkRateLimit(nullifier)) {
       throw new ForbiddenException(
         'Rate limit exceeded for this nullifier. Maximum 3 requests per minute.',
       );
     }
 
-    // 2. Bind the signal to the payload: x must equal Hash(payload)
-    if (!signalXMatchesPayload(req.signal.x, req.payload)) {
-      throw new BadRequestException('Signal x does not match payload hash');
+    // 2. Bind the signal to the payload: x = Poseidon(H(payload), ρ)
+    if (!(await signalXMatchesRequest(req.signal.x, req.payload, req.nonce))) {
+      throw new BadRequestException(
+        'Signal x does not match the payload and nonce',
+      );
     }
 
-    // 3. Verify ZK proof with cryptographic verification and public inputs
-    // Do this BEFORE nullifier check to prevent timing leaks
+    // 3. Reject before anything is consumed if C_MAX can't cover the worst case
+    const cMax = this.cMax();
+    const worstCaseCost = await this.worstCaseCostInETH(req.payload, model);
+    if (worstCaseCost > cMax) {
+      throw new BadRequestException(
+        `The worst-case cost of ${worstCaseCost} wei for ${model} exceeds C_MAX`,
+      );
+    }
+
+    // 4. Verify the proof against a recent root, C_MAX and this server's key
     const valid = await this.proofVerifier.verify(req.proof, {
-      merkleRoot: req.merkleRoot,
-      maxCost: req.maxCost,
-      initialDeposit: req.initialDeposit,
-      signalX: req.signal.x,
       nullifier: req.nullifier,
       signalY: req.signal.y,
-      idCommitment: req.idCommitment,
-      idCommitmentExpected: req.idCommitmentExpected,
+      accumulatorX: req.accumulator.x,
+      accumulatorY: req.accumulator.y,
+      merkleRoot: req.merkleRoot,
+      maxCost: cMax,
+      signalX: req.signal.x,
     });
     if (!valid) {
       throw new UnauthorizedException('Invalid ZK proof');
     }
 
-    // 4. Reject before the nullifier is consumed if maxCost can't cover the worst case
-    const maxCost = parseFieldElement(req.maxCost);
-    const worstCaseCost = await this.worstCaseCostInETH(req.payload, model);
-    if (maxCost < worstCaseCost) {
-      throw new BadRequestException(
-        `maxCost is below the worst-case cost of ${worstCaseCost} wei for ${model}`,
-      );
-    }
-
-    // 5. Atomically check nullifier and insert if new
-    // This prevents TOCTOU race conditions in concurrent scenarios
-    const payloadHash = this.hashPayload(req.payload);
-    const existingSignal = this.nullifierStore.checkAndSet(req.nullifier, {
-      ...req.signal,
-      payloadHash,
-      ticketIndex: req.ticketIndex,
-      idCommitment: req.idCommitment,
-    });
+    // 5. Atomically record (N, x, y), in canonical form
+    const signal = {
+      x: parseFieldElement(req.signal.x).toString(),
+      y: parseFieldElement(req.signal.y).toString(),
+    };
+    const existingSignal = this.nullifierStore.checkAndSet(nullifier, signal);
 
     if (existingSignal) {
-      // Nullifier already used
-      if (
-        parseFieldElement(existingSignal.x) !== parseFieldElement(req.signal.x)
-      ) {
-        // Double-spend detected! Two different signals with same nullifier
+      if (existingSignal.x !== signal.x) {
+        // Two signals at one index reveal k, and knowing k is the slashing proof
         this.logger.error(
           `Double-spend detected for nullifier ${req.nullifier}`,
         );
-
-        // Extract secret key from two signals using field arithmetic
-        const secretKey = await this.extractSecretKey(
-          existingSignal,
-          req.signal,
-        );
-
-        // Submit slashing transaction to smart contract
-        this.logger.warn(`Secret key extracted: ${secretKey.slice(0, 10)}...`);
-
-        if (this.slashingService.isEnabled()) {
-          try {
-            // Get metadata from stored signal
-            const ticketIndex =
-              existingSignal.ticketIndex || req.ticketIndex || '0';
-            const idCommitment =
-              existingSignal.idCommitment || req.idCommitment;
-
-            if (!idCommitment) {
-              throw new Error(
-                'Missing idCommitment - cannot generate slashing proof',
-              );
-            }
-
-            // Strip 0x prefix from hex strings for circuit input
-            const stripHex = (hex: string) =>
-              hex.startsWith('0x') ? hex.slice(2) : hex;
-
-            // Generate ZK proof of correct secret key extraction
-            this.logger.log('Generating slashing proof...');
-            const { proof, publicSignals } =
-              await this.slashingProofService.generateSlashingProof({
-                signal1_x: existingSignal.x,
-                signal1_y: existingSignal.y,
-                signal2_x: req.signal.x,
-                signal2_y: req.signal.y,
-                secretKey: stripHex(secretKey),
-                nullifier: stripHex(req.nullifier),
-                ticketIndex: ticketIndex,
-              });
-
-            this.logger.log('Slashing proof generated successfully');
-
-            // Submit transaction with proof
-            const txHash = await this.slashingService.slashDoubleSpend(
-              secretKey,
-              req.nullifier,
-              idCommitment,
-              existingSignal,
-              req.signal,
-              ticketIndex,
-              proof,
-              publicSignals,
-            );
-            this.logger.log(
-              `Slashing transaction submitted: ${txHash || 'disabled'}`,
-            );
-          } catch (error) {
-            this.logger.error('Failed to submit slashing transaction', error);
-            // Continue to reject the request even if slashing fails
-          }
-        } else {
-          this.logger.warn(
-            'Slashing disabled - no contract or transaction signer (see docs/LOCAL_SETUP.md)',
-          );
-        }
-
+        await this.slashingService.slashRevealed(existingSignal, signal);
         throw new ForbiddenException(
           'Double-spend detected. Your secret key has been extracted and you will be slashed.',
         );
       }
 
-      // Same nullifier with same signal = replay attack
+      // A retry of a request whose response was lost gets it back, once paid
+      const cached = this.nullifierStore.recallResponse<
+        LongjingResponseDto | BadGatewayException
+      >(nullifier, signal);
+      if (cached instanceof BadGatewayException) throw cached;
+      if (cached) return cached;
       throw new ForbiddenException('Nullifier already used');
     }
 
-    // 6. Execute API request (Claude example); if it fails, nothing was served,
-    // so give the ticket index back instead of burning it
+    const publishedAccumulator = [
+      parseFieldElement(req.accumulator.x),
+      parseFieldElement(req.accumulator.y),
+    ] as const;
+
+    // 6. Execute API request (Claude example). If it fails, nothing was
+    // served: refund all of C_MAX, so the note moves on without losing value.
     let response: Awaited<ReturnType<typeof this.executeClaudeRequest>>;
     try {
       response = await this.executeClaudeRequest(req.payload, model);
     } catch (error) {
-      this.nullifierStore.release(req.nullifier, req.signal.x);
-      throw error;
+      this.logger.error('Provider call failed, refunding C_MAX', error);
+      const failure = new BadGatewayException({
+        message: 'The provider call failed. The whole of C_MAX is refunded.',
+        refund: cMax.toString(),
+        accumulator: await this.nextAccumulator(publishedAccumulator, cMax),
+      });
+      this.nullifierStore.rememberResponse(nullifier, signal, failure);
+      throw failure;
     }
 
     // 7. Calculate actual cost in ETH (internal only)
@@ -255,21 +177,8 @@ export class LongjingService {
       model,
     );
 
-    // 8. Generate refund ticket, never negative
-    const refundValue = maxCost > actualCost ? maxCost - actualCost : 0n;
-    const refundTicket = await this.refundSigner.signRefund({
-      idCommitment: req.idCommitment,
-      nullifier: req.nullifier,
-      value: refundValue.toString(),
-      timestamp: Date.now(),
-    });
-
-    this.logger.log(
-      `Request processed. Cost: ${actualCost} wei, Refund: ${refundValue} wei`,
-    );
-
-    // Fixed: Apply response padding to prevent size-based linkability
-    const paddedResponse = padResponse(response.content);
+    // 8. v = C_MAX − C_actual, clamped to [0, C_MAX]
+    const refund = actualCost < cMax ? cMax - actualCost : 0n;
 
     // Fixed: Remove internal fields before returning to client
     const sanitizedUsage: UsageDto = {
@@ -282,60 +191,40 @@ export class LongjingService {
       // _internalUnits and _internalCostUSD are intentionally excluded
     };
 
-    return {
-      response: paddedResponse,
-      actualCost: actualCost.toString(),
-      refundTicket,
+    const result: LongjingResponseDto = {
+      // Fixed: Apply response padding to prevent size-based linkability
+      response: padResponse(response.content),
+      refund: refund.toString(),
+      accumulator: await this.nextAccumulator(publishedAccumulator, refund),
       usage: sanitizedUsage,
+    };
+    this.nullifierStore.rememberResponse(nullifier, signal, result);
+    return result;
+  }
+
+  /** A' = A_pub + v·G + J, signed with the refund key */
+  private async nextAccumulator(
+    published: readonly [bigint, bigint],
+    refund: bigint,
+  ): Promise<SignedAccumulatorDto> {
+    const next = applyRefund(published, refund);
+    return {
+      x: next[0].toString(),
+      y: next[1].toString(),
+      signature: await this.refundSigner.signAccumulator(next),
     };
   }
 
-  /**
-   * Extract secret key from two RLN signals using field arithmetic
-   * Given: y1 = k + a*x1 and y2 = k + a*x2
-   * Solve: k = (x2*y1 - x1*y2) / (x2 - x1) mod p
-   */
-  private async extractSecretKey(
-    signal1: { x: string; y: string },
-    signal2: { x: string; y: string },
-  ): Promise<string> {
-    await this.initialize();
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-    const F = this.poseidon.F;
-
-    // Convert hex strings to BigInt (handle both with and without 0x prefix)
-    const toBigInt = (value: string): bigint => {
-      const str = value.trim();
-      if (str.startsWith('0x') || str.startsWith('-0x')) {
-        return BigInt(str);
-      }
-      if (/^-?\d+$/.test(str)) {
-        return BigInt(str);
-      }
-      return BigInt('0x' + str);
-    };
-
-    const x1 = toBigInt(signal1.x);
-    const y1 = toBigInt(signal1.y);
-    const x2 = toBigInt(signal2.x);
-    const y2 = toBigInt(signal2.y);
-
-    // Prevent division by zero
-    if (x2 === x1) {
-      throw new Error('Invalid signals: x values are identical');
+  /** C_MAX from the contract; requests can't be priced without it */
+  private cMax(): bigint {
+    try {
+      return this.blockchain.getCMax();
+    } catch (error) {
+      this.logger.error('C_MAX unavailable', error);
+      throw new ServiceUnavailableException(
+        'Cannot read C_MAX from the contract',
+      );
     }
-
-    // Field arithmetic: k = (x2*y1 - x1*y2) / (x2 - x1) mod p
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    const numerator = F.sub(F.mul(F.e(x2), F.e(y1)), F.mul(F.e(x1), F.e(y2)));
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    const denominator = F.sub(F.e(x2), F.e(x1));
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    const k = F.div(numerator, denominator);
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    return '0x' + F.toObject(k).toString(16).padStart(64, '0');
   }
 
   /**
@@ -481,14 +370,5 @@ export class LongjingService {
    */
   async getServerPublicKey(): Promise<{ x: string; y: string }> {
     return this.refundSigner.getPublicKey();
-  }
-
-  /**
-   * Hash payload, kept as evidence for policy slashing
-   * Uses SHA256 to create a deterministic hash of the request payload
-   */
-  private hashPayload(payload: string): string {
-    const hash = createHash('sha256').update(payload).digest('hex');
-    return '0x' + hash;
   }
 }

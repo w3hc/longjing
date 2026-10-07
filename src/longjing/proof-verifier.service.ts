@@ -7,32 +7,21 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { BlockchainService } from './blockchain.service';
-import { ProofGenService } from './proof-gen.service';
 import { RefundSignerService } from './refund-signer.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 import { ComputeLimiterService } from './compute-limiter.service';
 import { isProd } from '../config/profile';
 
-type ApiRequestPublicInputs = {
-  merkleRoot: string;
-  maxCost: string;
-  initialDeposit: string;
-  signalX: string;
+/** What a request proof is checked against; none of it identifies the note */
+export type RequestPublicInputs = {
   nullifier: string;
   signalY: string;
-  idCommitment: string;
-  idCommitmentExpected: string;
+  accumulatorX: string;
+  accumulatorY: string;
+  merkleRoot: string;
+  maxCost: bigint;
+  signalX: string;
 };
-
-/** Compares two roots by value, so hex and decimal encodings match. */
-function sameFieldElement(a: string, b: string): boolean {
-  if (!a?.trim() || !b?.trim()) return false;
-  try {
-    return BigInt(a) === BigInt(b);
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Service for verifying ZK-SNARK proofs using Groth16
@@ -48,7 +37,6 @@ export class ProofVerifierService {
 
   constructor(
     private readonly blockchainService: BlockchainService,
-    private readonly proofGenService: ProofGenService,
     private readonly snarkjsProofService: SnarkjsProofService,
     private readonly refundSignerService: RefundSignerService,
     private readonly computeLimiter: ComputeLimiterService,
@@ -87,7 +75,7 @@ export class ProofVerifierService {
    */
   async verify(
     proof: string,
-    publicInputs: ApiRequestPublicInputs,
+    publicInputs: RequestPublicInputs,
   ): Promise<boolean> {
     // CRITICAL: Production mode requires real cryptographic verification
     if (isProd() && !this.snarkjsProofService.isAvailable()) {
@@ -101,8 +89,7 @@ export class ProofVerifierService {
 
     this.logger.debug('Verifying proof with public inputs', {
       nullifier: publicInputs.nullifier.slice(0, 10) + '...',
-      maxCost: publicInputs.maxCost,
-      idCommitment: publicInputs.idCommitment.slice(0, 10) + '...',
+      maxCost: publicInputs.maxCost.toString(),
     });
 
     // 1. Verify proof structure
@@ -158,25 +145,13 @@ export class ProofVerifierService {
 
   private async verifyAgainstChainAndCircuit(
     proofData: any,
-    publicInputs: ApiRequestPublicInputs,
+    publicInputs: RequestPublicInputs,
   ): Promise<boolean> {
-    // 2. Verify against blockchain state
-    const chain = await this.readChainState(publicInputs.nullifier);
-    if (chain) {
-      if (chain.isSlashed) {
-        this.logger.warn(
-          `Nullifier ${publicInputs.nullifier} has been slashed`,
-        );
-        return false;
-      }
-
-      if (!sameFieldElement(chain.merkleRoot, publicInputs.merkleRoot)) {
-        this.logger.warn('Merkle root mismatch with onchain state', {
-          expected: chain.merkleRoot,
-          provided: publicInputs.merkleRoot,
-        });
-        return false;
-      }
+    // 2. The root must be one the contract recorded recently
+    const knownRoot = await this.isKnownRoot(publicInputs.merkleRoot);
+    if (knownRoot === false) {
+      this.logger.warn('Merkle root is not a recent onchain root');
+      return false;
     }
 
     // 3. Real snarkjs verification (REQUIRED - no mock fallback)
@@ -232,32 +207,21 @@ export class ProofVerifierService {
       this.logger.debug('Raw public inputs received:', publicInputs);
 
       try {
-        let signals: string[];
-        if (this.snarkjsProofService.getCircuit() !== 'api_credit_proof_test') {
-          // Refunds must be signed by this server, so the key never comes from the request
-          const serverKey = await this.refundSignerService.getPublicKey();
-          // [nullifier, signalY, idCommitment, merkleRoot, merkleRootExpected, maxCost, signalX, serverPublicKeyX, serverPublicKeyY]
-          signals = [
-            publicInputs.nullifier,
-            publicInputs.signalY,
-            publicInputs.idCommitment,
-            publicInputs.merkleRoot,
-            publicInputs.merkleRoot,
-            publicInputs.maxCost,
-            publicInputs.signalX,
-            serverKey.x,
-            serverKey.y,
-          ];
-        } else {
-          // [nullifier, signalY, idCommitment, signalX, idCommitmentExpected]
-          signals = [
-            publicInputs.nullifier,
-            publicInputs.signalY,
-            publicInputs.idCommitment,
-            publicInputs.signalX,
-            publicInputs.idCommitmentExpected,
-          ];
-        }
+        // Refunds must be signed by this server, so the key never comes from the request
+        const serverKey = await this.refundSignerService.getPublicKey();
+        // Outputs first, then inputs:
+        // [nullifier, signalY, accumulatorX, accumulatorY, merkleRoot, maxCost, signalX, serverPublicKeyX, serverPublicKeyY]
+        const signals = [
+          publicInputs.nullifier,
+          publicInputs.signalY,
+          publicInputs.accumulatorX,
+          publicInputs.accumulatorY,
+          publicInputs.merkleRoot,
+          publicInputs.maxCost.toString(),
+          publicInputs.signalX,
+          serverKey.x,
+          serverKey.y,
+        ];
         const publicSignals = signals.map((value) =>
           toBigInt(value).toString(),
         );
@@ -293,23 +257,17 @@ export class ProofVerifierService {
   }
 
   /**
-   * Reads the onchain root and slashed status. In prod this fails closed:
-   * the root comes from the request, so skipping the check would let a
+   * Whether the contract recorded this root recently. In prod this fails
+   * closed: the root comes from the request, so skipping the check would let a
    * client prove membership in a tree of its own. Elsewhere it returns null
-   * and the checks are skipped.
+   * when the chain is unreachable, and the check is skipped.
    */
-  private async readChainState(
-    nullifier: string,
-  ): Promise<{ merkleRoot: string; isSlashed: boolean } | null> {
+  private async isKnownRoot(root: string): Promise<boolean | null> {
     try {
       if (!this.blockchainService.isAvailable()) {
         throw new Error('Blockchain service not initialized');
       }
-      const [merkleRoot, isSlashed] = await Promise.all([
-        this.blockchainService.getMerkleRoot(),
-        this.blockchainService.isNullifierSlashed(nullifier),
-      ]);
-      return { merkleRoot, isSlashed };
+      return await this.blockchainService.isKnownRoot(root);
     } catch (error) {
       if (isProd()) {
         this.logger.error('Failed to read onchain state', error);

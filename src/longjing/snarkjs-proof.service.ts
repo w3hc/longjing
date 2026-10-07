@@ -9,80 +9,32 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { isProd } from '../config/profile';
 
-export type ZkCircuit =
-  'api_request' | 'api_request_local' | 'api_credit_proof_test';
-
-const CIRCUIT_ARTIFACTS: Record<
-  ZkCircuit,
-  { wasm: string; zkey: string; vKey: string }
-> = {
-  api_request: {
-    wasm: 'circuits/build/api_request_js/api_request.wasm',
-    zkey: 'circuits/build/api_request.zkey',
-    vKey: 'circuits/build/api_request_verification_key.json',
-  },
-  api_request_local: {
-    wasm: 'circuits/build/api_request_local_js/api_request_local.wasm',
-    zkey: 'circuits/build/api_request_local.zkey',
-    vKey: 'circuits/build/api_request_local_verification_key.json',
-  },
-  api_credit_proof_test: {
-    wasm: 'circuits/build/api_credit_proof_test_js/api_credit_proof_test.wasm',
-    zkey: 'circuits/build/api_credit_proof_test.zkey',
-    vKey: 'circuits/build/verification_key.json',
-  },
+const ARTIFACTS = {
+  wasm: 'circuits/build/request_js/request.wasm',
+  zkey: 'circuits/build/request.zkey',
+  vKey: 'circuits/build/request_verification_key.json',
 };
 
 /**
- * Service for real ZK-SNARK proof generation and verification using snarkjs
- *
- * The circuit comes from ZK_CIRCUIT. Production verifies with api_request and
- * refuses to start without its verification key; other environments default
- * to api_request_local, the same statement with 2 refund slots instead of 10.
+ * Groth16 proving and verification with snarkjs, for request.circom
+ * (docs/SETTLEMENT.md). Production refuses to start without its
+ * verification key.
  */
 @Injectable()
 export class SnarkjsProofService implements OnModuleInit {
   private readonly logger = new Logger(SnarkjsProofService.name);
   private snarkjs: any;
   private vKey: any;
-  private readonly circuit: ZkCircuit;
-  private wasmPath: string;
-  private zkeyPath: string;
-  private vKeyPath: string;
+  private readonly wasmPath = join(process.cwd(), ARTIFACTS.wasm);
+  private readonly zkeyPath = join(process.cwd(), ARTIFACTS.zkey);
+  private readonly vKeyPath = join(process.cwd(), ARTIFACTS.vKey);
   private isSetup = false;
-
-  constructor() {
-    const circuit =
-      process.env.ZK_CIRCUIT ||
-      (isProd() ? 'api_request' : 'api_request_local');
-
-    if (!(circuit in CIRCUIT_ARTIFACTS)) {
-      throw new Error(`Unknown ZK_CIRCUIT: ${circuit}`);
-    }
-    this.circuit = circuit as ZkCircuit;
-
-    const artifacts = CIRCUIT_ARTIFACTS[this.circuit];
-    this.wasmPath = join(process.cwd(), artifacts.wasm);
-    this.zkeyPath = join(process.cwd(), artifacts.zkey);
-    this.vKeyPath = join(process.cwd(), artifacts.vKey);
-  }
 
   /**
    * NestJS lifecycle hook - initialize the service when module loads
    */
   async onModuleInit() {
-    if (!isProd()) {
-      await this.initialize();
-      return;
-    }
-
-    if (this.circuit !== 'api_request') {
-      throw new Error(
-        `ZK_CIRCUIT=${this.circuit} is not allowed in production. Use api_request.`,
-      );
-    }
-
-    if (!(await this.initialize())) {
+    if (!(await this.initialize()) && isProd()) {
       throw new Error(
         `Cannot verify requests: verification key missing at ${this.vKeyPath}`,
       );
@@ -112,7 +64,7 @@ export class SnarkjsProofService implements OnModuleInit {
       this.vKey = JSON.parse(vKeyContent);
 
       this.isSetup = true;
-      this.logger.log(`SnarkJS initialized with circuit ${this.circuit}`);
+      this.logger.log('SnarkJS initialized with the request circuit');
       this.logger.log(
         `Loaded vKey delta[0][0]: ${this.vKey.vk_delta_2[0][0].substring(0, 20)}...`,
       );
@@ -121,13 +73,6 @@ export class SnarkjsProofService implements OnModuleInit {
       this.logger.error('Failed to initialize snarkjs', error);
       return Promise.resolve(false);
     }
-  }
-
-  /**
-   * Circuit whose verification key is loaded
-   */
-  getCircuit(): ZkCircuit {
-    return this.circuit;
   }
 
   /**
@@ -257,14 +202,12 @@ export class SnarkjsProofService implements OnModuleInit {
    * Get circuit information
    */
   getCircuitInfo(): {
-    circuit: ZkCircuit;
     wasmPath: string;
     zkeyPath: string;
     vKeyPath: string;
     isSetup: boolean;
   } {
     return {
-      circuit: this.circuit,
       wasmPath: this.wasmPath,
       zkeyPath: this.zkeyPath,
       vKeyPath: this.vKeyPath,

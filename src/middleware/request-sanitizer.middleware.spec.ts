@@ -60,6 +60,18 @@ describe('RequestSanitizerMiddleware', () => {
     expect(mockRequest.socket?.remotePort).toBe(0);
   });
 
+  it('anonymizes a kept-alive socket once and serves its next request', () => {
+    const socket = mockRequest.socket;
+    middleware.use(mockRequest as Request, mockResponse as Response, mockNext);
+
+    const next = { headers: {}, socket } as unknown as Request;
+    expect(() =>
+      middleware.use(next, mockResponse as Response, mockNext),
+    ).not.toThrow();
+    expect(next.socket.remoteAddress).toBe('0.0.0.0');
+    expect(mockNext).toHaveBeenCalledTimes(2);
+  });
+
   it('should call next middleware', () => {
     middleware.use(mockRequest as Request, mockResponse as Response, mockNext);
 

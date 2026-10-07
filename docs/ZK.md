@@ -1,378 +1,190 @@
 # Zero-Knowledge Proofs and Circuits
 
-This document provides a comprehensive overview of the Zero-Knowledge (ZK) proof system and circuit implementation for the Longjing project.
+How Longjing's proofs, circuits and contract fit together. The protocol itself, and why it departs from the paper where it does, is specified in [SETTLEMENT.md](SETTLEMENT.md).
 
 ## Overview
 
-The Longjing system enables privacy-preserving access to any external API service using Zero-Knowledge proofs, Rate-Limit Nullifiers (RLN), and Ethereum smart contracts. Users deposit ETH once and make thousands of anonymous API calls without revealing their identity or linking requests together.
+Users deposit ETH once into a note, then make API requests that neither the operator nor an observer can link to the deposit or to each other. Each request carries a Groth16 proof that the note can pay for it, a Rate-Limit Nullifier and a re-randomized refund accumulator, and nothing else that identifies it. When users leave, they prove a withdrawal of what they didn't spend.
 
 **Reference Implementation**: Claude API integration is provided as a complete example.
 
 ## Core Concepts
 
-### Rate-Limit Nullifiers (RLN)
+### Notes
 
-RLN is a cryptographic primitive that prevents double-spending while preserving privacy:
-
-- **Nullifier**: A unique identifier for each request: `nullifier = Poseidon(a)` where `a = Poseidon(secretKey, ticketIndex)`
-- **Signal**: A proof of authenticity: `y = secretKey + a * x` where `x = SHA-256(payload) mod p` (UTF-8 payload, p the BN254 scalar field order); the server rejects any request whose `x` does not match its payload
-- **Double-Spend Detection**: If the same `ticketIndex` is reused with different messages, the secret key can be recovered algebraically
-
-### Identity Commitment
-
-Each user has a secret key `k` and generates an identity commitment:
+A note is one deposit. The client draws a secret key `k` and commits to it:
 
 ```
-ID = Poseidon(k)
+c = Poseidon(k)
 ```
 
-This commitment is stored in the Merkle tree anonymity set onchain, allowing users to prove membership without revealing their identity.
+`deposit(c)` stores the note under `c` and inserts the leaf `Poseidon(c, D)`, which the contract computes from `msg.value`. The leaf binds the amount D, so a proof can't claim more than was paid.
 
 ### Merkle Tree Anonymity Set
 
-- **Structure**: 20 levels deep, supporting up to 1,048,576 identities
-- **Hash Function**: Poseidon (ZK-friendly)
-- **Storage**: Onchain root, off-chain tree construction
-- **Purpose**: Enables privacy-preserving membership proofs
+- **Structure**: 20 levels, up to 1,048,576 notes, kept onchain
+- **Hash Function**: Poseidon
+- **Roots**: the contract keeps the last 30; a request may use any of them
+- **Closed notes**: an exiting, slashed or expired note's leaf is replaced with the empty value
+
+### Rate-Limit Nullifiers (RLN)
+
+Request `i` of a note carries an RLN signal, as in the paper:
+
+- `a = Poseidon(k, i)`, nullifier `N = Poseidon(a)`, fresh for every index
+- `y = k + a · x`, where `x = Poseidon(SHA-256(payload) mod p, ρ)` and `ρ` is a fresh nonce sent with the request
+- Two signals with the same `N` and different `x` reveal `k = (y₁ · x₂ − y₂ · x₁) / (x₂ − x₁)`, and anyone holding `k` can slash the note
+
+### The Refund Accumulator
+
+Refunds accumulate in a Pedersen commitment on Baby Jubjub:
+
+```
+A = R·G + m·J + c·K + s·H
+```
+
+`R` is the sum of refunds, `m` the next index, `c` the note's commitment and `s` a blinding factor. `G, J, K, H` are hashed to the curve from the seeds `longjing/accumulator/{G,J,K,H}` ([src/longjing/accumulator.ts](../src/longjing/accumulator.ts)). The genesis accumulator is `c·K`. Every later one is signed by the server's refund key.
+
+A request reveals `A_pub = A + s'·H` for a fresh `s'`, and the server answers with `A' = A_pub + v·G + J`, signed, where `v = C_MAX − C_actual`. `A'` opens to `(R + v, i + 1, c, s + s')`, so the server adds the refund and moves the index without seeing either.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Client Side                          │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   │
-│  │ Secret Key k │───▶│ ZK Prover    │───▶│ Proof π_req  │   │
-│  │ Refund Tix   │   │ (Circom)     │   │ Nullifier    │   │
-│  └──────────────┘   └──────────────┘   │ Signal (x,y) │   │
-│                                         └──────┬───────┘   │
-└────────────────────────────────────────────────┼───────────┘
-                                                  │
-                                                  │ HTTPS
-                                                  ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     Longjing Server (NestJS)                  │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 1. Nullifier Check (Double-spend detection)         │   │
-│  │    - NullifierStoreService                          │   │
-│  └─────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 2. Proof Verification (Groth16 ZK-SNARK)            │   │
-│  │    - ProofVerifierService                           │   │
-│  └─────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 3. Execute Claude API Request                       │   │
-│  │    - Anthropic SDK                                  │   │
-│  └─────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 4. Calculate Cost in ETH                            │   │
-│  │    - EthRateOracleService (Kraken API)              │   │
-│  └─────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 5. Issue Refund Ticket                              │   │
-│  │    - RefundSignerService (EdDSA)                    │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                                │
-                                │ Web3 RPC
-                                ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Ethereum Mainnet (Smart Contract)              │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ LongjingCredits.sol                                    │   │
-│  │  - deposit()         : Add funds + ID commitment    │   │
-│  │  - withdraw()        : Reclaim unused funds         │   │
-│  │  - redeemRefund()    : Claim refund tickets         │   │
-│  │  - slashDoubleSpend(): Extract k, reward slasher    │   │
-│  │  - slashPolicyStake(): Burn policy stake (trusted)  │   │
-│  │  - Merkle Tree       : Identity anonymity set       │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────── Client ────────────────────────────────┐
+│ note file: k, (R, m, s), signature        pnpm prove / note.ts         │
+│ request.circom proof, N, (x, y), A_pub    settlement.circom proof      │
+└───────────────┬────────────────────────────────────────┬───────────────┘
+                │ HTTPS, into the enclave                │ transactions
+                ▼                                        ▼
+┌──────────── Longjing server (NestJS, TEE) ─────┐  ┌──── LongjingCredits ────┐
+│ 1. x = Poseidon(H(M), ρ)?                      │  │ deposit(c)              │
+│ 2. worst case ≤ C_MAX                          │  │ isKnownRoot(root)       │
+│ 3. proof against a recent root, C_MAX, the key │◀─┤ C_MAX, serverPublicKey  │
+│ 4. store (N, x, y); reused N → slash(k)        │  │ initiateWithdrawal      │
+│ 5. call the provider, v = C_MAX − cost         │  │ finalizeWithdrawal      │
+│ 6. sign A' = A_pub + v·G + J                   │  │ slash(k)                │
+│ watcher: WithdrawalInitiated → challenge       │◀─┤ claimExpired            │
+└────────────────────────────────────────────────┘  └─────────────────────────┘
 ```
 
 **In-TEE TLS termination:** in production, the HTTPS hop above ends inside the enclave. The TLS private key is derived in-enclave (dstack KMS) and the served certificate is bound into the attestation `report_data`, so clients can prove their TLS session ends inside the attested enclave, not at a gateway. Any proxy in front must run in TLS-passthrough mode. See [TEE_SETUP.md](TEE_SETUP.md#3-verify-tls-termination-inside-tee).
 
-## Implementation Status
+## Circuits
 
-### ✅ Completed: Real ZK Proof Verification
+Both include [templates/accumulator.circom](../circuits/templates/accumulator.circom), which opens the accumulator and checks it is genesis or signed with EdDSA-Poseidon over `Poseidon(A.x, A.y)`. See [circuits/README.md](../circuits/README.md) for constraint counts.
 
-The ZK proof system now supports **cryptographically valid Groth16 SNARK verification** using snarkjs.
+### Request ([circuits/request.circom](../circuits/request.circom))
 
-**Previous (Mock):** Only validated proof JSON structure
-**Current (Real):** Full cryptographic verification with trusted setup
+Proves that:
 
-**Key Changes:**
-- New [SnarkjsProofService](../src/longjing/snarkjs-proof.service.ts) for real proof generation/verification
-- Updated [ProofVerifierService](../src/longjing/proof-verifier.service.ts) to use cryptographic verification
-- `ZK_CIRCUIT` selects the circuit; production only accepts `api_request` and refuses to start without its verification key, and other profiles default to `api_request_local`
-
-**Files:**
-- Production circuit: [circuits/api_request.circom](../circuits/api_request.circom) (~110K constraints)
-- Local circuit: [circuits/api_request_local.circom](../circuits/api_request_local.circom) (~32K constraints)
-- Test circuit: `api_credit_proof_test` (~676 constraints), opt-in
-- All three come from `pnpm circuits:fetch`
-
-## ZK Circuit Design
-
-### Test Circuit (Development)
-
-**Artifacts**: `circuits/build/api_credit_proof_test*`, fetched with `pnpm circuits:fetch`
-
-A simplified circuit, used only with `ZK_CIRCUIT=api_credit_proof_test`. [scripts/testing/generate-proof.ts](../scripts/testing/generate-proof.ts) and `ProofGenService.generateWithdrawalProof` still prove with it. It checks no Merkle membership, solvency or refund signature, so production refuses it.
-
-**Inputs:**
-- `secretKey` (private) - User's secret key
-- `ticketIndex` (private) - Request ticket index
-- `signalX` (public) - RLN signal X component
-- `idCommitmentExpected` (public) - Expected identity commitment
-
-**Outputs:**
-- `nullifier` - Unique request nullifier
-- `signalY` - RLN signal Y component
-- `idCommitment` - Identity commitment
-
-**Performance:**
-- Constraints: ~676 non-linear
-- Proving time: ~100-500ms
-- Verification time: ~5-20ms
-
-### Production Circuit
-
-**File**: [circuits/api_request.circom](../circuits/api_request.circom), with the template in [circuits/templates/api_request_proof.circom](../circuits/templates/api_request_proof.circom)
-
-The circuit the server verifies requests with in production. It proves four key properties:
-
-1. **Membership**: User's identity commitment is in the Merkle tree
-2. **Refund Summation**: All refund tickets carry a valid Poseidon EdDSA signature, the variant `RefundSignerService` signs with, and the nullifiers of active tickets are strictly increasing, so one ticket can't be counted twice. Clients sort their tickets by nullifier
-3. **Solvency**: User has sufficient balance: `(ticketIndex + 1) × maxCost ≤ initialDeposit + totalRefunds`
-4. **RLN**: Generates nullifier and signal for double-spend prevention
-
-**Circuit Parameters**:
-- `TREE_DEPTH = 20`: Merkle tree depth (1,048,576 capacity)
-- `MAX_REFUNDS = 10`: Maximum refund tickets per proof
+1. the leaf `Poseidon(Poseidon(k), D)` is in the tree under the public root
+2. the accumulator is genesis (with `i = 0`) or signed, and opens to `(R, i, Poseidon(k), s)`
+3. `A_pub = A + s'·H`
+4. solvency holds: `(i + 1) · C_MAX ≤ D + R`, with `i < 2^32` and D, R, `C_MAX < 2^128`
+5. the RLN signal at index `i` is correct
 
 **Public signals**, in the order the verifier passes them:
 
 ```
-nullifier, signalY, idCommitment, merkleRoot,               // outputs
-merkleRootExpected, maxCost, signalX,                       // inputs
-serverPublicKeyX, serverPublicKeyY                          // inputs
+nullifier, signalY, accumulatorX, accumulatorY,   // outputs
+merkleRoot, maxCost, signalX,                     // inputs
+serverPublicKeyX, serverPublicKeyY                // inputs
 ```
 
-The server fills `serverPublicKeyX/Y` with its own refund-signing key, never with a value from the request, so a proof whose refund tickets were signed by any other key fails verification.
+The server fills `maxCost` with the contract's `C_MAX` and the key with its own refund key, never with values from the request. The commitment, leaf, D, `i` and R stay private.
 
-### Local Circuit
+### Settlement ([circuits/settlement.circom](../circuits/settlement.circom))
 
-**File**: [circuits/api_request_local.circom](../circuits/api_request_local.circom)
+Proves that, for a claimed index count `n`:
 
-The same statement and public signals as `api_request`, with `MAX_REFUNDS = 2`: about 32K constraints instead of 110K. It is the default outside production, where proving and the setup stay fast on a laptop. Production refuses it.
+1. `Poseidon(k)` is the public commitment `c`
+2. the accumulator is genesis or signed, and opens to `(R, m, c, s)` with `n ≥ m`
+3. the payout `P = D + R − n · C_MAX` is not negative
+4. the RLN signal at index `n` is correct, with `x` bound to the recipient
+
+**Public signals**: `nullifier, signalY, payout` (outputs), then `commitment, deposit, maxCost, serverPublicKeyX, serverPublicKeyY, recipient, signalX`. The contract supplies the commitment, `notes[c].amount`, `C_MAX` and `x = Poseidon(Poseidon(recipient, chainId), contract)` itself. There is no Merkle path.
 
 ## Smart Contract
 
 **File**: [contracts/src/LongjingCredits.sol](../contracts/src/LongjingCredits.sol)
 
-Manages deposits, withdrawals, slashing, and the Merkle root.
-
-**Key Functions**:
-
 ```solidity
-// Deposit ETH and join anonymity set
-function deposit(bytes32 idCommitment) external payable
+// Open a note worth msg.value, C_MAX ≤ D < 2^128; the leaf Poseidon(c, D) is computed onchain
+function deposit(bytes32 commitment) external payable
 
-// Withdraw the deposit with a withdrawal.circom proof
-// publicSignals: nullifier, signalY, idCommitment, merkleRoot, signalX, merkleRootExpected, recipient
-function withdraw(
-    bytes32 idCommitment,
-    address payable recipient,
-    uint256[8] calldata proof,
-    uint256[7] calldata publicSignals
+// Whether a request proof may use this root (one of the last 30)
+function isKnownRoot(bytes32 root) external view returns (bool)
+
+// Start an exit paying P after CHALLENGE_WINDOW (3 days); removes the leaf
+function initiateWithdrawal(
+    bytes32 commitment,
+    address recipient,
+    EdDSAPublicKey calldata refundKey,   // any key ever accepted
+    uint256[8] calldata proof,           // settlement.circom
+    uint256 nullifier,
+    uint256 signalY,
+    uint256 payout
 ) external
 
-// Redeem a refund ticket with a refund_redemption.circom proof
-// publicSignals: nullifier, signalY, idCommitment, signalX, refundValueClaimed, serverPublicKeyX, serverPublicKeyY, recipient
-function redeemRefund(
-    bytes32 idCommitment,
-    bytes32 nullifier,
-    uint256 refundValue,
-    address payable recipient,
-    uint256[8] calldata proof,
-    uint256[8] calldata publicSignals
-) external
+// Pay the recipient once the window has passed; D − P goes to operatorBalance
+function finalizeWithdrawal(bytes32 commitment) external
 
-// Slash a double-spender with a double_spend_slashing.circom proof
-// publicSignals: idCommitment, nullifier, secretKeyClaimed, nullifierExpected
-function slashDoubleSpend(
-    bytes32 secretKey,
-    bytes32 nullifier,
-    bytes32 idCommitment,
-    uint256[8] calldata proof,
-    uint256[4] calldata publicSignals
-) external
+// Slash the note whose secret key is k: SLASH_BOUNTY to the caller, the rest to the operator
+function slash(uint256 secretKey) external
 
-// Burn a policy violator's policy stake (server only, no proof)
-function slashPolicyStake(bytes32 nullifier, bytes32 idCommitment) external
-
-// Check if nullifier has been used (double-spend or refund redemption)
-function isNullifierUsed(bytes32 nullifier) external view returns (bool)
+// The operator's claims: an untouched note after NOTE_TTL, and its balance
+function claimExpired(bytes32 commitment) external
+function withdrawOperatorBalance() external
 ```
 
-**Dual Staking**:
-- **RLN Stake**: Claimable by anyone who proves double-spending
-- **Policy Stake**: Burned (not transferred) by the server for ToS violations. No proof backs it: the server address is trusted, and the 7-day timelock on changing it is the only guard
+Pausing blocks `deposit` and `claimExpired`, never an exit or a slash. Changes to the verifier, `serverAddress` and the refund key wait `ADMIN_DELAY` (7 days), longer than an exit takes, and every refund key ever accepted stays valid for withdrawals.
 
 ## Backend Services
 
-### Core Services
-
 | Service | Purpose | Location |
 |---------|---------|----------|
-| **LongjingService** | Main orchestrator for chat requests | [src/longjing/longjing.service.ts](../src/longjing/longjing.service.ts) |
-| **ProofGenService** | RLN primitives (Poseidon, nullifier/signal generation) | [src/longjing/proof-gen.service.ts](../src/longjing/proof-gen.service.ts) |
-| **ProofVerifierService** | ZK proof verification | [src/longjing/proof-verifier.service.ts](../src/longjing/proof-verifier.service.ts) |
-| **ZKProofService** | Full snarkjs integration for Groth16 proofs | [src/longjing/zkproof.service.ts](../src/longjing/zkproof.service.ts) |
-| **BlockchainService** | Ethers.js contract interface, Merkle tree sync | [src/longjing/blockchain.service.ts](../src/longjing/blockchain.service.ts) |
-| **MerkleTreeService** | Off-chain Merkle tree with Poseidon hash | [src/longjing/merkle-tree.service.ts](../src/longjing/merkle-tree.service.ts) |
-| **NullifierStoreService** | Tracks used nullifiers (SQLite persistent storage) | [src/longjing/nullifier-store.service.ts](../src/longjing/nullifier-store.service.ts) |
-| **EthRateOracleService** | Fetches ETH/USD rates from Kraken | [src/longjing/eth-rate-oracle.service.ts](../src/longjing/eth-rate-oracle.service.ts) |
-| **RefundSignerService** | Signs refund tickets with EdDSA (Babyjubjub + Poseidon) | [src/longjing/refund-signer.service.ts](../src/longjing/refund-signer.service.ts) |
+| **LongjingService** | Request handling: signal binding, proof, store, provider call, signed accumulator | [longjing.service.ts](../src/longjing/longjing.service.ts) |
+| **ProofVerifierService** | Groth16 verification against a recent root, `C_MAX` and the refund key | [proof-verifier.service.ts](../src/longjing/proof-verifier.service.ts) |
+| **SnarkjsProofService** | snarkjs integration for `request.circom` | [snarkjs-proof.service.ts](../src/longjing/snarkjs-proof.service.ts) |
+| **BlockchainService** | Contract reads (roots, `C_MAX`, notes) and the `WithdrawalInitiated` feed | [blockchain.service.ts](../src/longjing/blockchain.service.ts) |
+| **NullifierStoreService** | `(N, x, y)` in SQLite, and responses kept 10 minutes for retries | [nullifier-store.service.ts](../src/longjing/nullifier-store.service.ts) |
+| **RefundSignerService** | Signs accumulators with EdDSA (Baby Jubjub + Poseidon) | [refund-signer.service.ts](../src/longjing/refund-signer.service.ts) |
+| **SlashingService** | Recovers `k` from two signals and calls `slash(k)` | [slashing.service.ts](../src/longjing/slashing.service.ts) |
+| **ExitWatcherService** | Records each exit's nullifier and slashes an understated one | [exit-watcher.service.ts](../src/longjing/exit-watcher.service.ts) |
+| **EthRateOracleService** | ETH/USD rates from Kraken | [eth-rate-oracle.service.ts](../src/longjing/eth-rate-oracle.service.ts) |
 
-### API Endpoints
-
-See [API_REFERENCE.md](API_REFERENCE.md) for request and response formats.
-
-- `POST /longjing/request`: anonymous API request with a ZK proof; returns the response and a signed refund ticket
-- `GET /longjing/server-pubkey`: the EdDSA public key that signs refund tickets
-- `POST /longjing/redeem-refund`: submits a refund redemption proof, generated by the client, onchain
-- `POST /longjing/proofs/slashing`: proof that slashes a double-spender, from the publicly recoverable secret key
-
-Withdrawal and refund redemption proofs need the user's secret key, so they are generated on the client, never by the server.
-
-## Protocol Flow
-
-### 1. Registration (One-time)
-
-```typescript
-// Client-side
-const secretKey = generateRandomKey();
-const idCommitment = poseidon([secretKey]);
-
-// Onchain
-await longjingCredits.deposit(idCommitment, { value: parseEther('0.01') });
-```
-
-### 2. Making Requests (Repeatable)
-
-```typescript
-// Generate proof
-const proof = await generateProof({
-  secretKey,
-  merkleProof: await contract.getMerkleProof(idCommitment),
-  refundTickets: previousRefunds,
-  ticketIndex: nextIndex,
-  maxCost: parseEther('0.001')
-});
-
-// Compute RLN signal
-const a = poseidon([secretKey, ticketIndex]);
-const nullifier = poseidon([a]);
-const x = BigInt('0x' + createHash('sha256').update(payload, 'utf8').digest('hex')) % p;
-const y = secretKey + a * x;
-
-// Submit request
-const response = await fetch('/longjing/request', {
-  method: 'POST',
-  body: JSON.stringify({
-    payload,
-    proof,
-    nullifier,
-    signal: { x, y },
-    maxCost, merkleRoot, initialDeposit, ticketIndex, idCommitment, idCommitmentExpected,
-  })
-});
-
-// Store refund ticket
-refundTickets.push(response.refundTicket);
-ticketIndex++;
-```
-
-### 3. Double-Spend Detection
-
-If a user reuses the same `ticketIndex` with different messages:
-
-```typescript
-// Server detects: same nullifier, different signal x
-const signal1 = { x: x1, y: y1 };
-const signal2 = { x: x2, y: y2 };  // x2 ≠ x1
-
-// Extract secret key: k = (y1*x2 - y2*x1) / (x2 - x1)
-const k = (y1 * x2 - y2 * x1) / (x2 - x1);
-
-// Submit to smart contract
-await longjingCredits.slashDoubleSpend(k, nullifier, signal1, signal2);
-```
+The client side is [scripts/client/note.ts](../scripts/client/note.ts), behind `pnpm prove`. The server never proves anything that needs `k`. See [API_REFERENCE.md](API_REFERENCE.md) for the endpoints and the client guide.
 
 ## Cryptographic Primitives
 
 ### Poseidon Hash Function
 
-Used for all hash operations in the ZK circuit:
+Used for commitments, leaves, the Merkle tree, RLN and the signed message:
 
 ```typescript
 import { buildPoseidon } from 'circomlibjs';
 const poseidon = await buildPoseidon();
-const hash = poseidon([input1, input2, ...]);
+const hash = poseidon.F.toObject(poseidon([input1, input2]));
 ```
 
-### EdDSA Signatures (Babyjubjub)
+The contract's `PoseidonHasher` matches circomlib for one and two inputs. Its `hash3` chains two-input hashes, which is how `withdrawalSignalX` computes `x`.
 
-Used for refund ticket signing with circuit-compatible cryptography:
+### EdDSA Signatures (Baby Jubjub)
+
+The server signs each accumulator with EdDSA-Poseidon, the variant circomlib's `EdDSAPoseidonVerifier` checks in both circuits:
 
 ```typescript
-import { buildEddsa, buildBabyjub, buildPoseidon } from 'circomlibjs';
+import { buildEddsa } from 'circomlibjs';
 
 const eddsa = await buildEddsa();
-const babyJub = await buildBabyjub();
-const poseidon = await buildPoseidon();
-
-// Generate keypair
-const privateKey = Buffer.from(crypto.randomBytes(32));
-const publicKey = eddsa.prv2pub(privateKey);
-
-// Sign message with Poseidon hash
-const message = poseidon([nullifier, value, timestamp]);
-const signature = eddsa.signPoseidon(privateKey, babyJub.F.e(message));
-
-// Signature contains: { R8: [R8x, R8y], S }
-
-// Verify signature
-const isValid = eddsa.verifyPoseidon(
-  babyJub.F.e(message),
-  signature,
-  publicKey
-);
+const message = poseidon([A.x, A.y]);
+const signature = eddsa.signPoseidon(privateKey, eddsa.F.e(message));
+const valid = eddsa.verifyPoseidon(eddsa.F.e(message), signature, publicKey);
 ```
 
-**Why Babyjubjub + Poseidon?**
-- **Circuit Efficiency**: SHA256 requires ~25,000 constraints. Babyjubjub EdDSA + Poseidon use only ~1,500 constraints
-- **ZK-Friendly**: Designed specifically for ZK-SNARKs on the BN128 curve
-- **Compatible**: Matches the `EdDSAVerifier` circuit from circomlib used in our ZK proofs
+### Pedersen Commitments
 
-### Field Arithmetic
-
-All operations occur in a finite field:
-
-```typescript
-const F = poseidon.F;
-
-// Convert to field element
-const aF = F.e(a);
-const bF = F.e(b);
-
-// Perform operation
-const result = F.add(aF, F.mul(bF, cF));
-
-// Convert back to bigint
-const output = F.toObject(result);
-```
+The accumulator is a Pedersen commitment over four generators of the prime-order subgroup. It is binding as long as nobody knows a discrete log between the generators, which hashing them to the curve from public seeds rules out, and hiding thanks to the blinding factor.
 
 ## Cost Calculation
 
@@ -418,117 +230,34 @@ Assuming ETH = $2,000:
 
 ## Security Considerations
 
-1. **Secret Key Protection**: Users must never reveal their secret key `k`
-2. **Signal Randomness**: Each `signalX` must be cryptographically random
-3. **Nullifier Uniqueness**: Each ticket index can only be used once
-4. **Merkle Proof Freshness**: Clients must use the current onchain Merkle root. In production, the server rejects a request with 503 when it can't read that root or the nullifier's slashed status
-5. **Proof Replay**: Nullifiers are tracked onchain to prevent replay attacks
-6. **Server Accountability**: Policy stake is burned (not claimed), so the operator can't profit from a false ban. It can still burn any stake without a proof
+1. **Secret Key Protection**: users never reveal `k`. Two signals at one index reveal it, and the note is slashed
+2. **Sequential Requests**: request `i` needs the accumulator signed for index `i`, so the indices a note uses form a prefix. That is what makes settling on the highest index sound
+3. **Root Freshness**: the server accepts one of the contract's last 30 roots, and in production fails closed with a 503 when it can't read them
+4. **Exit Challenges**: an exit's signal at its claimed index `n` collides with a request signal if `n` was already used, and the server slashes it within the window. If the server is offline for longer than the window, an understated exit goes through: that costs the operator, never another user
+5. **Payout Bound**: every signed step adds at most `C_MAX` to R, so a payout never exceeds D. The contract checks `P ≤ D` itself as well
+6. **Self-Slashing**: the slasher gets a fixed bounty, not the deposit, so an owner who slashes their own note recovers nothing they spent
 
 ## Privacy Guarantees
 
-These are the design goals. At v0.4.1, the `api_request` circuit outputs `idCommitment` as a public signal, so the first, second and last are not met, and the balance is not hidden from whoever looks the deposit up. Tracked in [#134](https://github.com/w3hc/longjing/issues/134).
-
-- ⚠️ **Identity Privacy**: Requests cannot be linked to identity commitment (not yet: `idCommitment` is public)
-- ⚠️ **Request Unlinkability**: Each request uses unique nullifier (not yet: every request carries the same `idCommitment`)
-- ⚠️ **Balance Privacy**: ZK proof hides actual balance (the deposit is public onchain under `idCommitment`)
-- ⚠️ **Cryptographic Enforcement**: No trusted parties required, apart from whoever ran the single-party trusted setup ([#135](https://github.com/w3hc/longjing/issues/135))
-- ⚠️ **Anonymity Set**: Users are indistinguishable within all depositors (not yet: `idCommitment` identifies the leaf)
+- **Request to deposit**: a request carries no commitment, leaf, deposit amount or index, and the server stores only `(N, x, y)`
+- **Request to request**: nullifiers are fresh per index and the published accumulator is re-randomized every time, so two requests share no value
+- **Anonymity set**: a request proves membership among every note in the tree, whatever its amount
+- **Exit**: shows that a note closed, to which recipient and for what payout, so `D − P` is its net spending. It doesn't show which requests it made
+- **Not covered**: timing and network metadata ([#99](https://github.com/w3hc/longjing/issues/99)), and whoever ran the single-party trusted setup could forge proofs ([#135](https://github.com/w3hc/longjing/issues/135))
 
 ## Testing
 
-### Unit Tests
-
 ```bash
-# Run all tests
-npm test
-
-# Run specific test suite
-npm test -- longjing.service.spec.ts
-
-# Run with coverage
-npm test -- --coverage
+pnpm test           # unit tests, including witness-level circuit tests when circom is installed
+pnpm test:proof     # circuit specs and real Groth16 proofs against the pinned keys
+pnpm test:e2e       # contract, server and client on Anvil
+(cd contracts && forge test)   # contract tests, with the real SettlementVerifier
+pnpm demo           # the project's goals, checked end to end on Anvil
 ```
-
-### Integration Tests
-
-Test the full proof generation and verification flow:
-
-```bash
-npx ts-node scripts/test-proof-verification.ts
-```
-
-### Circuit Compilation
-
-```bash
-cd circuits
-circom api_request.circom --r1cs --wasm --sym
-```
-
-## Production Readiness
-
-### ✅ Completed
-
-- [x] ZK circuit design (Circom)
-- [x] Smart contract (Solidity)
-- [x] Backend services (NestJS)
-- [x] API endpoints
-- [x] Unit tests (267 tests passing)
-- [x] Documentation
-- [x] ETH/USD oracle integration
-- [x] Refund ticket signing (EdDSA with Babyjubjub + Poseidon)
-- [x] RLN cryptographic primitives
-- [x] Merkle tree service
-- [x] Blockchain service
-- [x] Anthropic SDK integration
-
-### ⚠️ TODO for Production
-
-- [ ] Complete trusted setup ceremony (Powers of Tau, proving/verification keys)
-- [x] Replace in-memory nullifier store with persistent database (SQLite)
-- [x] Implement proper EdDSA with Babyjubjub curve (circuit-compatible)
-- [ ] Implement proper key management (HSM/KMS) for EdDSA signing key
-- [ ] Add event listener for onchain Deposit events
-- [ ] Deploy contract to testnet/mainnet
-- [ ] Independent review (contract + circuit + backend)
-- [ ] Rate limiting per IP/nullifier
-- [ ] Monitoring and alerting for double-spend attempts
-- [ ] Gas optimization
-- [ ] MEV protection for slashing transactions
 
 ## Implementation Notes vs Original Proposal
 
-This implementation follows the [original ZK API Credits proposal](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) with key differences:
-
-### Proof System Choice
-- **Original**: ZK-STARK (post-quantum secure, no trusted setup)
-- **Current**: Groth16 (ZK-SNARK)
-  - Rationale: ~10-20x faster verification, ~400x smaller proofs, lower gas costs
-  - Trade-off: Requires trusted setup, not post-quantum
-  - Migration path: Can switch to STARKs/PLONK in v2
-
-### Circuit Architecture
-- **Original**: Single large circuit for all operations
-- **Current**: Three domain-specific circuits
-  - `withdrawal.circom` - Merkle membership + identity ownership
-  - `refund_redemption.circom` - EdDSA signature batch verification
-  - `double_spend_slashing.circom` - RLN secret key extraction
-  - Benefits: Smaller trusted setups, faster proving, modular upgrades
-
-### Merkle Tree
-- **Original**: "Contract inserts ID into on-chain Merkle Tree"
-- **Current**: Backend maintains tree, contract stores root
-  - Issue: Creates server dependency for withdrawals
-  - Planned: Implement onchain incremental Merkle tree
-
-### Trust Assumptions
-For production deployment, address these trust dependencies:
-1. **Onchain Merkle tree** - Users can withdraw without server
-2. **Server key rotation** - Update EdDSA public key with timelock
-3. **Admin timelocks** - Verifier and server address changes already wait 7 days; extend to the remaining parameters
-4. **Emergency withdrawal** - Automatic after server downtime period
-
-See [OVERVIEW.md](./OVERVIEW.md#implementation-alignment-with-original-proposal) for complete comparison.
+The protocol follows [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104): RLN signals, the solvency formula `(i + 1) · C_max ≤ D + R` with a constant `C_max`, a homomorphic refund accumulator, and a stake forfeited on a double-spend. Each departure is listed, with its reason, in [SETTLEMENT.md](SETTLEMENT.md#departures-from-the-paper). The main ones: Groth16 instead of a STARK, one stake instead of two, a fixed slashing bounty, sequential requests per note, and a two-step withdrawal with a challenge window.
 
 ## Circuit Artifacts
 
@@ -540,36 +269,30 @@ pnpm circuits:fetch
 
 The script skips files that already match, and fails if a download does not match its pinned hash. CI and the Docker build run it.
 
-`pnpm check:verifiers` then checks that each pinned verification key matches its zkey, that each Solidity verifier embeds that key, and that no key has δ = γ, which would let anyone forge proofs. CI runs it too.
+`pnpm check:verifiers` then checks that each pinned verification key matches its zkey, that `SettlementVerifier.sol` embeds the settlement key, and that no key has δ = γ, which would let anyone forge proofs. CI runs it too.
 
-The server verifies requests with `api_request`. Its artifacts:
+Each circuit ships three files:
 
-- `api_request_js/api_request.wasm` - Witness generator, for clients
-- `api_request.zkey` - Proving key, for clients
-- `api_request_verification_key.json` - Verification key, the only artifact the server loads and the only one the Docker image ships
+- `<circuit>_js/<circuit>.wasm` - Witness generator, for clients
+- `<circuit>.zkey` - Proving key, for clients
+- `<circuit>_verification_key.json` - Verification key. The server loads `request`'s, the only artifact the Docker image ships
 
-`api_request_local` ships the same three files under its own name, for local development.
+The `request` and `settlement` keys come from the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) (`ppot_0080_17.ptau`, sha256 `f807e065…a367c`) plus a single local phase 2 contribution. That is enough for testnets; mainnet needs a multi-party phase 2 ceremony (see [TRUSTED_SETUP_CEREMONY.md](./TRUSTED_SETUP_CEREMONY.md)).
 
-`request` and `settlement` are the circuits of [SETTLEMENT.md](./SETTLEMENT.md), with the same three files each. Nothing uses them yet: the server still verifies `api_request`, and the contract still verifies `withdrawal`. `contracts/src/SettlementVerifier.sol` is generated from `settlement.zkey` for the contract to adopt.
-
-The `api_request`, `api_request_local`, `withdrawal`, `refund_redemption`, `request` and `settlement` keys come from the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) (`ppot_0080_17.ptau`, sha256 `f807e065…a367c`) plus a single local phase 2 contribution. That is enough for testnets; mainnet needs a multi-party phase 2 ceremony (see [TRUSTED_SETUP_CEREMONY.md](./TRUSTED_SETUP_CEREMONY.md)).
-
-**To regenerate them** after changing the circuit:
+**To regenerate them** after changing a circuit:
 
 ```bash
 cd circuits
-circom api_request.circom --r1cs --wasm --sym -o build/
+circom request.circom --r1cs --wasm --sym -o build/
 curl -O https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_17.ptau
-npx snarkjs groth16 setup build/api_request.r1cs ppot_0080_17.ptau build/api_request_0000.zkey
-npx snarkjs zkey contribute build/api_request_0000.zkey build/api_request.zkey --name="Contribution" -e="$(openssl rand -hex 32)"
-npx snarkjs zkey export verificationkey build/api_request.zkey build/api_request_verification_key.json
+npx snarkjs groth16 setup build/request.r1cs ppot_0080_17.ptau build/request_0000.zkey
+npx snarkjs zkey contribute build/request_0000.zkey build/request.zkey --name="Contribution" -e="$(openssl rand -hex 32)"
+npx snarkjs zkey export verificationkey build/request.zkey build/request_verification_key.json
 ```
 
-Repeat for `api_request_local`, `withdrawal`, `refund_redemption`, `request` and `settlement`. For `withdrawal`, `refund_redemption` and `settlement`, also export the Solidity verifier with `npx snarkjs zkey export solidityverifier`, rename `Groth16Verifier` to `WithdrawalVerifier`, `RefundRedemptionVerifier` or `SettlementVerifier`, run `forge fmt` on it, and keep the `verifyWithdrawalProof`, `verifyRefundProof` or `verifySettlementProof` wrapper at the end of the contract.
+Repeat for `settlement`, then export its Solidity verifier with `npx snarkjs zkey export solidityverifier`, rename `Groth16Verifier` to `SettlementVerifier`, keep the `verifySettlementProof` wrapper at the end of the contract and run `forge fmt` on it. Regenerate the Foundry fixtures with `scripts/testing/generate-settlement-fixtures.ts`.
 
 After regenerating, publish the changed files as assets of a new release, then update the release URL and hashes in `circuits/artifacts.json` (`shasum -a 256 <file>`).
-
-**Test Circuit:** `circuits/build/api_credit_proof_test.zkey` and `circuits/build/verification_key.json`, used only with `ZK_CIRCUIT=api_credit_proof_test`.
 
 ## References
 

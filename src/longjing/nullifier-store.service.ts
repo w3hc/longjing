@@ -7,55 +7,36 @@ import {
 import Database from 'better-sqlite3';
 import { join } from 'path';
 import { mkdirSync, existsSync } from 'fs';
-import { isProd } from '../config/profile';
 
-interface StoredSignal {
+/** An RLN signal (x, y) stored under its nullifier N */
+export interface StoredSignal {
   x: string;
   y: string;
-  timestamp: number;
-  rlnShare_a?: string; // RLN share 'a', unused since the policy proof was removed
-  payloadHash?: string; // Hash of the payload, kept as policy-violation evidence
-  ticketIndex?: string; // Ticket index for double-spend proof generation
-  idCommitment?: string; // Identity commitment for double-spend proof generation
-}
-
-interface RefundRedemption {
-  idCommitment: string;
-  value: string;
-  timestamp: number;
-  recipient: string;
-  txHash: string;
-  redeemedAt: number;
 }
 
 interface NullifierRow {
-  nullifier: string;
   x: string;
   y: string;
-  timestamp: number;
-  rln_share_a: string | null;
-  payload_hash: string | null;
-  ticket_index: string | null;
-  id_commitment: string | null;
-}
-
-interface RefundRow {
-  nullifier: string;
-  id_commitment: string;
-  value: string;
-  timestamp: number;
-  recipient: string;
-  tx_hash: string;
-  redeemed_at: number;
 }
 
 interface CountRow {
   count: number;
 }
 
+interface CachedResponse<T> {
+  signal: StoredSignal;
+  response: T;
+  expiresAt: number;
+}
+
 /**
- * SQLite-backed store for tracking used nullifiers and their associated RLN signals
- * Also tracks redeemed refunds for auditing
+ * SQLite store of spent nullifiers, holding (N, x, y) and nothing else
+ * (docs/SETTLEMENT.md): enough to reject a replay and to recover k from a
+ * second signal at the same index, never a commitment, an index, a payload
+ * hash or a timestamp.
+ *
+ * Signed responses are kept in memory for a few minutes, keyed by N, so a
+ * client that lost one can retry without being charged again.
  */
 @Injectable()
 export class NullifierStoreService implements OnModuleInit, OnModuleDestroy {
@@ -66,6 +47,8 @@ export class NullifierStoreService implements OnModuleInit, OnModuleDestroy {
   private readonly nullifierAttempts = new Map<string, number[]>();
   private readonly RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
   private readonly RATE_LIMIT_MAX_ATTEMPTS = 3; // Max 3 attempts per minute per nullifier
+  private readonly responses = new Map<string, CachedResponse<unknown>>();
+  readonly RESPONSE_TTL_MS = 10 * 60 * 1000;
   private cleanupInterval: NodeJS.Timeout;
 
   constructor() {
@@ -77,7 +60,6 @@ export class NullifierStoreService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
-    // Create data directory if it doesn't exist (unless using in-memory DB)
     if (this.dbPath !== ':memory:') {
       const dir = join(this.dbPath, '..');
       if (!existsSync(dir)) {
@@ -88,48 +70,20 @@ export class NullifierStoreService implements OnModuleInit, OnModuleDestroy {
     this.db = new Database(this.dbPath);
     this.logger.log(`SQLite database initialized at ${this.dbPath}`);
 
-    // Create tables if they don't exist
+    this.migrateToSignalsOnly();
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS nullifiers (
         nullifier TEXT PRIMARY KEY,
         x TEXT NOT NULL,
-        y TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        rln_share_a TEXT,
-        payload_hash TEXT,
-        ticket_index TEXT,
-        id_commitment TEXT
+        y TEXT NOT NULL
       );
-
-      CREATE INDEX IF NOT EXISTS idx_nullifiers_timestamp ON nullifiers(timestamp);
     `);
 
-    // Migration: Add new columns if they don't exist
-    this.migrateAddPolicyViolationColumns();
-    this.migrateAddSlashingColumns();
-
-    // Create redeemed_refunds table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS redeemed_refunds (
-        nullifier TEXT PRIMARY KEY,
-        id_commitment TEXT NOT NULL,
-        value TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        recipient TEXT NOT NULL,
-        tx_hash TEXT NOT NULL,
-        redeemed_at INTEGER NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_redeemed_timestamp ON redeemed_refunds(redeemed_at);
-    `);
-
-    // Migration: Remove payload column if it exists (for privacy)
-    this.migrateRemovePayloadColumn();
-
-    // Clean up rate limit map every 5 minutes
+    // Clean up the rate limit map and expired responses every 5 minutes
     this.cleanupInterval = setInterval(
       () => {
         this.cleanupRateLimitMap();
+        this.cleanupResponses();
       },
       5 * 60 * 1000,
     );
@@ -146,411 +100,129 @@ export class NullifierStoreService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Migration: Add the rln_share_a and payload_hash columns
+   * Migration: earlier versions stored a timestamp, the payload hash, the
+   * ticket index and the identity commitment with each signal, and kept
+   * redeemed refunds. Keep (N, x, y) and drop everything else.
    */
-  private migrateAddPolicyViolationColumns(): void {
-    try {
-      const columns = this.db
-        .prepare("PRAGMA table_info('nullifiers')")
-        .all() as Array<{ name: string }>;
+  private migrateToSignalsOnly(): void {
+    const columns = this.db
+      .prepare("PRAGMA table_info('nullifiers')")
+      .all() as Array<{ name: string }>;
+    const extra = columns.filter(
+      (col) => !['nullifier', 'x', 'y'].includes(col.name),
+    );
+    const hasRefunds =
+      this.db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'redeemed_refunds'",
+        )
+        .get() !== undefined;
+    if (extra.length === 0 && !hasRefunds) return;
 
-      const hasRlnShareA = columns.some((col) => col.name === 'rln_share_a');
-      const hasPayloadHash = columns.some((col) => col.name === 'payload_hash');
-
-      if (!hasRlnShareA) {
-        this.logger.log('Adding rln_share_a column');
-        this.db.exec('ALTER TABLE nullifiers ADD COLUMN rln_share_a TEXT');
-      }
-
-      if (!hasPayloadHash) {
-        this.logger.log('Adding payload_hash column');
-        this.db.exec('ALTER TABLE nullifiers ADD COLUMN payload_hash TEXT');
-      }
-    } catch (error) {
-      this.logger.error('Failed to migrate policy violation columns', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Migration: Add columns for double-spend slashing proof generation
-   */
-  private migrateAddSlashingColumns(): void {
-    try {
-      const columns = this.db
-        .prepare("PRAGMA table_info('nullifiers')")
-        .all() as Array<{ name: string }>;
-
-      const hasTicketIndex = columns.some((col) => col.name === 'ticket_index');
-      const hasIdCommitment = columns.some(
-        (col) => col.name === 'id_commitment',
-      );
-
-      if (!hasTicketIndex) {
-        this.logger.log(
-          'Adding ticket_index column for double-spend slashing proofs',
-        );
-        this.db.exec('ALTER TABLE nullifiers ADD COLUMN ticket_index TEXT');
-      }
-
-      if (!hasIdCommitment) {
-        this.logger.log(
-          'Adding id_commitment column for double-spend slashing proofs',
-        );
-        this.db.exec('ALTER TABLE nullifiers ADD COLUMN id_commitment TEXT');
-      }
-    } catch (error) {
-      this.logger.error('Failed to migrate slashing columns', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Migration: Remove payload column for privacy
-   * SQLite doesn't support DROP COLUMN, so we recreate the table
-   */
-  private migrateRemovePayloadColumn(): void {
-    try {
-      // Check if payload column exists
-      const columns = this.db
-        .prepare("PRAGMA table_info('nullifiers')")
-        .all() as Array<{ name: string }>;
-
-      const hasPayload = columns.some((col) => col.name === 'payload');
-
-      if (hasPayload) {
-        this.logger.log(
-          'Migrating database: removing payload column for privacy',
-        );
-
-        // SQLite doesn't support DROP COLUMN, so we need to recreate the table
+    this.logger.log(
+      'Migrating database: keeping only (nullifier, x, y), dropping every identifier',
+    );
+    this.db.transaction(() => {
+      if (extra.length > 0) {
         this.db.exec(`
-          BEGIN TRANSACTION;
-
-          -- Create new table without payload
           CREATE TABLE nullifiers_new (
             nullifier TEXT PRIMARY KEY,
             x TEXT NOT NULL,
-            y TEXT NOT NULL,
-            timestamp INTEGER NOT NULL
+            y TEXT NOT NULL
           );
-
-          -- Copy data (excluding payload)
-          INSERT INTO nullifiers_new (nullifier, x, y, timestamp)
-          SELECT nullifier, x, y, timestamp FROM nullifiers;
-
-          -- Drop old table
+          INSERT INTO nullifiers_new (nullifier, x, y)
+            SELECT nullifier, x, y FROM nullifiers;
           DROP TABLE nullifiers;
-
-          -- Rename new table
           ALTER TABLE nullifiers_new RENAME TO nullifiers;
-
-          -- Recreate index
-          CREATE INDEX idx_nullifiers_timestamp ON nullifiers(timestamp);
-
-          COMMIT;
         `);
-
-        // Verify migration succeeded
-        const columnsAfter = this.db
-          .prepare("PRAGMA table_info('nullifiers')")
-          .all() as Array<{ name: string }>;
-        const stillHasPayload = columnsAfter.some(
-          (col) => col.name === 'payload',
-        );
-
-        if (stillHasPayload) {
-          throw new Error('Migration failed: payload column still exists');
-        }
-
-        this.logger.log('Migration completed successfully');
       }
-    } catch (error) {
-      this.logger.error('Migration failed:', error);
-      // In production, throw the error to prevent service from starting with corrupted database
-      if (isProd()) {
-        throw error;
-      }
-    }
+      this.db.exec(`
+        DROP INDEX IF EXISTS idx_nullifiers_timestamp;
+        DROP TABLE IF EXISTS redeemed_refunds;
+      `);
+    })();
+    // Freed pages could still hold the dropped values
+    this.db.exec('VACUUM');
   }
 
   /**
-   * Get signal associated with a nullifier
+   * Get the signal stored under a nullifier
    */
   get(nullifier: string): StoredSignal | null {
-    const stmt = this.db.prepare(
-      'SELECT x, y, timestamp, rln_share_a, payload_hash, ticket_index, id_commitment FROM nullifiers WHERE nullifier = ?',
-    );
-    const row = stmt.get(nullifier) as NullifierRow | undefined;
-
-    if (!row) return null;
-
-    return {
-      x: row.x,
-      y: row.y,
-      timestamp: row.timestamp,
-      rlnShare_a: row.rln_share_a || undefined,
-      payloadHash: row.payload_hash || undefined,
-      ticketIndex: row.ticket_index || undefined,
-      idCommitment: row.id_commitment || undefined,
-    };
-  }
-
-  /**
-   * Store a new nullifier and its signal
-   */
-  set(
-    nullifier: string,
-    signal: {
-      x: string;
-      y: string;
-      rlnShare_a?: string;
-      payloadHash?: string;
-      ticketIndex?: string;
-      idCommitment?: string;
-    },
-  ): void {
-    const timestamp = Date.now();
-    const stmt = this.db.prepare(
-      'INSERT OR REPLACE INTO nullifiers (nullifier, x, y, timestamp, rln_share_a, payload_hash, ticket_index, id_commitment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    );
-    stmt.run(
-      nullifier,
-      signal.x,
-      signal.y,
-      timestamp,
-      signal.rlnShare_a || null,
-      signal.payloadHash || null,
-      signal.ticketIndex || null,
-      signal.idCommitment || null,
-    );
-    this.logger.debug(`Stored nullifier: ${nullifier.slice(0, 10)}...`);
+    const row = this.db
+      .prepare('SELECT x, y FROM nullifiers WHERE nullifier = ?')
+      .get(nullifier) as NullifierRow | undefined;
+    return row ? { x: row.x, y: row.y } : null;
   }
 
   /**
    * Check if nullifier exists
    */
   exists(nullifier: string): boolean {
-    const stmt = this.db.prepare(
-      'SELECT 1 FROM nullifiers WHERE nullifier = ?',
+    return (
+      this.db
+        .prepare('SELECT 1 FROM nullifiers WHERE nullifier = ?')
+        .get(nullifier) !== undefined
     );
-    return stmt.get(nullifier) !== undefined;
   }
 
   /**
    * Atomically check if nullifier exists and insert if not.
-   * Returns the existing signal if found, or null if successfully inserted.
-   *
-   * This operation is atomic and thread-safe:
-   * - Uses a transaction to ensure atomicity
-   * - SQLite's write serialization prevents race conditions
-   * - Either the nullifier exists (returns existing signal) or is inserted (returns null)
-   *
-   * @param nullifier - The nullifier to check and potentially insert
-   * @param signal - The signal data to insert if nullifier doesn't exist
-   * @returns Existing signal if nullifier was already present, null if newly inserted
+   * @returns The stored signal if the nullifier was already spent, null if
+   *          this call recorded it
    */
-  checkAndSet(
-    nullifier: string,
-    signal: {
-      x: string;
-      y: string;
-      rlnShare_a?: string;
-      payloadHash?: string;
-      ticketIndex?: string;
-      idCommitment?: string;
-    },
-  ): StoredSignal | null {
-    // SQLite's default transaction mode (DEFERRED) ensures atomicity
-    // All operations within this transaction are serialized
-    const transaction = this.db.transaction(() => {
-      // First, check if nullifier exists
-      const checkStmt = this.db.prepare(
-        'SELECT x, y, timestamp, rln_share_a, payload_hash, ticket_index, id_commitment FROM nullifiers WHERE nullifier = ?',
-      );
-      const existing = checkStmt.get(nullifier) as NullifierRow | undefined;
-
-      if (existing) {
-        // Nullifier already exists, return the existing signal
-        return {
-          x: existing.x,
-          y: existing.y,
-          timestamp: existing.timestamp,
-          rlnShare_a: existing.rln_share_a || undefined,
-          payloadHash: existing.payload_hash || undefined,
-          ticketIndex: existing.ticket_index || undefined,
-          idCommitment: existing.id_commitment || undefined,
-        };
-      }
-
-      // Nullifier doesn't exist, insert it
-      const timestamp = Date.now();
-      const insertStmt = this.db.prepare(
-        'INSERT INTO nullifiers (nullifier, x, y, timestamp, rln_share_a, payload_hash, ticket_index, id_commitment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      );
-      insertStmt.run(
-        nullifier,
-        signal.x,
-        signal.y,
-        timestamp,
-        signal.rlnShare_a || null,
-        signal.payloadHash || null,
-        signal.ticketIndex || null,
-        signal.idCommitment || null,
-      );
-
-      this.logger.debug(
-        `Stored nullifier atomically: ${nullifier.slice(0, 10)}...`,
-      );
+  checkAndSet(nullifier: string, signal: StoredSignal): StoredSignal | null {
+    return this.db.transaction(() => {
+      const existing = this.get(nullifier);
+      if (existing) return existing;
+      this.db
+        .prepare('INSERT INTO nullifiers (nullifier, x, y) VALUES (?, ?, ?)')
+        .run(nullifier, signal.x, signal.y);
       return null;
+    })();
+  }
+
+  /**
+   * Keep a signed response for RESPONSE_TTL_MS, so a retry of the same signal
+   * gets it back without a second provider call
+   */
+  rememberResponse<T>(nullifier: string, signal: StoredSignal, response: T) {
+    this.responses.set(nullifier, {
+      signal,
+      response,
+      expiresAt: Date.now() + this.RESPONSE_TTL_MS,
     });
-
-    // Execute the transaction
-    return transaction();
   }
 
   /**
-   * Undo a checkAndSet whose request was never served, so the ticket index
-   * can be retried. Only removes the row if it still holds this signal's x.
+   * The response kept for this nullifier, if the retry carries the same signal
+   * and the response hasn't expired
    */
-  release(nullifier: string, x: string): boolean {
-    const result = this.db
-      .prepare('DELETE FROM nullifiers WHERE nullifier = ? AND x = ?')
-      .run(nullifier, x);
-    return result.changes > 0;
-  }
-
-  /**
-   * Get all stored nullifiers (for debugging)
-   */
-  getAll(): Map<string, StoredSignal> {
-    const stmt = this.db.prepare(
-      'SELECT nullifier, x, y, timestamp FROM nullifiers',
-    );
-    const rows = stmt.all() as NullifierRow[];
-
-    const map = new Map<string, StoredSignal>();
-    for (const row of rows) {
-      map.set(row.nullifier, {
-        x: row.x,
-        y: row.y,
-        timestamp: row.timestamp,
-      });
+  recallResponse<T>(nullifier: string, signal: StoredSignal): T | null {
+    const cached = this.responses.get(nullifier);
+    if (!cached || cached.expiresAt <= Date.now()) return null;
+    if (cached.signal.x !== signal.x || cached.signal.y !== signal.y) {
+      return null;
     }
-    return map;
+    return cached.response as T;
   }
 
   /**
-   * Clear all nullifiers (for testing)
+   * Clear all nullifiers and kept responses (for testing)
    */
   clear(): void {
     this.db.exec('DELETE FROM nullifiers');
-    this.db.exec('DELETE FROM redeemed_refunds');
-    this.logger.log('Cleared all nullifiers and redeemed refunds');
+    this.responses.clear();
+    this.logger.log('Cleared all nullifiers');
   }
 
   /**
    * Get count of stored nullifiers
    */
   count(): number {
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM nullifiers');
-    const row = stmt.get() as CountRow | undefined;
-    return row?.count ?? 0;
-  }
-
-  /**
-   * Mark a refund as redeemed
-   */
-  markRefundRedeemed(
-    nullifier: string,
-    redemption: {
-      idCommitment: string;
-      value: string;
-      timestamp: number;
-      recipient: string;
-      txHash: string;
-    },
-  ): void {
-    const redeemedAt = Date.now();
-    const stmt = this.db.prepare(
-      'INSERT OR REPLACE INTO redeemed_refunds (nullifier, id_commitment, value, timestamp, recipient, tx_hash, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    );
-    stmt.run(
-      nullifier,
-      redemption.idCommitment,
-      redemption.value,
-      redemption.timestamp,
-      redemption.recipient,
-      redemption.txHash,
-      redeemedAt,
-    );
-    this.logger.log(
-      `Marked refund as redeemed: nullifier=${nullifier.slice(0, 10)}..., value=${redemption.value} wei`,
-    );
-  }
-
-  /**
-   * Check if a refund has been redeemed (from local cache)
-   */
-  isRefundRedeemed(nullifier: string): boolean {
-    const stmt = this.db.prepare(
-      'SELECT 1 FROM redeemed_refunds WHERE nullifier = ?',
-    );
-    return stmt.get(nullifier) !== undefined;
-  }
-
-  /**
-   * Get refund redemption details
-   */
-  getRefundRedemption(nullifier: string): RefundRedemption | null {
-    const stmt = this.db.prepare(
-      'SELECT id_commitment, value, timestamp, recipient, tx_hash, redeemed_at FROM redeemed_refunds WHERE nullifier = ?',
-    );
-    const row = stmt.get(nullifier) as Omit<RefundRow, 'nullifier'> | undefined;
-
-    if (!row) return null;
-
-    return {
-      idCommitment: row.id_commitment,
-      value: row.value,
-      timestamp: row.timestamp,
-      recipient: row.recipient,
-      txHash: row.tx_hash,
-      redeemedAt: row.redeemed_at,
-    };
-  }
-
-  /**
-   * Get all redeemed refunds (for auditing)
-   */
-  getAllRedeemedRefunds(): Map<string, RefundRedemption> {
-    const stmt = this.db.prepare(
-      'SELECT nullifier, id_commitment, value, timestamp, recipient, tx_hash, redeemed_at FROM redeemed_refunds',
-    );
-    const rows = stmt.all() as RefundRow[];
-
-    const map = new Map<string, RefundRedemption>();
-    for (const row of rows) {
-      map.set(row.nullifier, {
-        idCommitment: row.id_commitment,
-        value: row.value,
-        timestamp: row.timestamp,
-        recipient: row.recipient,
-        txHash: row.tx_hash,
-        redeemedAt: row.redeemed_at,
-      });
-    }
-    return map;
-  }
-
-  /**
-   * Get count of redeemed refunds
-   */
-  redeemedCount(): number {
-    const stmt = this.db.prepare(
-      'SELECT COUNT(*) as count FROM redeemed_refunds',
-    );
-    const row = stmt.get() as CountRow | undefined;
+    const row = this.db
+      .prepare('SELECT COUNT(*) as count FROM nullifiers')
+      .get() as CountRow | undefined;
     return row?.count ?? 0;
   }
 
@@ -609,6 +281,13 @@ export class NullifierStoreService implements OnModuleInit, OnModuleDestroy {
 
     if (cleaned > 0) {
       this.logger.debug(`Cleaned up ${cleaned} expired rate limit entries`);
+    }
+  }
+
+  private cleanupResponses(): void {
+    const now = Date.now();
+    for (const [nullifier, cached] of this.responses.entries()) {
+      if (cached.expiresAt <= now) this.responses.delete(nullifier);
     }
   }
 

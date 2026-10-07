@@ -8,35 +8,20 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { LongjingService } from './longjing.service';
-import {
-  LongjingRequestDto,
-  RedeemRefundRequestDto,
-} from './dto/api-request.dto';
+import { LongjingRequestDto } from './dto/api-request.dto';
 import { LongjingResponseDto } from './dto/api-response.dto';
-import { BlockchainService } from './blockchain.service';
-import { NullifierStoreService } from './nullifier-store.service';
 import { CostEstimationService } from './cost-estimation.service';
 import {
   CostEstimateRequestDto,
   CostEstimateResponseDto,
 } from './dto/cost-estimate.dto';
-import { ProofGenService } from './proof-gen.service';
-import { ComputeLimiterService } from './compute-limiter.service';
-import {
-  GenerateSlashingProofDto,
-  ProofResponseDto,
-} from './dto/proof-generation.dto';
 
 @ApiTags('App')
 @Controller('longjing')
 export class LongjingController {
   constructor(
     private readonly longjingService: LongjingService,
-    private readonly blockchainService: BlockchainService,
-    private readonly nullifierStore: NullifierStoreService,
     private readonly costEstimationService: CostEstimationService,
-    private readonly proofGenService: ProofGenService,
-    private readonly computeLimiter: ComputeLimiterService,
   ) {}
 
   @Post('request')
@@ -109,152 +94,5 @@ export class LongjingController {
     @Body() request: CostEstimateRequestDto,
   ): Promise<CostEstimateResponseDto> {
     return this.costEstimationService.estimateCost(request);
-  }
-
-  @Post('redeem-refund')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Redeem a signed refund ticket',
-    description:
-      'Submit a signed refund ticket obtained from an API response to claim the refund onchain. ' +
-      'The refund will be transferred to the specified recipient address.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Refund redeemed successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        transactionHash: {
-          type: 'string',
-          description: 'Transaction hash of the refund redemption',
-        },
-        message: { type: 'string' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid refund ticket or signature',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Refund already redeemed or nullifier slashed',
-  })
-  @ApiResponse({
-    status: 503,
-    description: 'Blockchain service not available',
-  })
-  async redeemRefund(
-    @Body() request: RedeemRefundRequestDto,
-  ): Promise<{ success: boolean; transactionHash: string; message: string }> {
-    if (!this.blockchainService.isAvailable()) {
-      throw new Error('Blockchain service not available');
-    }
-
-    // Check if already redeemed
-    const isRedeemed = await this.blockchainService.isRefundRedeemed(
-      request.nullifier,
-    );
-    if (isRedeemed) {
-      throw new Error('Refund already redeemed');
-    }
-
-    // Proof elements are 254-bit field elements, so they stay bigints
-    const proof = request.proof.map((p) => BigInt(p));
-    const publicSignals = request.publicSignals.map((s) => BigInt(s));
-
-    const txHash = await this.blockchainService.redeemRefund({
-      idCommitment: request.idCommitment,
-      nullifier: request.nullifier,
-      refundValue: request.value,
-      recipient: request.recipient,
-      proof,
-      publicSignals,
-    });
-
-    // Track the redemption in our local store
-    this.nullifierStore.markRefundRedeemed(request.nullifier, {
-      idCommitment: request.idCommitment,
-      value: request.value,
-      timestamp: Date.now(),
-      recipient: request.recipient,
-      txHash,
-    });
-
-    return {
-      success: true,
-      transactionHash: txHash,
-      message: `Refund of ${request.value} wei redeemed successfully`,
-    };
-  }
-
-  @Post('proofs/slashing')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Generate ZK proof for double-spend slashing',
-    description:
-      'Generate a Groth16 zero-knowledge proof for slashing a double-spender. ' +
-      'The proof verifies that a secret key was correctly extracted from two RLN signals.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Slashing proof generated successfully',
-    type: ProofResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid input parameters or signals do not reveal secret key',
-  })
-  @ApiResponse({
-    status: 503,
-    description: 'Too many proofs being generated, retry later',
-  })
-  async generateSlashingProof(
-    @Body() body: GenerateSlashingProofDto,
-  ): Promise<ProofResponseDto> {
-    return this.computeLimiter.proving.run(() => this.proveSlashing(body));
-  }
-
-  private async proveSlashing(
-    body: GenerateSlashingProofDto,
-  ): Promise<ProofResponseDto> {
-    const secretKey = BigInt(body.secretKey);
-    const ticketIndex = BigInt(body.ticketIndex);
-    const signal1 = {
-      x: BigInt(body.signal1.x),
-      y: BigInt(body.signal1.y),
-    };
-    const signal2 = {
-      x: BigInt(body.signal2.x),
-      y: BigInt(body.signal2.y),
-    };
-
-    const { proof, publicSignals } =
-      await this.proofGenService.generateDoubleSpendProof({
-        secretKey,
-        ticketIndex,
-        signal1,
-        signal2,
-      });
-
-    const idCommitment =
-      await this.proofGenService.generateIdCommitment(secretKey);
-    const { nullifier } = await this.proofGenService.generateRLNSignal(
-      secretKey,
-      ticketIndex,
-      signal1.x,
-    );
-
-    return {
-      proof: proof.map((p) => '0x' + BigInt(p).toString(16)),
-      publicSignals: publicSignals.map((s) => '0x' + BigInt(s).toString(16)),
-      metadata: {
-        idCommitment: '0x' + idCommitment.toString(16),
-        nullifier: '0x' + nullifier.toString(16),
-        timestamp: Date.now(),
-      },
-    };
   }
 }

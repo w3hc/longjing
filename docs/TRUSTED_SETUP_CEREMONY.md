@@ -173,18 +173,14 @@ Signature: [digital_signature]
 
 ### Current Implementation Status: single-party setup
 
-The artifacts of the [`circuits-v1.2` release](https://github.com/w3hc/longjing/releases/tag/circuits-v1.2) were produced as follows:
-
-- `api_request`, `api_request_local`, `withdrawal` and `refund_redemption`: phase 1 is the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) file `ppot_0080_17.ptau` (sha256 `f807e065fde53f72f4bf4d57140fab85b26daa6cc95bdfec7cce93622b3a367c`). Phase 2 is one contribution by the maintainer, with `openssl rand` entropy, checked with `snarkjs zkey verify`.
-- `double_spend_slashing` and `api_credit_proof_test`: unchanged from `circuits-v1`, which was produced by [run-trusted-setup.sh](../scripts/setup/run-trusted-setup.sh) on the maintainer's machine. That script generates its own powers of tau (2^15, two contributions with `openssl rand` entropy) and then makes one phase 2 contribution per circuit, so both phases ran on a single machine, with no public transcript. The slashing key is consistent with this: `snarkjs zkey verify` against `ppot_0080_17.ptau` rejects it (`Invalid alpha1`), so its phase 1 is not the public one.
+The `request` and `settlement` artifacts of the [`circuits-v2` release](https://github.com/w3hc/longjing/releases/tag/circuits-v2) use the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) file `ppot_0080_17.ptau` (sha256 `f807e065fde53f72f4bf4d57140fab85b26daa6cc95bdfec7cce93622b3a367c`) for phase 1. Phase 2 is one contribution by the maintainer, with `openssl rand` entropy.
 
 The sha256 pins in [artifacts.json](../circuits/artifacts.json) guarantee that everyone fetches the same files. They say nothing about whether the setup secrets were destroyed.
 
 A zkey with no phase 2 contribution keeps δ = γ, and then anyone can forge proofs from the verification key alone. Two `circuits-v1` zkeys had this flaw. `pnpm check:verifiers` fails on any pinned key where `vk_delta_2` equals `vk_gamma_2`.
 
 **Current Status:**
-- ⚠️ **NOT secure for production**: one phase 2 participant, who could forge proofs if the entropy was kept
-- ⚠️ `double_spend_slashing` also has a single-party phase 1, so its setup is entirely in one party's hands
+- ⚠️ **NOT secure for production**: one phase 2 participant, who could forge request proofs and withdrawals the contract pays out on, if the entropy was kept
 - ⚠️ Automated entropy (not airgapped)
 - A public multi-party phase 2 ceremony is tracked in [#135](https://github.com/w3hc/longjing/issues/135)
 
@@ -194,23 +190,18 @@ When implementing the trusted setup ceremony for production:
 
 1. **Development** (Current):
    - ✅ Single-party phase 2 on the Perpetual Powers of Tau
-   - ✅ `api_request_local` for fast local proving
-   - ✅ Production refuses to start without the `api_request` verification key
+   - ✅ Production refuses to start without the `request` verification key
 
 2. **Testnet** (Next):
    - Small ceremony (3-5 participants) to validate process
-   - Use test circuit or simplified production circuit
    - Practice ceremony coordination and verification
    - Document ceremony process
 
 3. **Mainnet** (Production):
    - Organize public ceremony with 50+ participants for maximum security
    - Use production circuits:
-     - [api_request.circom](../circuits/api_request.circom) - Request membership, solvency and refund signatures
-     - [withdrawal.circom](../circuits/withdrawal.circom) - Merkle tree membership proof
-     - [refund_redemption.circom](../circuits/refund_redemption.circom) - EdDSA signature verification
-     - [double_spend_slashing.circom](../circuits/double_spend_slashing.circom) - RLN secret key extraction
-   - Generate larger Powers of Tau (2^16 or higher)
+     - [request.circom](../circuits/request.circom) - Membership, the signed accumulator, solvency and the RLN signal
+     - [settlement.circom](../circuits/settlement.circom) - The withdrawal payout `D + R − n · C_max`, bound to its recipient
    - Multiple rounds of contributions
    - At least 1 airgapped contributor
    - Publish ceremony transcript and final parameter hashes
@@ -232,19 +223,6 @@ pnpm build
 pnpm start
 ```
 
-### Request Circuit Setup
+### Regenerating the Keys
 
-The server verifies requests with [api_request.circom](../circuits/api_request.circom) (~110K constraints), or [api_request_local.circom](../circuits/api_request_local.circom) (~32K) outside production. Its committed keys use the public [Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau) for phase 1 and a single local contribution for phase 2, so they are **NOT secure for mainnet** until a multi-party phase 2 ceremony replaces them.
-
-To regenerate them after changing the circuit:
-
-```bash
-cd circuits
-circom api_request.circom --r1cs --wasm --sym -o build/
-curl -O https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_17.ptau
-npx snarkjs groth16 setup build/api_request.r1cs ppot_0080_17.ptau build/api_request_0000.zkey
-npx snarkjs zkey contribute build/api_request_0000.zkey build/api_request.zkey --name="Contribution" -e="$(openssl rand -hex 32)"
-npx snarkjs zkey export verificationkey build/api_request.zkey build/api_request_verification_key.json
-```
-
-Repeat for `api_request_local`, `withdrawal` and `refund_redemption`, then follow [ZK.md](./ZK.md#circuit-artifacts) to export the Solidity verifiers and publish a new release.
+[ZK.md](./ZK.md#circuit-artifacts) gives the commands for `request` and `settlement` on `ppot_0080_17.ptau`, and how to export `SettlementVerifier.sol` and publish a new release. [run-trusted-setup.sh](../scripts/setup/run-trusted-setup.sh) runs both phases on one machine instead, for local experiments only.

@@ -5,7 +5,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ProofVerifierService } from './proof-verifier.service';
 import { ComputeLimiterService } from './compute-limiter.service';
 import { BlockchainService } from './blockchain.service';
-import { ProofGenService } from './proof-gen.service';
 import { RefundSignerService } from './refund-signer.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 
@@ -26,15 +25,14 @@ describe('ProofVerifierService', () => {
   });
 
   const mockPublicInputs = {
-    merkleRoot:
-      '0x1234567890123456789012345678901234567890123456789012345678901234',
-    maxCost: '1000000',
-    initialDeposit: '5000000',
-    signalX: '0x0064',
     nullifier: '0x9999',
     signalY: '0x8888',
-    idCommitment: '0x7777',
-    idCommitmentExpected: '0x7777', // Must match idCommitment for valid proof
+    accumulatorX: '0x7777',
+    accumulatorY: '0x6666',
+    merkleRoot:
+      '0x1234567890123456789012345678901234567890123456789012345678901234',
+    maxCost: 1000000n,
+    signalX: '0x0064',
   };
 
   const serverKey = { x: '0x0a', y: '0x0b' };
@@ -42,18 +40,12 @@ describe('ProofVerifierService', () => {
   beforeEach(async () => {
     const mockBlockchainService = {
       isAvailable: jest.fn().mockReturnValue(false),
-      getMerkleRoot: jest.fn(),
-      isNullifierSlashed: jest.fn(),
-    };
-
-    const mockProofGenService = {
-      verifyMockProof: jest.fn(),
+      isKnownRoot: jest.fn(),
     };
 
     const mockSnarkjsProofService = {
       isAvailable: jest.fn().mockReturnValue(false),
       verifyProof: jest.fn(),
-      getCircuit: jest.fn().mockReturnValue('api_credit_proof_test'),
     };
 
     const mockRefundSignerService = {
@@ -65,7 +57,6 @@ describe('ProofVerifierService', () => {
         ProofVerifierService,
         ComputeLimiterService,
         { provide: BlockchainService, useValue: mockBlockchainService },
-        { provide: ProofGenService, useValue: mockProofGenService },
         { provide: SnarkjsProofService, useValue: mockSnarkjsProofService },
         { provide: RefundSignerService, useValue: mockRefundSignerService },
       ],
@@ -124,61 +115,25 @@ describe('ProofVerifierService', () => {
 
     it('should verify against blockchain when available', async () => {
       blockchainService.isAvailable.mockReturnValue(true);
-      blockchainService.getMerkleRoot.mockResolvedValue(
-        mockPublicInputs.merkleRoot,
-      );
-      blockchainService.isNullifierSlashed.mockResolvedValue(false);
+      blockchainService.isKnownRoot.mockResolvedValue(true);
       snarkjsProofService.isAvailable.mockReturnValue(true);
       snarkjsProofService.verifyProof.mockResolvedValue(true);
 
       const result = await service.verify(mockProof, mockPublicInputs);
 
       expect(result).toBe(true);
-      expect(blockchainService.getMerkleRoot).toHaveBeenCalled();
-      expect(blockchainService.isNullifierSlashed).toHaveBeenCalledWith(
-        mockPublicInputs.nullifier,
+      expect(blockchainService.isKnownRoot).toHaveBeenCalledWith(
+        mockPublicInputs.merkleRoot,
       );
     });
 
-    it('should return false if nullifier is slashed', async () => {
+    it('should return false if the root is not a recent onchain root', async () => {
       blockchainService.isAvailable.mockReturnValue(true);
-      blockchainService.getMerkleRoot.mockResolvedValue(
-        mockPublicInputs.merkleRoot,
-      );
-      blockchainService.isNullifierSlashed.mockResolvedValue(true);
+      blockchainService.isKnownRoot.mockResolvedValue(false);
 
       const result = await service.verify(mockProof, mockPublicInputs);
 
       expect(result).toBe(false);
-    });
-
-    it('should return false if merkle root does not match', async () => {
-      blockchainService.isAvailable.mockReturnValue(true);
-      blockchainService.getMerkleRoot.mockResolvedValue(
-        '0x1234567890123456789012345678901234567890123456789012345678901235',
-      );
-      blockchainService.isNullifierSlashed.mockResolvedValue(false);
-
-      const result = await service.verify(mockProof, mockPublicInputs);
-
-      expect(result).toBe(false);
-    });
-
-    it('accepts a decimal root equal to the onchain hex root', async () => {
-      blockchainService.isAvailable.mockReturnValue(true);
-      blockchainService.getMerkleRoot.mockResolvedValue(
-        mockPublicInputs.merkleRoot,
-      );
-      blockchainService.isNullifierSlashed.mockResolvedValue(false);
-      snarkjsProofService.isAvailable.mockReturnValue(true);
-      snarkjsProofService.verifyProof.mockResolvedValue(true);
-
-      const result = await service.verify(mockProof, {
-        ...mockPublicInputs,
-        merkleRoot: BigInt(mockPublicInputs.merkleRoot).toString(),
-      });
-
-      expect(result).toBe(true);
     });
 
     it('rejects with 503 before any RPC or pairing work when the cap is full', async () => {
@@ -188,22 +143,19 @@ describe('ProofVerifierService', () => {
       snarkjsProofService.verifyProof.mockReturnValue(
         new Promise<boolean>((resolve) => (release = resolve)),
       );
-      blockchainService.getMerkleRoot.mockResolvedValue(
-        mockPublicInputs.merkleRoot,
-      );
-      blockchainService.isNullifierSlashed.mockResolvedValue(false);
+      blockchainService.isKnownRoot.mockResolvedValue(true);
 
       const { max } = service['computeLimiter'].verification;
       const inFlight = Array.from({ length: max }, () =>
         service.verify(mockProof, mockPublicInputs),
       );
       await new Promise((resolve) => setImmediate(resolve));
-      blockchainService.getMerkleRoot.mockClear();
+      blockchainService.isKnownRoot.mockClear();
 
       await expect(service.verify(mockProof, mockPublicInputs)).rejects.toThrow(
         ServiceUnavailableException,
       );
-      expect(blockchainService.getMerkleRoot).not.toHaveBeenCalled();
+      expect(blockchainService.isKnownRoot).not.toHaveBeenCalled();
 
       release(true);
       await Promise.all(inFlight);
@@ -211,7 +163,7 @@ describe('ProofVerifierService', () => {
 
     it('should continue verification if blockchain check fails outside prod', async () => {
       blockchainService.isAvailable.mockReturnValue(true);
-      blockchainService.getMerkleRoot.mockRejectedValue(
+      blockchainService.isKnownRoot.mockRejectedValue(
         new Error('Network error'),
       );
       snarkjsProofService.isAvailable.mockReturnValue(true);
@@ -253,13 +205,11 @@ describe('ProofVerifierService', () => {
           pi_b: expect.any(Array) as unknown[][],
           pi_c: expect.any(Array) as unknown[],
         }),
-        // Test circuit format: [nullifier, signalY, idCommitment, signalX, idCommitmentExpected]
         expect.arrayContaining([
           BigInt(mockPublicInputs.nullifier).toString(),
           BigInt(mockPublicInputs.signalY).toString(),
-          BigInt(mockPublicInputs.idCommitment).toString(),
+          BigInt(mockPublicInputs.accumulatorX).toString(),
           BigInt(mockPublicInputs.signalX).toString(),
-          BigInt(mockPublicInputs.idCommitment).toString(), // idCommitmentExpected
         ]) as string[],
       );
     });
@@ -276,38 +226,21 @@ describe('ProofVerifierService', () => {
       return snarkjsProofService.verifyProof.mock.calls[0][1];
     };
 
-    it('orders test circuit signals', async () => {
+    it('orders the request circuit signals, outputs first, with this server key', async () => {
       await expect(signals()).resolves.toEqual(
         [
           mockPublicInputs.nullifier,
           mockPublicInputs.signalY,
-          mockPublicInputs.idCommitment,
+          mockPublicInputs.accumulatorX,
+          mockPublicInputs.accumulatorY,
+          mockPublicInputs.merkleRoot,
+          mockPublicInputs.maxCost,
           mockPublicInputs.signalX,
-          mockPublicInputs.idCommitmentExpected,
+          serverKey.x,
+          serverKey.y,
         ].map((v) => BigInt(v).toString()),
       );
     });
-
-    it.each(['api_request', 'api_request_local'])(
-      'orders %s signals with the server key',
-      async (circuit) => {
-        snarkjsProofService.getCircuit.mockReturnValue(circuit);
-
-        await expect(signals()).resolves.toEqual(
-          [
-            mockPublicInputs.nullifier,
-            mockPublicInputs.signalY,
-            mockPublicInputs.idCommitment,
-            mockPublicInputs.merkleRoot,
-            mockPublicInputs.merkleRoot,
-            mockPublicInputs.maxCost,
-            mockPublicInputs.signalX,
-            serverKey.x,
-            serverKey.y,
-          ].map((v) => BigInt(v).toString()),
-        );
-      },
-    );
   });
 
   describe('isProductionReady', () => {
@@ -345,10 +278,7 @@ describe('ProofVerifierService', () => {
     it('should allow verification in production when snarkjs is available', async () => {
       process.env.NODE_ENV = 'production';
       blockchainService.isAvailable.mockReturnValue(true);
-      blockchainService.getMerkleRoot.mockResolvedValue(
-        mockPublicInputs.merkleRoot,
-      );
-      blockchainService.isNullifierSlashed.mockResolvedValue(false);
+      blockchainService.isKnownRoot.mockResolvedValue(true);
       snarkjsProofService.isAvailable.mockReturnValue(true);
       snarkjsProofService.verifyProof.mockResolvedValue(true);
 
@@ -375,23 +305,7 @@ describe('ProofVerifierService', () => {
 
       it('rejects with 503 when the root cannot be read', async () => {
         blockchainService.isAvailable.mockReturnValue(true);
-        blockchainService.getMerkleRoot.mockRejectedValue(
-          new Error('Network error'),
-        );
-        blockchainService.isNullifierSlashed.mockResolvedValue(false);
-
-        await expect(
-          service.verify(mockProof, mockPublicInputs),
-        ).rejects.toBeInstanceOf(ServiceUnavailableException);
-        expect(snarkjsProofService.verifyProof).not.toHaveBeenCalled();
-      });
-
-      it('rejects with 503 when the slashed status cannot be read', async () => {
-        blockchainService.isAvailable.mockReturnValue(true);
-        blockchainService.getMerkleRoot.mockResolvedValue(
-          mockPublicInputs.merkleRoot,
-        );
-        blockchainService.isNullifierSlashed.mockRejectedValue(
+        blockchainService.isKnownRoot.mockRejectedValue(
           new Error('Network error'),
         );
 

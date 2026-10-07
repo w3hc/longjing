@@ -13,205 +13,82 @@ The nullifier store uses **better-sqlite3** for persistent storage of cryptograp
 
 ### Tables
 
-#### 1. `nullifiers` Table
+#### `nullifiers`
 
-Stores nullifiers and their associated RLN signals for double-spend detection.
+The only table: one row per spent nullifier, holding its RLN signal and nothing else ([SETTLEMENT.md](./SETTLEMENT.md#what-the-server-stores)).
 
 ```sql
 CREATE TABLE nullifiers (
   nullifier TEXT PRIMARY KEY,
   x TEXT NOT NULL,
-  y TEXT NOT NULL,
-  timestamp INTEGER NOT NULL,
-  rln_share_a TEXT,
-  payload_hash TEXT,
-  ticket_index TEXT,
-  id_commitment TEXT
+  y TEXT NOT NULL
 );
-
-CREATE INDEX idx_nullifiers_timestamp ON nullifiers(timestamp);
 ```
 
-**Columns:**
-- `nullifier`: Unique cryptographic hash preventing reuse (PRIMARY KEY)
-- `x`, `y`: RLN signal coordinates for double-spend detection
-- `timestamp`: Unix timestamp in milliseconds for auditing
-- `rln_share_a`: RLN share, when the client sends it
-- `payload_hash`: Hash of the request payload, bound to the signal `x`
-- `ticket_index`: The request's ticket index
-- `id_commitment`: The user's identity commitment, the same value that indexes their onchain deposit
-
-`payload_hash`, `ticket_index` and `id_commitment` are written for every request. Together they link each request to its deposit and to the user's other requests, and tie it to its content. See [Privacy Design](#privacy-design).
+**Columns** (decimal strings):
+- `nullifier`: `N = Poseidon(Poseidon(k, i))`, fresh for every index
+- `x`, `y`: the RLN signal. A second signal under the same `N` with a different `x` reveals `k`
 
 **Why we store this:**
-- **Nullifier**: Required to prevent replay attacks
-- **Signal (x, y)**: Required to detect double-spending and extract secret keys from malicious users
-- **Timestamp**: Optional, for debugging and audit logs
+- A replay or a second request at a used index is refused
+- A double-spend, during a request or an exit, reveals the secret key, and the note is slashed
+- An exit's nullifier is stored too, so its index can't be used afterwards
 
-#### 2. `redeemed_refunds` Table
-
-Tracks refund redemptions for auditing purposes.
-
-```sql
-CREATE TABLE redeemed_refunds (
-  nullifier TEXT PRIMARY KEY,
-  id_commitment TEXT NOT NULL,
-  value TEXT NOT NULL,
-  timestamp INTEGER NOT NULL,
-  recipient TEXT NOT NULL,
-  tx_hash TEXT NOT NULL,
-  redeemed_at INTEGER NOT NULL
-);
-
-CREATE INDEX idx_redeemed_timestamp ON redeemed_refunds(redeemed_at);
-```
-
-**Columns:**
-- `nullifier`: Links refund to original request
-- `id_commitment`: User's identity commitment
-- `value`: Refund amount in wei
-- `timestamp`: Original request timestamp
-- `recipient`: Ethereum address receiving refund
-- `tx_hash`: Blockchain transaction hash
-- `redeemed_at`: When refund was claimed
+Signed responses are kept in memory for 10 minutes, keyed by `N`, so a client that lost one can retry without being charged again. They never reach the database.
 
 ## Privacy Design
 
 ### What We DON'T Store
 
-> **v0.4.1:** the store keeps linkage. Every row of `nullifiers` holds the request's `id_commitment`, which is the key of the user's onchain deposit, and `redeemed_refunds` holds it too. Anyone with the database, the operator included, can map each request to its deposit and group requests by user. The goal is to stop storing `id_commitment` and to reconsider `payload_hash`, tracked in [#134](https://github.com/w3hc/longjing/issues/134).
-
-❌ **User payloads** (questions/API requests) - Removed for privacy
-❌ **Responses** - Never stored
+❌ **Payloads, payload hashes and responses**: `x = Poseidon(SHA-256(payload) mod p, ρ)` is bound to a nonce the server forgets, so a stored `x` can't confirm a guessed prompt
+❌ **Commitments, leaves, deposit amounts and ticket indices**: the request never contains them
+❌ **Timestamps**: nothing needs them, and they help timing correlation
 
 ### What We DO Store
 
 ✅ **Nullifiers** - Needed to prevent replays
 ✅ **RLN signals** - Needed for double-spend detection
-✅ **Timestamps** - Basic metadata
-⚠️ **`id_commitment`** - Links every request to its deposit and to the user's other requests
-⚠️ **`payload_hash`** - Not the content, but it identifies a request whose content is known, and matches identical requests
-⚠️ **`ticket_index`** - Shows how many requests a user has made
 
 ### Privacy Guarantees
 
-What the database protects today:
-
-1. **No Content Storage**: User requests and responses never touch the database
-2. **Server Admin Limitations**: Even with full database access, server maintainers cannot see what users asked, only a hash of it
-
-What it does not protect at v0.4.1: with database access, server maintainers can identify which deposit made which request, and link requests made by the same user.
+1. **No Content Storage**: requests and responses never touch the database
+2. **No Linkage**: with full database access, nobody can tell which deposit made a request, or which requests share a user. Nullifiers are fresh per index, and `(x, y)` is one point on a line only the user knows
 
 ### What Server Maintainers CAN See
 
 ⚠️ **Usage Metrics**:
 - Total number of API requests
-- Request timestamps and patterns
 - Double-spend attempts
 
 ⚠️ **Potential Timing Correlation**:
-- If only one user deposits at 10:00 AM and a request appears at 10:05 AM, timing suggests correlation
-- Mitigation: Users should deposit in advance or during high-activity periods
+- The database holds no timestamps, but the operator's network sees when requests arrive. If only one user deposits at 10:00 AM and a request appears at 10:05 AM, timing suggests correlation
+- Mitigation: Users should deposit in advance or during high-activity periods ([#99](https://github.com/w3hc/longjing/issues/99))
 
 ## Implementation
 
 ### Service: `NullifierStoreService`
 
-Located at: `src/longjing/nullifier-store.service.ts`
-
-#### Lifecycle Hooks
+**File**: [src/longjing/nullifier-store.service.ts](../src/longjing/nullifier-store.service.ts)
 
 ```typescript
-onModuleInit() {
-  // 1. Create data directory if needed
-  // 2. Initialize SQLite database
-  // 3. Create tables with proper schema
-  // 4. Run migrations (e.g., remove old payload column)
-}
+// Atomically record (N, x, y); returns the stored signal if N was already spent
+checkAndSet(nullifier: string, signal: { x: string; y: string }): StoredSignal | null
 
-onModuleDestroy() {
-  // Close database connection cleanly
-}
-```
-
-#### Key Methods
-
-**Double-Spend Prevention:**
-```typescript
-// Check if nullifier exists
-exists(nullifier: string): boolean
-
-// Get stored signal for double-spend detection
 get(nullifier: string): StoredSignal | null
-
-// Store new nullifier (no payload for privacy!)
-set(nullifier: string, signal: { x: string; y: string }): void
-```
-
-**Debugging & Auditing:**
-```typescript
-// Get all nullifiers
-getAll(): Map<string, StoredSignal>
-
-// Count stored nullifiers
+exists(nullifier: string): boolean
 count(): number
 
-// Clear all data (testing only)
-clear(): void
-```
+// The 10-minute retry cache, in memory
+rememberResponse<T>(nullifier: string, signal: StoredSignal, response: T): void
+recallResponse<T>(nullifier: string, signal: StoredSignal): T | null
 
-**Refund Tracking:**
-```typescript
-// Mark refund as redeemed
-markRefundRedeemed(nullifier: string, redemption: {...}): void
-
-// Check if refund was redeemed
-isRefundRedeemed(nullifier: string): boolean
-
-// Get refund details
-getRefundRedemption(nullifier: string): RefundRedemption | null
-
-// Get all redeemed refunds
-getAllRedeemedRefunds(): Map<string, RefundRedemption>
+// Per-nullifier rate limiting, in memory
+checkRateLimit(nullifier: string): boolean
 ```
 
 ## Database Migration
 
-### Removing Payload Column
-
-**Why:** The original implementation stored user payloads (API requests) in plaintext, which compromised privacy.
-
-**Migration Process:**
-
-The service automatically detects and migrates old databases on startup:
-
-```typescript
-private migrateRemovePayloadColumn(): void {
-  // 1. Check if payload column exists
-  // 2. If found, create new table without payload
-  // 3. Copy data (excluding sensitive payload)
-  // 4. Replace old table with new one
-  // 5. Recreate indexes
-}
-```
-
-**Automatic & Safe:**
-- Runs on every startup
-- Only migrates if needed (checks for payload column)
-- Preserves all cryptographic data
-- Handles errors gracefully
-
-**Before Migration:**
-```
-nullifier | x | y | timestamp | payload
-0x123...  | ... | ... | 1234567890 | "What is the meaning of life?" ← EXPOSED
-```
-
-**After Migration:**
-```
-nullifier | x | y | timestamp
-0x123...  | ... | ... | 1234567890  ← Only cryptographic values
-```
+Earlier versions stored a timestamp, the payload hash, the ticket index and the identity commitment with every signal, and kept a `redeemed_refunds` table. On startup, the service rebuilds an old `nullifiers` table with only `(nullifier, x, y)`, drops `redeemed_refunds` and the timestamp index in one transaction, then runs `VACUUM` so the freed pages don't keep the dropped values. A database already in the new shape is left alone.
 
 ## Configuration
 
@@ -255,7 +132,7 @@ beforeAll(async () => {
 ### ⚠️ Limitations
 
 1. **Timing Analysis**: Correlation between deposits and usage patterns
-2. **Usage Metadata**: Request counts and timestamps are visible
+2. **Usage Metadata**: Request counts are visible; arrival times are visible on the network, not in the database
 3. **Not Encrypted**: Database is plaintext (but contains no sensitive data)
 
 ### Why No Encryption?
@@ -267,11 +144,11 @@ We chose **not** to encrypt the database because:
 3. **Simpler & Faster**: No key management overhead
 4. **True Privacy**: Don't store what you don't need (zero-knowledge approach)
 
-If user payloads were stored, encryption would be mandatory. Since we removed payloads entirely, encryption provides no additional privacy benefit.
+If identifiers or payloads were stored, encryption would be mandatory. The database holds only `(N, x, y)`, so encryption provides no additional privacy benefit.
 
 ### Private Key Management
 
-The EdDSA private key used for signing refund tickets is **never stored on disk**. Instead, it's managed through `SecretsService`:
+The EdDSA private key used for signing refund accumulators is **never stored on disk**. Instead, it's managed through `SecretsService`:
 
 **🏠 Local Development**:
 ```bash
@@ -327,7 +204,6 @@ This is why we **must** store both x and y coordinates.
 ### Indexing
 
 - **Primary Key**: `nullifier` column (O(log n) lookups)
-- **Timestamp Index**: For range queries and cleanup
 - **Prepared Statements**: All queries use prepared statements for safety and speed
 
 ### Benchmarks
@@ -360,15 +236,14 @@ cp data/nullifiers.db.backup data/nullifiers.db
 
 If the database is lost:
 - ✅ System continues to function
-- ❌ Nullifier history is lost (users can reuse old proofs)
-- ⚠️ Mitigation: Regular backups + blockchain state recovery
+- ❌ Nullifier history is lost: a request at a used index is no longer refused, and an understated exit can't be challenged
+- ⚠️ Mitigation: Regular backups; exit nullifiers come back from `WithdrawalInitiated` events
 
 ## Future Improvements
 
 ### Potential Enhancements
 
-1. **Nullifier Expiration**: Archive old nullifiers after N days
-2. **Blockchain Sync**: Cross-reference with onchain events
+1. **Nullifier Expiration**: Drop the nullifiers of closed notes, which can no longer be challenged
 3. **Distributed Storage**: Replicate to multiple nodes
 4. **Read Replicas**: Scale read operations
 5. **Compression**: Compress old data
@@ -433,4 +308,4 @@ The SQLite implementation provides:
 ✅ **Performance**: Fast enough for production use
 ✅ **Reliability**: Battle-tested database engine
 
-The key insight is that **true privacy comes from not storing sensitive data**, not from encrypting it. By removing user payloads entirely, we achieve zero-knowledge storage where even server administrators cannot access user requests.
+The key insight is that **true privacy comes from not storing sensitive data**, not from encrypting it. The store keeps only `(N, x, y)`: enough to stop replays and catch double-spends, and nothing that identifies a user or a request.

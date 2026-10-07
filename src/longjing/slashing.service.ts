@@ -1,23 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ethers } from 'ethers';
 import { BlockchainService } from './blockchain.service';
+import { BN254_SCALAR_FIELD } from './utils/payload-signal.util';
 
-// Smart contract ABI for slashing functions
 const SLASHING_ABI = [
-  'function slashDoubleSpend(bytes32 _secretKey, bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[4] _publicSignals) external',
-  'function slashPolicyStake(bytes32 _nullifier, bytes32 _idCommitment) external',
-  'event DoubleSpendSlashed(bytes32 indexed secretKey, bytes32 indexed nullifier, address indexed slasher, uint256 reward)',
-  'event PolicyStakeSlashed(bytes32 indexed nullifier, bytes32 indexed idCommitment, uint256 amountBurned)',
+  'function slash(uint256 _secretKey) external',
+  'event Slashed(bytes32 indexed commitment, address indexed slasher, uint256 bounty)',
 ];
 
-interface RlnSignal {
-  x: string;
-  y: string;
-}
-
 /**
- * Service for submitting slashing transactions to the LongjingCredits smart contract
- * Handles double-spend detection and onchain slashing
+ * Slashes notes whose secret key two RLN signals revealed. Knowing k is the
+ * proof, so the transaction carries only k: the contract pays the bounty to
+ * the caller and the rest of the note to the operator.
  */
 @Injectable()
 export class SlashingService {
@@ -46,108 +40,72 @@ export class SlashingService {
   }
 
   /**
-   * Submit a slashing transaction for double-spend
-   * @param secretKey The extracted secret key (0x-prefixed hex string)
-   * @param nullifier The nullifier used in both signals
-   * @param idCommitment The user's identity commitment
-   * @param signal1 First RLN signal
-   * @param signal2 Second RLN signal
-   * @param ticketIndex Ticket index from the request
-   * @param proof ZK proof of correct secret key extraction
-   * @param publicSignals Public signals for the proof
-   * @returns Transaction hash if successful
+   * k = (y1 · x2 − y2 · x1) / (x2 − x1) mod p, from two signals that share a
+   * nullifier
    */
-  async slashDoubleSpend(
-    secretKey: string,
-    nullifier: string,
-    idCommitment: string,
-    signal1: RlnSignal,
-    signal2: RlnSignal,
-    ticketIndex: string,
-    proof: string[],
-    publicSignals: string[],
-  ): Promise<string | null> {
+  static recoverSecretKey(
+    signal1: { x: bigint; y: bigint },
+    signal2: { x: bigint; y: bigint },
+  ): bigint {
+    const p = BN254_SCALAR_FIELD;
+    const mod = (v: bigint) => ((v % p) + p) % p;
+    const denominator = mod(signal2.x - signal1.x);
+    if (denominator === 0n) {
+      throw new Error('Signals share x, so they reveal nothing');
+    }
+    let inverse = 1n;
+    let base = denominator;
+    for (let e = p - 2n; e > 0n; e >>= 1n) {
+      if (e & 1n) inverse = (inverse * base) % p;
+      base = (base * base) % p;
+    }
+    return mod((signal1.y * signal2.x - signal2.y * signal1.x) * inverse);
+  }
+
+  /**
+   * Slash the note behind two signals that share a nullifier. A failure is
+   * logged, not thrown: the caller rejects the request or exit either way.
+   */
+  async slashRevealed(
+    signal1: { x: string; y: string },
+    signal2: { x: string; y: string },
+  ): Promise<void> {
+    if (!this.isEnabled()) {
+      this.logger.warn(
+        'Slashing disabled - no contract or transaction signer (see docs/LOCAL_SETUP.md)',
+      );
+      return;
+    }
+    try {
+      const secretKey = SlashingService.recoverSecretKey(
+        { x: BigInt(signal1.x), y: BigInt(signal1.y) },
+        { x: BigInt(signal2.x), y: BigInt(signal2.y) },
+      );
+      await this.slash(secretKey);
+    } catch (error) {
+      this.logger.error('Failed to slash the double-spent note', error);
+    }
+  }
+
+  /**
+   * Slash the note whose secret key is k
+   * @returns Transaction hash, or null when slashing is not configured
+   */
+  async slash(secretKey: bigint): Promise<string | null> {
     const contract = this.slashingContract();
     if (!contract) {
-      this.logger.warn(
-        'Slashing transaction skipped - contract not configured',
-      );
+      this.logger.warn('Slashing skipped - contract not configured');
       return null;
     }
 
     try {
-      this.logger.log(
-        `Submitting slashing transaction for secret key: ${secretKey.slice(0, 10)}...`,
-      );
-
-      this.logger.debug('Slashing parameters:', {
-        secretKey: secretKey.slice(0, 10) + '...',
-        nullifier: nullifier.slice(0, 10) + '...',
-        idCommitment: idCommitment.slice(0, 10) + '...',
-        proofLength: proof.length,
-        publicSignalsLength: publicSignals.length,
-      });
-
-      // Convert to BigInt arrays for contract call
-      const proofBigInts = proof.map((p) => BigInt(p));
-      const publicSignalsBigInts = publicSignals.map((s) => BigInt(s));
-
-      // Submit transaction with ZK proof
-      // Contract signature: slashDoubleSpend(bytes32 _secretKey, bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[4] _publicSignals)
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const tx = await contract.slashDoubleSpend(
-        secretKey,
-        nullifier,
-        idCommitment,
-        proofBigInts,
-        publicSignalsBigInts,
-      );
-
+      const tx = await contract.slash(secretKey);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const txHash = tx.hash as string;
-      this.logger.log(`Slashing transaction submitted: ${txHash}`);
-
-      // Wait for confirmation
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const receipt = await tx.wait();
-
-      this.logger.log(
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Slashing transaction confirmed in block ${receipt?.blockNumber || 'unknown'}`,
-      );
-
-      // Parse event logs to get reward amount
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      if (receipt && receipt.logs) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        const event = receipt.logs
-          .map((log: { topics: string[]; data: string }) => {
-            try {
-              return contract.interface.parseLog({
-                topics: log.topics,
-                data: log.data,
-              });
-            } catch {
-              return null;
-            }
-          })
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-          .find(
-            (parsedLog: { name?: string } | null) =>
-              parsedLog?.name === 'DoubleSpendSlashed',
-          );
-
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        if (event && event.args) {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-          const reward = event.args.reward;
-          this.logger.log(
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            `Double-spend slashing successful! Reward: ${ethers.formatEther(reward)} ETH`,
-          );
-        }
-      }
-
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+      await tx.wait();
+      this.logger.log(`Slashing transaction confirmed: ${txHash}`);
       return txHash;
     } catch (error) {
       this.logger.error('Failed to submit slashing transaction', error);
@@ -167,53 +125,5 @@ export class SlashingService {
    */
   getSlasherAddress(): string | null {
     return this.blockchain.getSigner()?.address ?? null;
-  }
-
-  /**
-   * Burn a user's policy stake for a ToS violation. No proof backs it: the
-   * contract trusts the server address, guarded only by the change timelock.
-   * @param nullifier The nullifier from the violating request
-   * @param idCommitment The user's identity commitment
-   * @returns Transaction hash if successful
-   */
-  async slashPolicyStake(
-    nullifier: string,
-    idCommitment: string,
-  ): Promise<string | null> {
-    const contract = this.slashingContract();
-    if (!contract) {
-      this.logger.warn(
-        'Policy slashing transaction skipped - contract not configured',
-      );
-      return null;
-    }
-
-    try {
-      this.logger.log(
-        `Submitting policy slashing transaction for nullifier: ${nullifier.slice(0, 10)}...`,
-      );
-
-      // Submit transaction
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const tx = await contract.slashPolicyStake(nullifier, idCommitment);
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const txHash = tx.hash as string;
-      this.logger.log(`Policy slashing transaction submitted: ${txHash}`);
-
-      // Wait for confirmation
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const receipt = await tx.wait();
-
-      this.logger.log(
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Policy slashing transaction confirmed in block ${receipt?.blockNumber || 'unknown'}`,
-      );
-
-      return txHash;
-    } catch (error) {
-      this.logger.error('Failed to submit policy slashing transaction', error);
-      throw new Error('Policy slashing transaction failed', { cause: error });
-    }
   }
 }

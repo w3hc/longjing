@@ -20,9 +20,9 @@ Longjing derives its keys at boot from the [dstack](https://github.com/Dstack-TE
 | Key | `GetKey` domain | Algorithm | Used for |
 | --- | --- | --- | --- |
 | ML-KEM-1024 decapsulation key | `longjing/mlkem-1024/v1` | `ed25519` (used as a 32-byte seed) | Decrypting what clients encrypt to the server |
-| Refund signer | `longjing/refund-signer/babyjub/v1` | `ed25519` (used as a 32-byte seed) | Signing refund tickets (EdDSA on Baby Jubjub), checked by the circuits against `LongjingCredits.serverPublicKey` |
+| Refund signer | `longjing/refund-signer/babyjub/v1` | `ed25519` (used as a 32-byte seed) | Signing refund accumulators (EdDSA on Baby Jubjub), checked by the circuits against `LongjingCredits.serverPublicKey` |
 | Identity key | `longjing/identity/v1` | `secp256k1` | Signing the [key manifest](#key-manifest) |
-| Transaction signer | `longjing/tx-signer/v1` | `secp256k1` | Signing contract transactions (refund relays, slashing) as `LongjingCredits.serverAddress` |
+| Transaction signer | `longjing/tx-signer/v1` | `secp256k1` | Signing contract transactions (slashing, operator withdrawals) as `LongjingCredits.serverAddress` |
 | TLS key | `GetTlsKey` | — | In-enclave TLS termination |
 
 `GetKey` is deterministic in `(app_id, domain, algorithm)`: every instance of the app, on every restart, gets the same keys, so nothing needs to be persisted or backed up. The KMS releases the app's root key only to a CVM whose boot measurements match the app's on-chain policy (allowed compose hash, allowed OS image), so only code the app owner has registered on chain can derive them. Under [GOVERNANCE.md](./GOVERNANCE.md), a Safe and a 7-day timelock own the app, so every new build is public for that delay before it can boot.
@@ -62,7 +62,7 @@ seed     = HKDF-SHA256(salt = "longjing", IKM = s,
 
 ### Refund signer
 
-Refund tickets are EdDSA signatures on Baby Jubjub over `Poseidon(idCommitment, nullifier, value, timestamp)`, verified inside `api_request.circom` and `refund_redemption.circom`. A Baby Jubjub private key is any 32 bytes, which circomlibjs hashes before use:
+Refund accumulators are signed with EdDSA on Baby Jubjub over `Poseidon(A.x, A.y)`, verified inside `request.circom` and `settlement.circom`. A Baby Jubjub private key is any 32 bytes, which circomlibjs hashes before use:
 
 ```text
 s           = GetKey("longjing/refund-signer/babyjub/v1", "ed25519").key
