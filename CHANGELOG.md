@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-07
+
 ### Added
 
+- `docs/DEPLOYMENT.md`, the production deployment in order: the trusted setup a deployment holding value needs first, ZK artifacts, image, contract address, first enclave boot, key manifest, `LongjingCredits`, gas for the transaction signer, handover to the timelock, checks, and what to publish so depositors can exit with `settlement.wasm` and `settlement.zkey` from any mirror ([#162](https://github.com/w3hc/longjing/issues/162)).
 - `DeployGovernance.s.sol` hands `LongjingCredits` over to a timelock behind the Safe with `LONGJING_CREDITS`, and `pnpm verify:attestation --credits <address>` fails unless a timelock of at least `--min-delay` owns it. The deployer no longer holds the verifiers, `serverAddress` and the refund key ([#160](https://github.com/w3hc/longjing/issues/160)).
 - Production refuses to start when `LongjingCredits.serverPublicKey` isn't the key the refund signer signs with, and logs a warning when `serverAddress` isn't the transaction signer ([#161](https://github.com/w3hc/longjing/issues/161)).
 - Note settlement in `LongjingCredits` (LJ-01, LJ-02): `deposit(c)` computes the leaf `Poseidon(c, D)` from `msg.value`, `initiateWithdrawal` verifies a settlement proof paying `D + R − n · C_MAX` and opens a 3-day challenge window, `finalizeWithdrawal` pays the recipient and credits the rest to `operatorBalance`, and `slash(k)` pays a fixed `SLASH_BOUNTY` to whoever holds the revealed key. Pausing never blocks an exit or a slash, and a pending exit can't be claimed as expired. The contract keeps the last 30 roots, removes a closed note's leaf, and accepts every refund key it ever registered, rotated through the timelock ([#168](https://github.com/w3hc/longjing/issues/168)).
@@ -28,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `docs/PHALA_CONFIG.md` no longer tells operators to generate ML-KEM keys or check `ADMIN_MLKEM_*` in env, which production refuses, and links to the deployment order ([#162](https://github.com/w3hc/longjing/issues/162)).
 - **Breaking:** requests carry no identifier (LJ-03). `POST /longjing/request` takes `payload`, `nonce`, `nullifier`, `signal`, `proof`, `merkleRoot` and `accumulator`, and drops `maxCost`, `initialDeposit`, `ticketIndex`, `idCommitment` and `idCommitmentExpected`. The signal is `x = Poseidon(SHA-256(payload) mod p, ρ)`. The proof is checked against one of the contract's recent roots and its constant `C_MAX`, and the response returns `refund` and the next accumulator `A' = A_pub + v·G + J` signed by the refund key, instead of `actualCost` and a refund ticket. A request whose worst case exceeds `C_MAX` is refused, a provider error refunds all of `C_MAX` (LJ-12), and a retry of the same signal within 10 minutes gets the same response without a second provider call ([#169](https://github.com/w3hc/longjing/issues/169)).
 - **Breaking:** the nullifier store keeps only `(nullifier, x, y)`. On startup it drops the timestamp, payload hash, ticket index and identity commitment columns and the `redeemed_refunds` table, then vacuums the file ([#169](https://github.com/w3hc/longjing/issues/169)).
 - **Breaking:** `LongjingCredits` takes `C_MAX` and `SLASH_BOUNTY` in its constructor, keys notes by commitment (`getNote`, `getLeaves`, `isKnownRoot`), and its timelock targets are `SettlementVerifier`, `ServerAddress` and `RefundKey` ([#168](https://github.com/w3hc/longjing/issues/168)).
