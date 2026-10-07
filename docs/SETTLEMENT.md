@@ -232,3 +232,101 @@ The penalty is bounded and burns nothing. A malicious operator can freeze a note
 | Timestamps | No | Nothing needs them, and they help timing correlation |
 
 `x` stays `Hash(M)` as in the paper, with a nonce: `x = Poseidon(H(M), ρ)`. The client sends `ρ` with the request, and the server recomputes `x` from the payload and `ρ`, then forgets both. Without `ρ`, anyone holding the database could confirm a guessed prompt by hashing it. With `ρ`, a stored `x` is just a field element. The separate `payload_hash` column was only a copy of what `x` encodes, so it goes.
+
+## Departures from the paper
+
+Restored by this design:
+
+- **`C_max` is a constant**, as in the paper. The per-request `maxCost` was the departure.
+- **Refunds raise the spending limit and withdrawal pays out what is left**, as in the paper. Paying refunds out in ETH through `redeemRefund` was the departure, and it goes.
+
+New departures, each deliberate:
+
+| Paper | This design | Why |
+| --- | --- | --- |
+| `ID = Hash(k)`, D implicit | Leaf `Poseidon(Poseidon(k), D)`, computed onchain | The circuit needs D bound to what was paid (LJ-02) |
+| Two stakes, D and S | One stake, D | S can't be found without linking a request to its deposit. Policy is enforced by withholding the accumulator |
+| Whoever proves a double-spend claims D | `slash(k)` pays a fixed bounty, the rest goes to the operator | Otherwise the owner self-slashes and recovers spending |
+| Homomorphic `E(R)`, re-randomized, with [BBS+](https://datatracker.ietf.org/doc/draft-irtf-cfrg-bbs-signatures/) suggested in the thread | A Pedersen commitment, re-randomized inside the request proof, signed with EdDSA | The proof shows knowledge of a signed commitment without revealing it, so no blind signature is needed |
+| Any request order with the ticket list | Strictly sequential per note | Settling on the highest index needs the used indices to form a prefix |
+| No exit procedure | Two-step withdrawal with a challenge window | The contract can't see `n`, so an understated claim must be challengeable |
+| [ZK-STARK](https://eprint.iacr.org/2018/046) | [Groth16](https://eprint.iacr.org/2016/260) | Unchanged from today. The trusted setup is tracked in [#135](https://github.com/w3hc/longjing/issues/135) (LJ-04) |
+
+RLN signals, `a = Hash(k, i)`, `N = Hash(a)`, `y = k + a · x`, `x = Hash(M)` (with a nonce), the solvency formula and a stake forfeited on double-signaling all stay.
+
+## Comparison with ethereum/zkapi
+
+[ethereum/zkapi](https://github.com/ethereum/zkapi) replaces RLN with a state-anchor chain ([PROTOCOL.md](https://github.com/ethereum/zkapi/blob/main/protocol/PROTOCOL.md)): each request consumes a private state, and the server signs the next one.
+
+| | ethereum/zkapi | This design |
+| --- | --- | --- |
+| Balance | Server-signed commitment to the balance, bound to the note | Server-signed commitment to refunds and index, bound to the note |
+| Reuse of a state | Rejected by its nullifier | Rejected, and the two signals reveal `k`, so the note can be slashed |
+| Spending check | Balance minus cost stays non-negative | `(i + 1) · C_max ≤ D + R`, as in the paper |
+| Order | Sequential | Sequential |
+| Close | `mutualClose` with a server clearance signature, or an escape withdrawal with a 24-hour challenge | One path: a withdrawal with a challenge window, no server signature |
+| Challenge evidence | A newer signed state | A second signal at the claimed index |
+| Policy | Bounded deduction `S_max` from the balance | Withholding the next accumulator, bounded by `C_max` |
+
+The two designs end up close in mechanics: one signed commitment per note and sequential requests. They still differ where the paper sets the rules. RLN stays, so a reused state costs the cheater their stake instead of just failing, and the evidence for a challenge is something the server already stores. The exit has a single path that never needs a server signature. Converging further on the state-anchor model is not a goal.
+
+## Alternatives considered
+
+- **A bigger ticket list.** Each ticket costs an EdDSA verification in every request proof, and the limit only moves.
+- **A Poseidon accumulator merged in a separate step.** The client would prove a batch of tickets and get a fresh signed commitment. It works, but adds a round trip whose timing can correlate with requests, and needs a contiguity proof over ticket indices. The Pedersen accumulator updates in the same response.
+- **A server-side `getDeposit` lookup** (LJ-02). It only works because of the LJ-03 leak.
+- **Revealing every nullifier at exit.** It proves usage exactly, but links all of a note's requests at the end.
+- **A mutual close with a server clearance signature**, as in ethereum/zkapi. A faster close when the server cooperates, but a second path to maintain. It can be added later without changing the circuits.
+- **Keeping S with a proof.** No statement links a nullifier to a note without breaking unlinkability (see [The policy stake](#the-policy-stake)).
+
+## Exit properties
+
+- **Exit.** `initiateWithdrawal`, then `finalizeWithdrawal` after `W`. It needs the chain, any RPC, `k`, the accumulator and the withdrawal page: no server signature, API call or admin action. The proposed `W` is 3 days.
+- **State.** `c` and D are onchain. The accumulator and its opening are held by the user. Losing them costs the refunds, not the deposit: the user exits from genesis with a conservative `n`.
+- **Artifacts.** The page needs `withdrawal.wasm` and `withdrawal.zkey`, pinned by hash, and no Merkle path.
+- **Admin.** `C_MAX` and `SLASH_BOUNTY` are immutable. Changes to the verifiers, `serverAddress` and the refund key wait behind `ADMIN_DELAY` (7 days), which is longer than `W` plus the time to submit. A rotated refund key stays accepted for withdrawals, so older accumulators still verify. Pausing blocks deposits and requests, never `initiateWithdrawal`, `finalizeWithdrawal` or `slash`.
+- **Expiry.** `NOTE_TTL` stays at 365 days, far longer than `W`, and an exit already started can't be claimed.
+- **Slashing.** `slash(k)` is open to anyone holding `k`.
+- **Rerun.** Unchanged.
+
+The window is a risk for the operator, not the user. If the server is offline for longer than `W`, an understated exit goes through unchallenged. That costs the operator revenue, never another user's deposit.
+
+## Implementation
+
+Three sub-issues of [#134](https://github.com/w3hc/longjing/issues/134), in order:
+
+1. **Circuits.** The new `api_request` and `withdrawal` circuits, the generators derived by hashing to the curve, and the removal of `refund_redemption` and `double_spend_slashing`. A `circuits-v2` release with verification keys checked against the verifiers, and tests with real proofs.
+2. **Contract.** Notes keyed by `c` with the leaf computed onchain, `C_MAX`, the two-step withdrawal, `slash(k)` with its bounty, `operatorBalance`, a root history, removing a leaf, accepted refund keys, and removing `redeemRefund`, S and `slashPolicyStake`. Foundry tests run against the real verifiers.
+3. **Backend and client.**
+   - The request DTO without identifiers, accumulator signing and the retry cache.
+   - The `(N, x, y)` nullifier store.
+   - Watching `WithdrawalInitiated` and challenging.
+   - `pnpm prove` for requests and withdrawals.
+   - `API_REFERENCE.md`, `ZK.md`, `SQLITE3.md` and the README's status.
+
+After them, [#119](https://github.com/w3hc/longjing/issues/119) builds the client-side withdrawal prover on the new circuit, and [#157](https://github.com/w3hc/longjing/issues/157) the standalone page on top of it. [#135](https://github.com/w3hc/longjing/issues/135) runs once the circuits are final.
+
+### Demo goals
+
+| Goal | Change | Flips to verified with |
+| --- | --- | --- |
+| Solvency is enforced | Check that a request past `D + R` is rejected and that an exit pays `D + R − n · C_max` | Sub-issues 2 and 3 |
+| A request can't be linked to the deposit | Check that the public signals and the stored row carry no `c`, leaf, D or index | Sub-issue 3 |
+| Two requests can't be linked to each other | Check that two requests' rows and signals share no value | Sub-issue 3 |
+| A refund redemption onchain can't be linked to the deposit | Reworded: a request's refund never appears onchain | Sub-issue 2 |
+| A refund is `maxCost − actualCost`, signed by the onchain key, redeemable once | Reworded: the accumulator grows by `C_max − C_actual`, signed by the onchain key | Sub-issue 3 |
+| A refund can only be redeemed to the recipient in its proof | Reworded: a withdrawal pays only the recipient in its proof | Sub-issue 2 |
+| A nullifier is accepted once | Reworded: a retry returns the same accumulator and calls the provider once | Sub-issue 3 |
+| A double-spend reveals `k` and anyone can slash | Reworded: anyone holding `k` slashes, and the caller gets the bounty, not the stake | Sub-issue 2 |
+| New: an exit that understates usage is slashed during the window | New check | Sub-issues 2 and 3 |
+| New: a closed note can't make requests | New check | Sub-issue 3 |
+
+The withdrawal and exit goals stay "not met" until #119 and #157.
+
+## Further reading
+
+- [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104), the paper
+- [Longjing v0.4.0 internal security audit](audits/2026-10-internal-audit.md)
+- [Rate-Limiting Nullifier specification](https://rfc.vac.dev/spec/32/)
+- [ethereum/zkapi protocol](https://github.com/ethereum/zkapi/blob/main/protocol/PROTOCOL.md)
+- [EIP-2494: Baby Jubjub](https://eips.ethereum.org/EIPS/eip-2494)
