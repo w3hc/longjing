@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 import LongjingCreditsABI from './contracts/LongjingCredits.abi.json';
@@ -27,7 +32,7 @@ const toWithdrawal = (args: ethers.Result): WithdrawalInitiated => ({
  * key) and sends the server's transactions
  */
 @Injectable()
-export class BlockchainService implements OnModuleInit {
+export class BlockchainService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BlockchainService.name);
   private provider: ethers.JsonRpcProvider | null = null;
   private contract: ethers.Contract | null = null;
@@ -106,6 +111,12 @@ export class BlockchainService implements OnModuleInit {
       }
       this.logger.error('Failed to connect to blockchain', error);
     }
+  }
+
+  /** Stops event polling, so no handler runs once the app is closing */
+  async onModuleDestroy() {
+    await this.contract?.removeAllListeners();
+    this.provider?.destroy();
   }
 
   /** The connected transaction signer, or null when read-only. */

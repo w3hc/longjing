@@ -61,14 +61,21 @@ export class RequestSanitizerMiddleware implements NestMiddleware {
       configurable: false,
     });
 
-    // Remove socket information that could be used for correlation
-    if (req.socket) {
-      Object.defineProperty(req.socket, 'remoteAddress', {
+    // Remove socket information that could be used for correlation. A
+    // kept-alive socket carries several requests and is already anonymized
+    // after the first, and redefining a non-configurable property throws.
+    const socket = req.socket as object | undefined;
+    if (
+      socket &&
+      Object.getOwnPropertyDescriptor(socket, 'remoteAddress')?.configurable !==
+        false
+    ) {
+      Object.defineProperty(socket, 'remoteAddress', {
         get: () => '0.0.0.0',
         configurable: false,
       });
 
-      Object.defineProperty(req.socket, 'remotePort', {
+      Object.defineProperty(socket, 'remotePort', {
         get: () => 0,
         configurable: false,
       });

@@ -25,7 +25,13 @@ export class ExitWatcherService implements OnApplicationBootstrap {
       this.logger.warn('No contract: exits are not watched');
       return;
     }
-    await this.blockchain.watchWithdrawals((exit) => this.ingest(exit));
+    await this.blockchain.watchWithdrawals(async (exit) => {
+      try {
+        await this.ingest(exit);
+      } catch (error) {
+        this.logger.error('Failed to check an exit', error);
+      }
+    });
     this.logger.log('Watching WithdrawalInitiated');
   }
 

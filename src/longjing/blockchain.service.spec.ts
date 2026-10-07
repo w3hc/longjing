@@ -95,6 +95,16 @@ describe('BlockchainService', () => {
       expect(() => service.getCMax()).toThrow('C_MAX not read');
     });
 
+    it('stops polling the chain on shutdown', async () => {
+      mockContract.removeAllListeners = jest.fn().mockResolvedValue(undefined);
+      mockProvider.destroy = jest.fn();
+
+      await service.onModuleDestroy();
+
+      expect(mockContract.removeAllListeners).toHaveBeenCalled();
+      expect(mockProvider.destroy).toHaveBeenCalled();
+    });
+
     it('refuses reads without a contract', async () => {
       (service as any).contract = null;
       await expect(service.isKnownRoot('1')).rejects.toThrow(
