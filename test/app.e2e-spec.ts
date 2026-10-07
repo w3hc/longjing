@@ -4,64 +4,103 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { execFile } from 'child_process';
-import { mkdtempSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import { promisify } from 'util';
 import { ethers } from 'ethers';
-import { buildEddsa, buildPoseidon } from 'circomlibjs';
 import { AppModule } from '../src/app.module';
+import {
+  commitmentOf,
+  newNote,
+  NOTE_ABI,
+  NoteFile,
+  proveRequest,
+  proveWithdrawal,
+  receive,
+  RequestResponse,
+  WithdrawalArgs,
+} from '../scripts/client/note';
 
 const run = promisify(execFile);
 
-interface RefundTicket {
-  nullifier: string;
-  value: string;
-  timestamp: number;
-  signature: { R8x: string; R8y: string; S: string };
-}
+const RPC_URL = 'http://127.0.0.1:8545';
+// Anvil accounts: #0 deploys and is the server, the others are users
+const anvilKey = (index: number) =>
+  ethers.HDNodeWallet.fromPhrase(
+    'test test test test test test test test test test test junk',
+    undefined,
+    `m/44'/60'/0'/0/${index}`,
+  ).privateKey;
+const SERVER_KEY = anvilKey(0);
+const USER_KEYS = [1, 2, 3].map(anvilKey);
+const DEPOSIT = ethers.parseEther('0.01');
+const CHALLENGE_WINDOW = 3 * 24 * 60 * 60;
 
-// The same steps as `pnpm demo`: one user, Alice, from deposit to refund
-describe('Deposit -> request -> refund (e2e)', () => {
-  const RPC_URL = 'http://127.0.0.1:8545';
-  // Anvil account #1; #0 deploys
-  const ALICE_KEY =
-    '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
-  const DEPOSIT = ethers.parseEther('0.2');
-  const MAX_COST = ethers.parseEther('0.05');
-  const PAYLOAD = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
-  const SECRET_KEY = '0x5ec12e7a11ce';
-  const ABI = [
-    'function deposit(bytes32 _idCommitment) payable',
-    'function merkleRoot() view returns (bytes32)',
-    'function serverPublicKey() view returns (bytes32 x, bytes32 y)',
-    'function getDeposit(bytes32 _idCommitment) view returns (tuple(bytes32 idCommitment, uint256 rlnStake, uint256 policyStake, uint256 timestamp, bool active))',
-    'function redeemRefund(bytes32 _idCommitment, bytes32 _nullifier, uint256 _refundValue, address _recipient, uint256[8] _proof, uint256[8] _publicSignals)',
-    'error RefundAlreadyRedeemed()',
-  ];
+const Status = { Active: 1, Exiting: 2, Closed: 3, Slashed: 4 } as const;
 
+// docs/SETTLEMENT.md end to end on Anvil: the real contract, server and
+// client, with the provider mocked
+describe('Notes, requests and settlement (e2e)', () => {
   const env = { ...process.env };
-  const workDir = mkdtempSync(join(tmpdir(), 'longjing-e2e-'));
   let app: INestApplication<App>;
   let provider: ethers.JsonRpcProvider;
-  let contract: ethers.Contract;
   let address: string;
-  let idCommitment: string;
-  let serverPublicKey: { x: string; y: string };
-  let body: Record<string, any>;
-  let ticket: RefundTicket;
+  let cMax: bigint;
 
-  const prove = async (kind: 'request' | 'refund', input: object) => {
-    const file = join(workDir, `${kind}.json`);
-    writeFileSync(file, JSON.stringify(input));
-    const { stdout } = await run('pnpm', ['-s', 'prove', kind, file], {
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    return JSON.parse(stdout) as Record<string, any>;
+  const contractFor = (key: string) =>
+    new ethers.Contract(
+      address,
+      NOTE_ABI,
+      new ethers.NonceManager(new ethers.Wallet(key, provider)),
+    );
+
+  const open = async (key: string): Promise<NoteFile> => {
+    const note = newNote(RPC_URL, address);
+    await (
+      await contractFor(key).deposit(await commitmentOf(note), {
+        value: DEPOSIT,
+      })
+    ).wait();
+    return note;
+  };
+
+  const status = async (note: NoteFile) =>
+    Number(
+      (await contractFor(SERVER_KEY).getNote(await commitmentOf(note)))[3],
+    );
+
+  const post = (body: object) =>
+    request(app.getHttpServer()).post('/longjing/request').send(body);
+
+  /** Proves, sends and folds the response in */
+  const serve = async (note: NoteFile, payload: string) => {
+    const proved = await proveRequest(note, payload);
+    const { body } = await post(proved.body).expect(200);
+    return {
+      note: await receive(proved.note, body as RequestResponse),
+      body: proved.body,
+      response: body as RequestResponse,
+    };
+  };
+
+  const initiate = async (key: string, args: WithdrawalArgs) => {
+    const tx = (await contractFor(key).initiateWithdrawal(
+      args.commitment,
+      args.recipient,
+      args.refundKey,
+      args.proof,
+      args.nullifier,
+      args.signalY,
+      args.payout,
+    )) as ethers.ContractTransactionResponse;
+    await tx.wait();
+  };
+
+  const passWindow = async () => {
+    await provider.send('evm_increaseTime', [CHALLENGE_WINDOW]);
+    await provider.send('evm_mine', []);
   };
 
   beforeAll(async () => {
-    // No request cache, so balances read right after a transaction are fresh
+    // No request cache, so state read right after a transaction is fresh
     provider = new ethers.JsonRpcProvider(RPC_URL, undefined, {
       cacheTimeout: -1,
     });
@@ -73,7 +112,6 @@ describe('Deposit -> request -> refund (e2e)', () => {
       );
     }
 
-    // The contract first, so the app reads its root from the chain
     const { stdout } = await run(
       'forge',
       [
@@ -83,27 +121,27 @@ describe('Deposit -> request -> refund (e2e)', () => {
         RPC_URL,
         '--broadcast',
       ],
-      { cwd: 'contracts', maxBuffer: 16 * 1024 * 1024 },
+      {
+        cwd: 'contracts',
+        env: { ...process.env, NODE_ENV: 'test' },
+        maxBuffer: 16 * 1024 * 1024,
+      },
     );
     address = /LongjingCredits deployed at: (0x[a-fA-F0-9]{40})/.exec(
       stdout,
     )![1];
-    contract = new ethers.Contract(
-      address,
-      ABI,
-      new ethers.Wallet(ALICE_KEY, provider),
-    );
+    cMax = (await contractFor(SERVER_KEY).C_MAX()) as bigint;
 
     Object.assign(process.env, {
       ANVIL_RPC_URL: RPC_URL,
       ZK_CONTRACT_ADDRESS: address,
-      ZK_CIRCUIT: 'api_request_local',
+      SERVER_TX_PRIVATE_KEY: SERVER_KEY,
       DATA_DIR: ':memory:',
       KMS_URL: 'http://localhost:3001',
       ADMIN_MLKEM_PUBLIC_KEY: Buffer.alloc(1568).toString('base64'),
       ADMIN_MLKEM_PRIVATE_KEY: Buffer.alloc(3168).toString('base64'),
     });
-    // Mock responses: no cost, and the refund does not depend on a model
+    // Mock responses, priced like any other
     delete process.env.ANTHROPIC_API_KEY;
 
     const moduleFixture = await Test.createTestingModule({
@@ -118,118 +156,141 @@ describe('Deposit -> request -> refund (e2e)', () => {
       }),
     );
     await app.init();
-  }, 120000);
+  }, 180000);
 
   afterAll(async () => {
     await app?.close();
     process.env = { ...env };
   });
 
-  it('Alice deposits with her secret', async () => {
-    const poseidon = await buildPoseidon();
-    idCommitment = ethers.toBeHex(
-      poseidon.F.toObject(poseidon([BigInt(SECRET_KEY)])),
-      32,
-    );
+  describe('Alice: two requests, then an honest exit', () => {
+    let note: NoteFile;
+    let first: Awaited<ReturnType<typeof serve>>;
 
-    await (await contract.deposit(idCommitment, { value: DEPOSIT })).wait();
+    it('registers the server key the server signs with', async () => {
+      const { body: key } = await request(app.getHttpServer())
+        .get('/longjing/server-pubkey')
+        .expect(200);
+      const [x, y] = (await contractFor(SERVER_KEY).serverPublicKey()) as [
+        string,
+        string,
+      ];
+      const served = key as { x: string; y: string };
+      expect([BigInt(served.x), BigInt(served.y)]).toEqual([
+        BigInt(x),
+        BigInt(y),
+      ]);
+    });
 
-    const deposit = await contract.getDeposit(idCommitment);
-    expect(deposit.active).toBe(true);
-    expect(deposit.rlnStake + deposit.policyStake).toBe(DEPOSIT);
+    it('serves a first request from the genesis accumulator', async () => {
+      note = await open(USER_KEYS[0]);
+      first = await serve(note, 'What does 苟全性命於亂世 mean?');
+      note = first.note;
+
+      expect(note.opening.index).toBe('1');
+      expect(BigInt(first.response.refund)).toBeGreaterThan(0n);
+      expect(BigInt(first.response.refund)).toBeLessThanOrEqual(cMax);
+    }, 180000);
+
+    it('sends nothing that identifies the note, its deposit or its index', async () => {
+      const commitment = BigInt(await commitmentOf(note));
+      const values = JSON.stringify(first.body);
+      for (const secret of [commitment, DEPOSIT, BigInt(note.secretKey)]) {
+        expect(values).not.toContain(secret.toString());
+      }
+      expect(Object.keys(first.body).sort()).toEqual(
+        [
+          'accumulator',
+          'merkleRoot',
+          'nonce',
+          'nullifier',
+          'payload',
+          'proof',
+          'signal',
+        ].sort(),
+      );
+    });
+
+    it('answers a retry with the same accumulator', async () => {
+      const { body } = await post(first.body).expect(200);
+      expect(body.accumulator).toEqual(first.response.accumulator);
+    }, 60000);
+
+    it('serves a second request from the signed accumulator', async () => {
+      const second = await serve(note, 'Who wrote the Chu Shi Biao?');
+      note = second.note;
+
+      expect(note.opening.index).toBe('2');
+      expect(second.body.accumulator).not.toEqual(first.body.accumulator);
+      expect(second.body.nullifier).not.toBe(first.body.nullifier);
+    }, 180000);
+
+    it('exits with D + R − n · C_MAX after the window', async () => {
+      const recipient = ethers.Wallet.createRandom().address;
+      const args = await proveWithdrawal(note, recipient);
+      await initiate(USER_KEYS[0], args);
+      expect(await status(note)).toBe(Status.Exiting);
+
+      await passWindow();
+      await (
+        await contractFor(USER_KEYS[1]).finalizeWithdrawal(args.commitment)
+      ).wait();
+
+      const expected = DEPOSIT + BigInt(note.opening.refunds) - 2n * cMax;
+      expect(BigInt(args.payout)).toBe(expected);
+      expect(await provider.getBalance(recipient)).toBe(expected);
+      expect(await status(note)).toBe(Status.Closed);
+    }, 180000);
+
+    it('can make no request once closed', async () => {
+      await expect(proveRequest(note, 'One more?')).rejects.toThrow(
+        'is not active',
+      );
+    });
   });
 
-  it('proves membership with that secret against the on-chain root', async () => {
-    const { body: key } = await request(app.getHttpServer())
-      .get('/longjing/server-pubkey')
-      .expect(200);
-    serverPublicKey = key;
-    const onChain = await contract.serverPublicKey();
-    expect(BigInt(key.x)).toBe(BigInt(onChain.x));
-    expect(BigInt(key.y)).toBe(BigInt(onChain.y));
+  describe('Bob: a double-spend', () => {
+    it('reveals k, and the server slashes the note', async () => {
+      const note = await open(USER_KEYS[1]);
+      const a = await proveRequest(note, 'first payload');
+      const b = await proveRequest(note, 'second payload');
+      expect(b.body.nullifier).toBe(a.body.nullifier);
 
-    body = await prove('request', {
-      secretKey: SECRET_KEY,
-      ticketIndex: '0x00',
-      payload: PAYLOAD,
-      maxCost: MAX_COST.toString(),
-      rpcUrl: RPC_URL,
-      contract: address,
-      serverPublicKey,
-      circuit: 'api_request_local',
-    });
+      await post(a.body).expect(200);
+      const { body } = await post(b.body).expect(403);
+      expect(body.message).toContain('Double-spend detected');
 
-    expect(body.merkleRoot).toBe(await contract.merkleRoot());
-    expect(body.idCommitment).toBe(idCommitment);
-  }, 120000);
-
-  it('accepts the nullifier once and rejects a replay', async () => {
-    const { body: response } = await request(app.getHttpServer())
-      .post('/longjing/request')
-      .send(body)
-      .expect(200);
-    ticket = response.refundTicket;
-    expect(BigInt(ticket.value)).toBe(MAX_COST - BigInt(response.actualCost));
-    expect(BigInt(ticket.value)).toBeGreaterThan(0n);
-
-    const { body: replay } = await request(app.getHttpServer())
-      .post('/longjing/request')
-      .send(body)
-      .expect(403);
-    expect(replay.message).toBe('Nullifier already used');
-  }, 120000);
-
-  it('signs the refund ticket with serverPublicKey', async () => {
-    const eddsa = await buildEddsa();
-    const F = eddsa.babyJub.F;
-    const message = eddsa.poseidon([
-      BigInt(idCommitment),
-      BigInt(ticket.nullifier),
-      BigInt(ticket.value),
-      BigInt(ticket.timestamp),
-    ]);
-
-    expect(
-      eddsa.verifyPoseidon(
-        message,
-        {
-          R8: [
-            F.e(BigInt(ticket.signature.R8x)),
-            F.e(BigInt(ticket.signature.R8y)),
-          ],
-          S: BigInt(ticket.signature.S),
-        },
-        [F.e(BigInt(serverPublicKey.x)), F.e(BigInt(serverPublicKey.y))],
-      ),
-    ).toBe(true);
+      expect(await status(note)).toBe(Status.Slashed);
+    }, 180000);
   });
 
-  it('redeems the refund once with a real proof, and rejects a second redemption', async () => {
-    const recipient = ethers.Wallet.createRandom().address;
-    const refund = await prove('refund', {
-      secretKey: SECRET_KEY,
-      ticketIndex: '0x00',
-      payload: PAYLOAD,
-      recipient,
-      refundTicket: ticket,
-      serverPublicKey,
-    });
-    const args = [
-      ethers.toBeHex(BigInt(refund.idCommitment), 32),
-      ethers.toBeHex(BigInt(refund.nullifier), 32),
-      refund.value,
-      recipient,
-      refund.proof,
-      refund.publicSignals,
-    ];
+  describe('Carol: an exit that understates usage', () => {
+    it('is slashed by the server during the window', async () => {
+      let note = await open(USER_KEYS[2]);
+      note = (await serve(note, 'first')).note;
+      // Index 1 is served, but Carol drops the response and exits claiming n = 1
+      const unanswered = await proveRequest(note, 'second');
+      await post(unanswered.body).expect(200);
 
-    await (await contract.redeemRefund(...args)).wait();
-    expect(await provider.getBalance(recipient)).toBe(BigInt(ticket.value));
+      const args = await proveWithdrawal(
+        note,
+        ethers.Wallet.createRandom().address,
+        1n,
+      );
+      await initiate(USER_KEYS[2], args);
 
-    await expect(
-      contract.redeemRefund.staticCall(...args),
-    ).rejects.toMatchObject({
-      revert: { name: 'RefundAlreadyRedeemed' },
-    });
-  }, 120000);
+      const deadline = Date.now() + 30000;
+      while ((await status(note)) !== Status.Slashed) {
+        if (Date.now() > deadline) throw new Error('The exit was not slashed');
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      await passWindow();
+      await expect(
+        contractFor(USER_KEYS[2]).finalizeWithdrawal.staticCall(
+          args.commitment,
+        ),
+      ).rejects.toThrow();
+    }, 180000);
+  });
 });
