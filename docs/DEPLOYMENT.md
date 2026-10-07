@@ -6,6 +6,7 @@
 
 The steps depend on each other: the contract's constructor needs keys that exist only once the enclave has booted, and the enclave needs the contract's address before it boots. Once the contracts belong to the timelock, every change waits 7 days, and a `LongjingCredits` change 14. Done out of order, a step means redeploying the contract or waiting through the timelock, so follow them in this order.
 
+0. [Run the trusted setup](#0-run-the-trusted-setup)
 1. [Pin the ZK artifacts](#1-pin-the-zk-artifacts)
 2. [Pin the image](#2-pin-the-image)
 3. [Pick the contract address](#3-pick-the-contract-address)
@@ -17,6 +18,12 @@ The steps depend on each other: the contract's constructor needs keys that exist
 9. [Check the deployment](#9-check-the-deployment)
 10. [Publish](#10-publish)
 
+### 0. Run the trusted setup
+
+A deployment meant to hold value needs `request` and `settlement` keys from a public multi-party phase 2 with a published transcript ([#135](https://github.com/w3hc/longjing/issues/135)). The `circuits-v2` keys come from one contribution, by the maintainer, and are for testnets only ([TRUSTED_SETUP_CEREMONY.md](./TRUSTED_SETUP_CEREMONY.md#for-this-project)).
+
+The ceremony comes first because its keys end up in two places that are slow to change once deployed. The image loads `request.zkey` and its verification key, so a new key means a new release, behind the 7-day timelock. `SettlementVerifier` embeds the settlement verification key, so a new key means a verifier change behind the timelock and `ADMIN_DELAY`, 14 days, and every depositor switching to the new `settlement.zkey`.
+
 ### 1. Pin the ZK artifacts
 
 ```bash
@@ -24,7 +31,7 @@ pnpm circuits:fetch    # checks every file against the sha256 in circuits/artifa
 pnpm check:verifiers   # SettlementVerifier.sol embeds the pinned verification key
 ```
 
-The artifacts come from the [`circuits-v2`](https://github.com/w3hc/longjing/releases/tag/circuits-v2) release, and [`circuits/artifacts.json`](../circuits/artifacts.json) pins their hashes. The image checks the same hashes at build time ([DOCKER.md](./DOCKER.md#checking-a-digest)).
+The artifacts come from the [`circuits-v2`](https://github.com/w3hc/longjing/releases/tag/circuits-v2) release, and [`circuits/artifacts.json`](../circuits/artifacts.json) pins their hashes. After a ceremony, `artifacts.json` points at the release holding its keys, `SettlementVerifier.sol` is regenerated from them, and `pnpm check:verifiers` must pass against both. The image checks the same hashes at build time ([DOCKER.md](./DOCKER.md#checking-a-digest)).
 
 A depositor exits with `settlement_js/settlement.wasm` and `settlement.zkey` alone, without the server. Publish both next to the deployment, for example as a mirror of the release, with their sha256 from `artifacts.json`, so that a user can exit from any mirror or a local copy and check what they load. There is no standalone withdrawal page yet ([#157](https://github.com/w3hc/longjing/issues/157)): until there is, the exit is `pnpm prove withdrawal`, from a checkout of this repository ([API_REFERENCE.md](./API_REFERENCE.md#3-withdraw-without-the-server)).
 
@@ -116,6 +123,7 @@ Publish what a user needs to check the deployment and to exit without it:
 - the gateway URL, the `DstackApp` and `LongjingCredits` addresses, and the app's creation block
 - the release, its image digest and the compose hash
 - the mirrors of `settlement_js/settlement.wasm` and `settlement.zkey`, with their sha256
+- the trusted setup transcript, so anyone can check the keys came from it
 
 ### Known gap
 
