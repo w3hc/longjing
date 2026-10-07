@@ -34,9 +34,6 @@ export function payloadDigest(payload: string): bigint {
   return BigInt('0x' + digest) % BN254_SCALAR_FIELD;
 }
 
-/** @deprecated x without a nonce, until the request path moves to payloadSignalX */
-export const payloadToSignalX = payloadDigest;
-
 let poseidon: Promise<(inputs: bigint[]) => bigint> | undefined;
 
 function poseidonHash(): Promise<(inputs: bigint[]) => bigint> {
@@ -71,17 +68,4 @@ export async function signalXMatchesRequest(
   }
   if (rho >= BN254_SCALAR_FIELD) return false;
   return x === (await payloadSignalX(payload, rho));
-}
-
-export function signalXMatchesPayload(
-  signalX: string,
-  payload: string,
-): boolean {
-  let x: bigint;
-  try {
-    x = parseFieldElement(signalX);
-  } catch {
-    return false;
-  }
-  return x === payloadToSignalX(payload);
 }

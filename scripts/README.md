@@ -17,13 +17,15 @@ scripts/
 
 ### `client/prove.ts`
 
-Generates proofs on the client, so the secret key never leaves the user's machine:
+The client side of a note, built on [client/note.ts](client/note.ts). The secret key and the accumulator opening stay in a note file on the user's machine:
 
-- `pnpm prove request <input.json>`: a request proof against the on-chain Merkle root, printed as the body for `POST /longjing/request`
-- `pnpm prove refund <input.json>`: a refund redemption proof for a refund ticket
-- `pnpm prove slashing <input.json>`: a double-spend slashing proof from two signals with the same nullifier. It needs no secret key, so anyone holding the two signals can make it
+- `pnpm prove note <note.json> <rpcUrl> <contract>`: a new note, and the commitment to deposit
+- `pnpm prove request <note.json> <payload>`: the body for `POST /longjing/request`, against a recent onchain root
+- `pnpm prove receive <note.json> <response.json>`: checks the server's signed accumulator and moves the note to its next index
+- `pnpm prove withdrawal <note.json> <recipient> [n]`: the arguments for `initiateWithdrawal`, with no server involved
+- `pnpm prove slashing <signals.json>`: the secret key two signals with the same nullifier reveal, for `slash(k)`
 
-The input formats are in the file's header.
+Usage is in the file's header and in [docs/API_REFERENCE.md](../docs/API_REFERENCE.md#client-implementation-guide).
 
 ## Demo
 
@@ -37,19 +39,15 @@ Scripts for circuit compilation and trusted setup ceremony.
 
 ### `setup/compile-production-circuits.sh`
 
-Compiles production ZK circuits with Groth16 proofs.
+Compiles the settlement circuit and exports `SettlementVerifier.sol`.
 
 ### `setup/run-trusted-setup.sh`
 
-Runs the trusted setup ceremony for production circuits.
+Runs a local, single-machine setup for `request` and `settlement`, for experiments only.
 
 ## Deploy Scripts
 
 Scripts for generating Solidity contracts.
-
-### `deploy/add-verifier-wrappers.sh`
-
-Adds Groth16 verifier wrapper contracts to Solidity.
 
 ### `deploy/generate-poseidon-contract.js`
 
@@ -87,15 +85,15 @@ See [docs/TEE_SETUP.md](../docs/TEE_SETUP.md) for production verification.
 
 ### `testing/compute-poseidon.ts`
 
-Computes Poseidon hash for identity commitments.
+Computes a Poseidon hash, such as a note's commitment.
 
 ### `testing/generate-admin-keypair.ts`
 
 Generates ML-KEM-1024 admin keypair for secret management.
 
-### `testing/generate-proof.ts`
+### `testing/generate-settlement-fixtures.ts`
 
-Generates proofs with the simplified `api_credit_proof_test` circuit, against a zero Merkle root. The server refuses them unless it runs with `ZK_CIRCUIT=api_credit_proof_test`. For a proof the server accepts, use `pnpm prove request`.
+Writes `contracts/test/fixtures/settlement.json`, real settlement proofs the Foundry tests verify with the real `SettlementVerifier`. Run it after changing the settlement circuit or its keys.
 
 ## Running Tests
 
@@ -116,4 +114,4 @@ pnpm format:check
 pnpm lint:check
 ```
 
-See [test/app.e2e-spec.ts](../test/app.e2e-spec.ts) for the main flow test.
+See [test/app.e2e-spec.ts](../test/app.e2e-spec.ts) for the settlement test.
