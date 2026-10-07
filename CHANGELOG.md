@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/SETTLEMENT.md`, the design for settling credits and making requests unlinkable: the deposit amount bound into the leaf, a constant `C_max`, refunds accumulated in a server-signed commitment, withdrawal net of spending after a challenge window, slashing by revealed key with a fixed bounty, and no policy stake. Nothing is implemented yet ([#134](https://github.com/w3hc/longjing/issues/134)).
 - `pnpm prove slashing` makes a double-spend slashing proof from two signals with the same nullifier, with no secret key ([#158](https://github.com/w3hc/longjing/issues/158)).
 - `pnpm demo --gateway <url> --contract <address> --rpc <url>` runs the demo against an existing deployment instead of Anvil, paying from `DEMO_PRIVATE_KEY` ([#158](https://github.com/w3hc/longjing/issues/158)).
 - `pnpm check:verifiers` fails on any pinned verification key where `vk_delta_2` equals `vk_gamma_2`, which would let anyone forge proofs from the public key alone. A fixture under `scripts/testing/fixtures/` shows it failing. Jest now also runs specs under `scripts/` ([#152](https://github.com/w3hc/longjing/issues/152)).
