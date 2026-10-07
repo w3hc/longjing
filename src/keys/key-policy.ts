@@ -12,6 +12,7 @@ import { isProd } from '../config/profile';
 export const KEY_MATERIAL_ENV = [
   'ADMIN_MLKEM_PRIVATE_KEY',
   'OPERATOR_PRIVATE_KEY',
+  'SERVER_TX_PRIVATE_KEY',
   'TLS_KEY_PATH',
   'TLS_CERT_PATH',
 ] as const;

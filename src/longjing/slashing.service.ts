@@ -25,7 +25,7 @@ export class SlashingService {
 
   /**
    * Shares BlockchainService's RPC and signer, so slashing follows the
-   * profile: the derived transaction signer in prod, ANVIL_PRIVATE_KEY in
+   * profile: the derived transaction signer in prod, SERVER_TX_PRIVATE_KEY in
    * local.
    */
   constructor(private readonly blockchain: BlockchainService) {}

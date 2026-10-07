@@ -4,6 +4,7 @@ describe('assertNoKeyMaterialInEnv', () => {
   it.each([
     'ADMIN_MLKEM_PRIVATE_KEY',
     'OPERATOR_PRIVATE_KEY',
+    'SERVER_TX_PRIVATE_KEY',
     'TLS_KEY_PATH',
     'TLS_CERT_PATH',
   ])('refuses %s in production', (name) => {

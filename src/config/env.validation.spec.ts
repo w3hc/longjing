@@ -100,7 +100,7 @@ describe('Environment Validation', () => {
       const result = validateEnvironment({
         NODE_ENV: 'development',
         ANVIL_RPC_URL: 'http://127.0.0.1:8545',
-        ANVIL_PRIVATE_KEY:
+        SERVER_TX_PRIVATE_KEY:
           '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
         ZK_CONTRACT_ADDRESS: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
       });
@@ -119,12 +119,22 @@ describe('Environment Validation', () => {
 
     it.each([
       ['ANVIL_RPC_URL', 'http://127.0.0.1:8545'],
-      ['ANVIL_PRIVATE_KEY', '0x01'],
+      ['SERVER_TX_PRIVATE_KEY', '0x01'],
       ['DSTACK_SIMULATOR_ENDPOINT', '/tmp/dstack.sock'],
     ])('prod refuses %s', (name, value) => {
       expect(() => validateEnvironment({ ...PROD, [name]: value })).toThrow(
         `NODE_ENV=production refuses ${name}`,
       );
+    });
+
+    it('prod refuses SERVER_TX_PRIVATE_KEY under the compose opt-out', () => {
+      expect(() =>
+        validateEnvironment({
+          ...PROD,
+          ALLOW_KEYS_OUTSIDE_ENCLAVE: 'true',
+          SERVER_TX_PRIVATE_KEY: '0x01',
+        }),
+      ).toThrow('NODE_ENV=production refuses SERVER_TX_PRIVATE_KEY');
     });
 
     it.each([
@@ -142,11 +152,11 @@ describe('Environment Validation', () => {
       expect(() =>
         validateEnvironment({
           NODE_ENV: 'production',
-          ANVIL_PRIVATE_KEY:
+          SERVER_TX_PRIVATE_KEY:
             '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
         }),
       ).toThrow(
-        /requires ETHEREUM_RPC_URLS, ZK_CONTRACT_ADDRESS\n.*refuses ANVIL_PRIVATE_KEY\n.*placeholder values in ANVIL_PRIVATE_KEY/,
+        /requires ETHEREUM_RPC_URLS, ZK_CONTRACT_ADDRESS\n.*refuses SERVER_TX_PRIVATE_KEY\n.*placeholder values in SERVER_TX_PRIVATE_KEY/,
       );
     });
   });

@@ -5,7 +5,7 @@
 for (const name of [
   'ZK_CONTRACT_ADDRESS',
   'ANVIL_RPC_URL',
-  'ANVIL_PRIVATE_KEY',
+  'SERVER_TX_PRIVATE_KEY',
   'ETHEREUM_RPC_URLS',
 ]) {
   delete process.env[name];

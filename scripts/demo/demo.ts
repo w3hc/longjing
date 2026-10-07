@@ -380,7 +380,7 @@ async function startServer(contract: string): Promise<INestApplication> {
   });
   for (const name of [
     'ANTHROPIC_API_KEY',
-    'ANVIL_PRIVATE_KEY',
+    'SERVER_TX_PRIVATE_KEY',
     'ETHEREUM_RPC_URLS',
     'DSTACK_SIMULATOR_ENDPOINT',
   ]) {

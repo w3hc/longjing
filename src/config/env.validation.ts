@@ -42,7 +42,7 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
-  ANVIL_PRIVATE_KEY?: string;
+  SERVER_TX_PRIVATE_KEY?: string;
 
   @IsOptional()
   @IsInt()
@@ -59,7 +59,7 @@ const PROD_REQUIRED = ['ETHEREUM_RPC_URLS', 'ZK_CONTRACT_ADDRESS'] as const;
 
 const PROD_REFUSED = [
   'ANVIL_RPC_URL',
-  'ANVIL_PRIVATE_KEY',
+  'SERVER_TX_PRIVATE_KEY',
   'DSTACK_SIMULATOR_ENDPOINT',
 ] as const;
 
