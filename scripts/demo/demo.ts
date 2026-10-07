@@ -8,8 +8,13 @@
  *   anvil        # in another terminal
  *   pnpm demo
  *
- * 1. Deploy LongjingCredits with NODE_ENV=development
- * 2. Start the server pointed at it
+ * Against an existing deployment instead of Anvil, with DEMO_PRIVATE_KEY set
+ * to the wallet that pays the deposits (and, optionally,
+ * DEMO_SLASHER_PRIVATE_KEY to slash from another wallet):
+ *   pnpm demo --gateway <url> --contract <address> --rpc <url> [--deposit <eth>]
+ *
+ * 1. Deploy LongjingCredits with NODE_ENV=development, or use the deployed one
+ * 2. Start the server pointed at it, or use the gateway
  * 3. Alice deposits with her secret
  * 4. She proves membership with that secret against the onchain root
  *    (pnpm prove request)
@@ -23,14 +28,17 @@
  *    and slashes her
  * 9. The demo checks that no request body it sent contains a secret key
  *
- * The server answers with mock responses: ANTHROPIC_API_KEY is ignored.
+ * On Anvil, the server answers with mock responses: ANTHROPIC_API_KEY is
+ * ignored. Against a deployment, the requests reach the provider and cost
+ * what they cost, and Alice's deposit stays locked until withdrawal works
+ * (#119).
  */
 
 import { execFile } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { promisify } from 'util';
+import { parseArgs, promisify } from 'util';
 import { randomBytes } from 'crypto';
 import { ethers } from 'ethers';
 import type { INestApplication } from '@nestjs/common';
@@ -49,7 +57,6 @@ const ALICE_KEY =
 // Anvil account #2
 const BOB_KEY =
   '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a';
-const DEPOSIT = ethers.parseEther('0.2');
 const MAX_COST = ethers.parseEther('0.05');
 const PAYLOAD = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
 const PAYLOAD_2 = 'Who wrote 出師表?';
@@ -67,6 +74,7 @@ const ABI = [
   'function slashingVerifier() view returns (address)',
   'function slashDoubleSpend(bytes32 _secretKey, bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[4] _publicSignals)',
   'function redeemRefund(bytes32 _idCommitment, bytes32 _nullifier, uint256 _refundValue, address _recipient, uint256[8] _proof, uint256[8] _publicSignals)',
+  'event DoubleSpendSlashed(bytes32 indexed secretKey, bytes32 indexed nullifier, address indexed slasher, uint256 reward)',
   'error RefundAlreadyRedeemed()',
 ];
 
@@ -241,6 +249,56 @@ function publicFields(body: Record<string, unknown>): Map<string, string> {
   return fields;
 }
 
+interface Options {
+  gateway?: string;
+  contract?: string;
+  rpcUrl: string;
+  circuit: 'api_request' | 'api_request_local';
+  aliceKey: string;
+  bobKey: string;
+  deposit: bigint;
+}
+
+function parseOptions(): Options {
+  const { values } = parseArgs({
+    options: {
+      gateway: { type: 'string' },
+      contract: { type: 'string' },
+      rpc: { type: 'string' },
+      deposit: { type: 'string', default: '0.2' },
+    },
+  });
+  const deposit = ethers.parseEther(values.deposit);
+  const { gateway, contract, rpc } = values;
+  if (!gateway && !contract && !rpc) {
+    return {
+      rpcUrl: RPC_URL,
+      circuit: 'api_request_local',
+      aliceKey: ALICE_KEY,
+      bobKey: BOB_KEY,
+      deposit,
+    };
+  }
+  if (!gateway || !contract || !rpc) {
+    throw new Error('--gateway, --contract and --rpc go together');
+  }
+  const aliceKey = process.env.DEMO_PRIVATE_KEY;
+  if (!aliceKey) {
+    throw new Error(
+      'Set DEMO_PRIVATE_KEY to the wallet that pays the deposits',
+    );
+  }
+  return {
+    gateway: gateway.replace(/\/$/, ''),
+    contract,
+    rpcUrl: rpc,
+    circuit: 'api_request',
+    aliceKey,
+    bobKey: process.env.DEMO_SLASHER_PRIVATE_KEY ?? aliceKey,
+    deposit,
+  };
+}
+
 const workDir = mkdtempSync(join(tmpdir(), 'longjing-demo-'));
 
 async function prove(kind: 'request' | 'refund' | 'slashing', input: object) {
@@ -348,25 +406,41 @@ async function verifyTicket(
 }
 
 async function main() {
-  const provider = new ethers.JsonRpcProvider(RPC_URL, undefined, {
+  const options = parseOptions();
+  const provider = new ethers.JsonRpcProvider(options.rpcUrl, undefined, {
     cacheTimeout: -1,
   });
   try {
     await provider.getBlockNumber();
   } catch {
-    throw new Error(`Anvil is not running on ${RPC_URL}. Start it with: anvil`);
+    throw new Error(
+      options.gateway
+        ? `Can't reach ${options.rpcUrl}`
+        : `Anvil is not running on ${RPC_URL}. Start it with: anvil`,
+    );
   }
 
-  step('1. Deploy the contract with NODE_ENV=development');
-  const address = await deploy();
-  console.log(`  LongjingCredits at ${address}`);
-  const alice = new ethers.Wallet(ALICE_KEY, provider);
+  let address: string;
+  let app: INestApplication | undefined;
+  let url: string;
+  if (options.gateway && options.contract) {
+    step('1. Use the deployed contract');
+    address = options.contract;
+    console.log(`  LongjingCredits at ${address} on ${options.rpcUrl}`);
+    step('2. Use the gateway');
+    url = options.gateway;
+    console.log(`  ${url}`);
+  } else {
+    step('1. Deploy the contract with NODE_ENV=development');
+    address = await deploy();
+    console.log(`  LongjingCredits at ${address}`);
+    step('2. Start the server pointed at it');
+    app = await startServer(address);
+    url = await app.getUrl();
+    console.log(`  Listening on ${url}`);
+  }
+  const alice = new ethers.Wallet(options.aliceKey, provider);
   const contract = new ethers.Contract(address, ABI, alice);
-
-  step('2. Start the server pointed at it');
-  const app = await startServer(address);
-  const url = await app.getUrl();
-  console.log(`  Listening on ${url}`);
   const sent: string[] = [];
   const post = (request: object) => {
     const json = JSON.stringify(request);
@@ -397,12 +471,15 @@ async function main() {
 
     step('3. Alice deposits with her secret');
     await verify(goals.deposit, async () => {
-      await (await contract.deposit(idCommitment, { value: DEPOSIT })).wait();
+      await (
+        await contract.deposit(idCommitment, { value: options.deposit })
+      ).wait();
       const deposit = await contract.getDeposit(idCommitment);
       check(
         goals.deposit,
         'the deposit is active onchain',
-        deposit.active && deposit.rlnStake + deposit.policyStake === DEPOSIT,
+        deposit.active &&
+          deposit.rlnStake + deposit.policyStake === options.deposit,
       );
     });
 
@@ -418,10 +495,10 @@ async function main() {
         ticketIndex: '0x00',
         payload: PAYLOAD,
         maxCost: MAX_COST.toString(),
-        rpcUrl: RPC_URL,
+        rpcUrl: options.rpcUrl,
         contract: address,
         serverPublicKey,
-        circuit: 'api_request_local',
+        circuit: options.circuit,
       });
       check(
         goals.root,
@@ -545,10 +622,10 @@ async function main() {
         ticketIndex: '0x01',
         payload: PAYLOAD_2,
         maxCost: MAX_COST.toString(),
-        rpcUrl: RPC_URL,
+        rpcUrl: options.rpcUrl,
         contract: address,
         serverPublicKey: required(serverPublicKey, 'server public key'),
-        circuit: 'api_request_local',
+        circuit: options.circuit,
       });
       const res = await post(second);
       if (res.status !== 200) {
@@ -572,7 +649,10 @@ async function main() {
         (await contract.getAllIdentityCommitments()) as string[]
       ).map((c) => BigInt(c).toString());
       const linked = [...publicFields(required(body, 'request proof'))]
-        .filter(([, v]) => commitments.includes(v) || v === DEPOSIT.toString())
+        .filter(
+          ([, v]) =>
+            commitments.includes(v) || v === options.deposit.toString(),
+        )
         .map(([k]) => k);
       check(
         goals.requestToDeposit,
@@ -586,9 +666,9 @@ async function main() {
     await verify(goals.slashing, async () => {
       const carol = newIdentity();
       secrets.push(carol.secret);
-      await (
-        await contract.deposit(carol.commitment, { value: DEPOSIT })
-      ).wait();
+      const deposited = (await (
+        await contract.deposit(carol.commitment, { value: options.deposit })
+      ).wait()) as ethers.TransactionReceipt;
       const before = await contract.getDeposit(carol.commitment);
       const requestFor = (payload: string) =>
         prove('request', {
@@ -596,10 +676,10 @@ async function main() {
           ticketIndex: '0x00',
           payload,
           maxCost: MAX_COST.toString(),
-          rpcUrl: RPC_URL,
+          rpcUrl: options.rpcUrl,
           contract: address,
           serverPublicKey: required(serverPublicKey, 'server public key'),
-          circuit: 'api_request_local',
+          circuit: options.circuit,
         });
       const first = await requestFor(PAYLOAD);
       const accepted = await post(first);
@@ -648,7 +728,21 @@ async function main() {
         )) as boolean,
       );
 
-      const bob = new ethers.Wallet(BOB_KEY, provider);
+      if (!(await contract.getDeposit(carol.commitment)).active) {
+        // A server with a transaction signer slashes as soon as it sees the double-spend
+        const slashed = await contract.queryFilter(
+          contract.filters.DoubleSpendSlashed(null, slash.nullifier),
+          deposited.blockNumber,
+        );
+        check(
+          goals.slashing,
+          'the server slashed the deposit before Bob could',
+          slashed.length > 0,
+          'the deposit is inactive but no DoubleSpendSlashed event was found',
+        );
+        return;
+      }
+      const bob = new ethers.Wallet(options.bobKey, provider);
       const balance = await provider.getBalance(bob.address);
       const receipt = (await (
         await (
@@ -695,7 +789,7 @@ async function main() {
       );
     });
   } finally {
-    await app.close();
+    await app?.close();
   }
 
   return report();
