@@ -7,31 +7,65 @@ anvil        # terminal 1
 pnpm demo    # terminal 2
 ```
 
-Then read the checklist. `pnpm demo` runs one user, Alice, from deposit to refund against Anvil, with real proofs and the real server:
+Then read the goal table. `pnpm demo` checks each of Longjing's goals against Anvil, with real proofs and the real server, and reports each one as **verified**, **not met** (with its issue) or **not checked yet**:
+
+Four actors take part:
+
+- **Alice**, an honest user
+- **The operator**, who runs the gateway and sees every request and its own database
+- **An observer**, who sees only the chain
+- **An attacker**, who holds a deposit and cheats
+
+The steps:
 
 1. Deploy `LongjingCredits` with `NODE_ENV=development`
 2. Start the server pointed at it
-3. Alice deposits 0.2 ETH with her secret
-4. She proves membership with that secret against the on-chain root (`pnpm prove request`)
-5. `POST /longjing/request`, then the same request again
-6. She proves the refund (`pnpm prove refund`), redeems it on chain to a fresh address, then tries again
+3. Alice deposits 0.2 ETH and sends a request (`pnpm prove request`)
+4. The attacker replays Alice's request
+5. Alice proves her refund (`pnpm prove refund`). The attacker tries to redeem it to their own address, both as is and with the proof's recipient signal rewritten. Then Alice redeems it to a fresh address and tries again
+6. Alice sends a second request
+7. The operator tries to link Alice's two requests to each other and to her deposit, from the request bodies and, on Anvil, from its own nullifier database
+8. The observer tries to link Alice's refund redemption to her deposit from the onchain events, and checks that the contract still holds every active stake
+9. The attacker deposits and reuses a ticket index with a different payload. The operator recovers the attacker's secret key from the two signals (`pnpm prove slashing`) and calls `slashDoubleSpend` from a wallet that is not `serverAddress`
+10. Alice checks that no request body contains a secret key
 
-Each item on the checklist is asserted, and the demo exits non-zero on the first one that fails:
+At v0.4.1 the table reads:
 
+| Goal | Status | Issue |
+|---|---|---|
+| A deposit is recorded onchain | verified | |
+| A request proof is against the onchain root | verified | |
+| A nullifier is accepted once, a replay is rejected | verified | |
+| A refund is `maxCost − actualCost`, signed by the key registered onchain, redeemable once | verified | |
+| A request can't be linked to the deposit | not met: every request publishes `idCommitment` and `initialDeposit`, and the operator's database stores `idCommitment` next to the nullifier | [#134](https://github.com/w3hc/longjing/issues/134) |
+| Two requests can't be linked to each other | not met, same fields | [#134](https://github.com/w3hc/longjing/issues/134) |
+| A refund redemption onchain can't be linked to the deposit | not met: `RefundRedeemed` publishes `idCommitment` | [#134](https://github.com/w3hc/longjing/issues/134) |
+| A refund can only be redeemed to the recipient in its proof | verified | |
+| Solvency is enforced | not met: after one refund, the contract holds less than the active stakes (LJ-01). D bound to the deposit (LJ-02) is not checked | [#134](https://github.com/w3hc/longjing/issues/134) |
+| A double-spend reveals `k` and anyone with the proof can slash the RLN stake | verified | |
+| The client sends nothing that contains the secret key | verified | |
+| The client verifies the attestation before sending anything | not checked yet | [#99](https://github.com/w3hc/longjing/issues/99), [#130](https://github.com/w3hc/longjing/issues/130) |
+| Protocol, pricing and refunds work with any provider | not checked yet | |
+| A depositor can withdraw without the server | not met, no check yet | [#119](https://github.com/w3hc/longjing/issues/119), [#157](https://github.com/w3hc/longjing/issues/157) |
+| Every depositor can exit if the operator and every host disappear | not met, no check yet | [#157](https://github.com/w3hc/longjing/issues/157), [#135](https://github.com/w3hc/longjing/issues/135) |
+
+The demo exits non-zero only when a goal expected to be verified is not. Known gaps are reported, not hidden, and a gap that starts passing prints a note to update its expected status in [scripts/demo/demo.ts](../scripts/demo/demo.ts). A passing run says nothing about the goals it reports as not met or not checked yet.
+
+On Anvil, the server answers with mock responses: `ANTHROPIC_API_KEY` is ignored, so the demo costs nothing.
+
+### Against a deployment
+
+```bash
+DEMO_PRIVATE_KEY=0x... pnpm demo --gateway https://<gateway> --contract 0x<LongjingCredits> --rpc https://<rpc> [--deposit 0.2]
 ```
-  ✓ the deposit is active on chain
-  ✓ the server's refund key is the one registered on chain
-  ✓ the proof's root matches the chain
-  ✓ the proof is for the deposited secret
-  ✓ the nullifier is accepted once
-  ✓ a replay is rejected
-  ✓ the refund is maxCost minus the actual cost
-  ✓ the refund ticket signature verifies against serverPublicKey
-  ✓ the balance changes by the refund
-  ✓ a second redemption reverts
-```
 
-The server answers with mock responses: `ANTHROPIC_API_KEY` is ignored, so the demo costs nothing.
+The demo skips the deployment and the local server, proves with `api_request`, and pays two deposits from the `DEMO_PRIVATE_KEY` wallet (at least `0.1` ETH each, so two requests fit under `maxCost = 0.05` ETH). Before you run it:
+
+- The requests reach the provider and cost what they cost.
+- The attacker's deposit goes to the slasher: the `DEMO_SLASHER_PRIVATE_KEY` wallet, or the `DEMO_PRIVATE_KEY` wallet if that is unset. Alice's deposit stays locked until withdrawal works ([#119](https://github.com/w3hc/longjing/issues/119)).
+- A server with a transaction signer slashes the double-spend itself before it answers. The demo then checks for the `DoubleSpendSlashed` event instead of slashing from the slasher wallet.
+- The operator's database check runs only on Anvil, where the server runs in the demo's process.
+- The demo doesn't verify the attestation yet, so it can't tell that the gateway runs in an enclave with `NODE_ENV=production`.
 
 ## Overview
 
@@ -230,7 +264,7 @@ All tests must pass before merging PRs.
 - ✅ Rate limiting mechanisms
 - ✅ EdDSA signature generation
 
-### Demo and Main Flow Test Validate:
+### Main Flow Test Validates:
 - ✅ A deposit, a request and a refund by the same user, with the same secret
 - ✅ The request proof's Merkle root is the on-chain root
 - ✅ A nullifier is accepted once, and a replay is rejected

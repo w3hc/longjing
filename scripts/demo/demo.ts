@@ -13,20 +13,28 @@
  * DEMO_SLASHER_PRIVATE_KEY to slash from another wallet):
  *   pnpm demo --gateway <url> --contract <address> --rpc <url> [--deposit <eth>]
  *
+ * Four actors:
+ * - Alice, an honest user
+ * - the operator, who runs the gateway and sees every request and its own
+ *   database
+ * - an observer, who sees only the chain
+ * - an attacker, who holds a deposit and cheats
+ *
  * 1. Deploy LongjingCredits with NODE_ENV=development, or use the deployed one
  * 2. Start the server pointed at it, or use the gateway
- * 3. Alice deposits with her secret
- * 4. She proves membership with that secret against the onchain root
- *    (pnpm prove request)
- * 5. POST /longjing/request, then replay it
- * 6. She proves the refund (pnpm prove refund), redeems it onchain, then
- *    tries again
- * 7. She sends a second request, and the demo compares what the two
- *    requests publish with each other and with her deposit
- * 8. Carol deposits and double-spends her first ticket. Bob, who only sees
- *    the two public signals, recovers her secret key (pnpm prove slashing)
- *    and slashes her
- * 9. The demo checks that no request body it sent contains a secret key
+ * 3. Alice deposits and sends a request (pnpm prove request)
+ * 4. The attacker replays Alice's request
+ * 5. Alice proves her refund (pnpm prove refund). The attacker tries to
+ *    redeem it to their own address, then Alice redeems it
+ * 6. Alice sends a second request
+ * 7. The operator tries to link Alice's requests to each other and to her
+ *    deposit
+ * 8. The observer tries to link Alice's refund to her deposit, and checks
+ *    that the contract still holds every active stake
+ * 9. The attacker deposits and double-spends a ticket. The operator recovers
+ *    their secret key from the two signals (pnpm prove slashing) and slashes
+ *    them from a wallet that is not serverAddress
+ * 10. Alice checks that no request body contains a secret key
  *
  * On Anvil, the server answers with mock responses: ANTHROPIC_API_KEY is
  * ignored. Against a deployment, the requests reach the provider and cost
@@ -54,13 +62,14 @@ const RPC_URL = 'http://127.0.0.1:8545';
 // Anvil account #1; #0 deploys
 const ALICE_KEY =
   '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
-// Anvil account #2
-const BOB_KEY =
+// Anvil account #2, a wallet of the operator's that is not serverAddress
+const SLASHER_KEY =
   '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a';
 const MAX_COST = ethers.parseEther('0.05');
 const PAYLOAD = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
 const PAYLOAD_2 = 'Who wrote 出師表?';
-const PAYLOAD_DOUBLE = 'What does 鞠躬盡瘁 mean?';
+const PAYLOAD_ATTACKER = 'What does 鞠躬盡瘁 mean?';
+const PAYLOAD_DOUBLE = 'What does 死而後已 mean?';
 // The same for every request at a given time, so they identify no one
 const SHARED_BY_DESIGN = new Set(['merkleRoot', 'maxCost']);
 const ISSUES = 'https://github.com/w3hc/longjing/issues';
@@ -71,11 +80,14 @@ const ABI = [
   'function getAllIdentityCommitments() view returns (bytes32[])',
   'function serverPublicKey() view returns (bytes32 x, bytes32 y)',
   'function getDeposit(bytes32 _idCommitment) view returns (tuple(bytes32 idCommitment, uint256 rlnStake, uint256 policyStake, uint256 timestamp, bool active))',
+  'function serverAddress() view returns (address)',
   'function slashingVerifier() view returns (address)',
   'function slashDoubleSpend(bytes32 _secretKey, bytes32 _nullifier, bytes32 _idCommitment, uint256[8] _proof, uint256[4] _publicSignals)',
   'function redeemRefund(bytes32 _idCommitment, bytes32 _nullifier, uint256 _refundValue, address _recipient, uint256[8] _proof, uint256[8] _publicSignals)',
+  'event RefundRedeemed(bytes32 indexed idCommitment, bytes32 indexed nullifier, uint256 amount, address indexed recipient)',
   'event DoubleSpendSlashed(bytes32 indexed secretKey, bytes32 indexed nullifier, address indexed slasher, uint256 reward)',
   'error RefundAlreadyRedeemed()',
+  'error InvalidProof()',
 ];
 
 const VERIFIER_ABI = [
@@ -127,13 +139,22 @@ const goals = {
     'not met',
     [134],
   ),
+  refundToDeposit: goal(
+    "A refund redemption onchain can't be linked to the deposit",
+    'not met',
+    [134],
+  ),
+  refundRecipient: goal(
+    'A refund can only be redeemed to the recipient in its proof',
+    'verified',
+  ),
   solvency: goal(
     'Solvency is enforced: spending is deducted, D is bound to the deposit',
     'not met',
     [134],
   ),
   slashing: goal(
-    'A double-spend reveals k and anyone can slash the RLN stake',
+    'A double-spend reveals k and anyone with the proof can slash the RLN stake',
     'verified',
   ),
   secretKey: goal(
@@ -192,6 +213,19 @@ function required<T>(value: T | undefined, what: string): T {
   if (value === undefined)
     throw new Error(`no ${what}, an earlier goal failed`);
   return value;
+}
+
+/** The custom error name or require message a call reverts with, or '' if it succeeds */
+async function revertOf(call: Promise<unknown>): Promise<string> {
+  try {
+    await call;
+    return '';
+  } catch (error) {
+    const revert = (error as { revert?: { name: string; args: unknown[] } })
+      .revert;
+    if (!revert) throw error;
+    return revert.name === 'Error' ? String(revert.args[0]) : revert.name;
+  }
 }
 
 function step(title: string): void {
@@ -255,7 +289,7 @@ interface Options {
   rpcUrl: string;
   circuit: 'api_request' | 'api_request_local';
   aliceKey: string;
-  bobKey: string;
+  slasherKey: string;
   deposit: bigint;
 }
 
@@ -275,7 +309,7 @@ function parseOptions(): Options {
       rpcUrl: RPC_URL,
       circuit: 'api_request_local',
       aliceKey: ALICE_KEY,
-      bobKey: BOB_KEY,
+      slasherKey: SLASHER_KEY,
       deposit,
     };
   }
@@ -294,7 +328,7 @@ function parseOptions(): Options {
     rpcUrl: rpc,
     circuit: 'api_request',
     aliceKey,
-    bobKey: process.env.DEMO_SLASHER_PRIVATE_KEY ?? aliceKey,
+    slasherKey: process.env.DEMO_SLASHER_PRIVATE_KEY ?? aliceKey,
     deposit,
   };
 }
@@ -468,8 +502,20 @@ async function main() {
     };
     const { secret: secretKey, commitment: idCommitment } = newIdentity();
     const secrets = [secretKey];
+    let serverPublicKey: { x: string; y: string } | undefined;
+    const requestFor = (secret: string, ticketIndex: string, payload: string) =>
+      prove('request', {
+        secretKey: secret,
+        ticketIndex,
+        payload,
+        maxCost: MAX_COST.toString(),
+        rpcUrl: options.rpcUrl,
+        contract: address,
+        serverPublicKey: required(serverPublicKey, 'server public key'),
+        circuit: options.circuit,
+      });
 
-    step('3. Alice deposits with her secret');
+    step('3. Alice deposits and sends a request (pnpm prove request)');
     await verify(goals.deposit, async () => {
       await (
         await contract.deposit(idCommitment, { value: options.deposit })
@@ -482,50 +528,38 @@ async function main() {
           deposit.rlnStake + deposit.policyStake === options.deposit,
       );
     });
-
-    step('4. Alice proves membership with that secret (pnpm prove request)');
-    let serverPublicKey: { x: string; y: string } | undefined;
     let body: Record<string, any> | undefined;
     await verify(goals.root, async () => {
       serverPublicKey = (await (
         await fetch(`${url}/longjing/server-pubkey`)
       ).json()) as { x: string; y: string };
-      body = await prove('request', {
-        secretKey,
-        ticketIndex: '0x00',
-        payload: PAYLOAD,
-        maxCost: MAX_COST.toString(),
-        rpcUrl: options.rpcUrl,
-        contract: address,
-        serverPublicKey,
-        circuit: options.circuit,
-      });
+      body = await requestFor(secretKey, '0x00', PAYLOAD);
       check(
         goals.root,
         "the proof's root matches the chain",
         body.merkleRoot === (await contract.merkleRoot()),
       );
     });
-
-    step('5. POST /longjing/request, then replay it');
     let response:
       { actualCost: string; refundTicket: RefundTicket } | undefined;
     await verify(goals.nullifier, async () => {
-      const request = required(body, 'request proof');
-      const send = () => post(request);
-      const first = await send();
-      const json = (await first.json()) as typeof response;
+      const res = await post(required(body, 'request proof'));
+      const json = (await res.json()) as typeof response;
       check(
         goals.nullifier,
         'the nullifier is accepted once',
-        first.status === 200,
-        `HTTP ${first.status} ${JSON.stringify(json)}`,
+        res.status === 200,
+        `HTTP ${res.status} ${JSON.stringify(json)}`,
       );
-      if (first.status === 200) response = json;
-      const replay = await send();
+      if (res.status === 200) response = json;
+    });
+
+    step("4. The attacker replays Alice's request");
+    await verify(goals.nullifier, async () => {
+      const replay = await post(required(body, 'request proof'));
       check(
         goals.nullifier,
-        'a replay is rejected',
+        'the replay is rejected',
         replay.status === 403 &&
           ((await replay.json()) as { message: string }).message ===
             'Nullifier already used',
@@ -533,7 +567,10 @@ async function main() {
       );
     });
 
-    step('6. Alice proves the refund (pnpm prove refund) and redeems it');
+    step(
+      '5. Alice proves her refund, the attacker tries to take it, Alice redeems it',
+    );
+    let redemption: ethers.TransactionReceipt | undefined;
     await verify(goals.refund, async () => {
       const key = required(serverPublicKey, 'server public key');
       const { actualCost, refundTicket: ticket } = required(
@@ -569,29 +606,60 @@ async function main() {
         refundTicket: ticket,
         serverPublicKey: key,
       });
-      const args = [
+      const args = (to: string) => [
         ethers.toBeHex(BigInt(refund.idCommitment), 32),
         ethers.toBeHex(BigInt(refund.nullifier), 32),
         refund.value,
-        recipient,
+        to,
         refund.proof,
         refund.publicSignals,
       ];
+
+      // Front-running: Alice's proof with the attacker's address
+      await verify(goals.refundRecipient, async () => {
+        const thief = ethers.Wallet.createRandom().address;
+        const swapped = await revertOf(
+          contract.redeemRefund.staticCall(...args(thief)),
+        );
+        check(
+          goals.refundRecipient,
+          "the attacker can't redeem it to their own address",
+          swapped === 'recipient mismatch',
+          swapped || 'it succeeded',
+        );
+        const [idc, nullifier, value, , proof, signals] = args(thief);
+        const forged = await revertOf(
+          contract.redeemRefund.staticCall(
+            idc,
+            nullifier,
+            value,
+            thief,
+            proof,
+            [...(signals as string[]).slice(0, 7), BigInt(thief).toString()],
+          ),
+        );
+        check(
+          goals.refundRecipient,
+          "nor by rewriting the proof's recipient signal",
+          forged === 'InvalidProof',
+          forged || 'it succeeded',
+        );
+      });
+
       const before = await provider.getBalance(recipient);
-      await (await contract.redeemRefund(...args)).wait();
+      redemption = (await (
+        await contract.redeemRefund(...args(recipient))
+      ).wait()) as ethers.TransactionReceipt;
       const after = await provider.getBalance(recipient);
       check(
         goals.refund,
-        'the balance changes by the refund',
+        "Alice's balance changes by the refund",
         after - before === BigInt(ticket.value),
         `${after - before} wei`,
       );
-      let revert = '';
-      try {
-        await contract.redeemRefund.staticCall(...args);
-      } catch (error) {
-        revert = (error as { revert?: { name: string } }).revert?.name ?? '';
-      }
+      const revert = await revertOf(
+        contract.redeemRefund.staticCall(...args(recipient)),
+      );
       check(
         goals.refund,
         'a second redemption reverts',
@@ -599,41 +667,23 @@ async function main() {
         revert || 'it succeeded',
       );
     });
-    await verify(goals.solvency, async () => {
-      let owed = 0n;
-      for (const c of (await contract.getAllIdentityCommitments()) as string[]) {
-        const deposit = await contract.getDeposit(c);
-        if (deposit.active) owed += deposit.rlnStake + deposit.policyStake;
-      }
-      const held = await provider.getBalance(address);
-      check(
-        goals.solvency,
-        'after the refund, the contract still holds every active stake',
-        held >= owed,
-        `it holds ${ethers.formatEther(held)} ETH and owes ${ethers.formatEther(owed)} ETH`,
-      );
-    });
 
-    step('7. Alice sends a second request and compares what they publish');
+    step('6. Alice sends a second request');
+    let second: Record<string, any> | undefined;
     await verify(goals.requestToRequest, async () => {
-      const first = publicFields(required(body, 'request proof'));
-      const second = await prove('request', {
-        secretKey,
-        ticketIndex: '0x01',
-        payload: PAYLOAD_2,
-        maxCost: MAX_COST.toString(),
-        rpcUrl: options.rpcUrl,
-        contract: address,
-        serverPublicKey: required(serverPublicKey, 'server public key'),
-        circuit: options.circuit,
-      });
+      second = await requestFor(secretKey, '0x01', PAYLOAD_2);
       const res = await post(second);
       if (res.status !== 200) {
         throw new Error(
           `the second request failed: HTTP ${res.status} ${await res.text()}`,
         );
       }
-      const fields = publicFields(second);
+    });
+
+    step("7. The operator tries to link Alice's requests");
+    await verify(goals.requestToRequest, async () => {
+      const first = publicFields(required(body, 'request proof'));
+      const fields = publicFields(required(second, 'second request'));
       const shared = [...first]
         .filter(([k, v]) => !SHARED_BY_DESIGN.has(k) && fields.get(k) === v)
         .map(([k]) => k);
@@ -656,39 +706,82 @@ async function main() {
         .map(([k]) => k);
       check(
         goals.requestToDeposit,
-        'no public field of the request matches the deposit',
+        'no public field of the request matches a deposit',
         linked.length === 0,
         `${linked.join(', ')} match Alice's deposit`,
       );
+      if (!app) return;
+      // On Anvil, the operator's database is in this process
+      /* eslint-disable @typescript-eslint/no-require-imports */
+      const { NullifierStoreService } =
+        require('../../src/longjing/nullifier-store.service') as typeof import('../../src/longjing/nullifier-store.service');
+      /* eslint-enable @typescript-eslint/no-require-imports */
+      const stored = app
+        .get(NullifierStoreService)
+        .get(required(body, 'request proof').nullifier as string);
+      check(
+        goals.requestToDeposit,
+        "the operator's database stores no deposit next to the nullifier",
+        !stored?.idCommitment ||
+          !commitments.includes(BigInt(stored.idCommitment).toString()),
+        'it stores idCommitment',
+      );
     });
 
-    step('8. Carol deposits and double-spends, Bob slashes her');
+    step("8. The observer tries to link Alice's refund to her deposit");
+    await verify(goals.refundToDeposit, async () => {
+      const receipt = required(redemption, 'refund redemption');
+      const deposits = new Set(
+        ((await contract.getAllIdentityCommitments()) as string[]).map((c) =>
+          BigInt(c).toString(),
+        ),
+      );
+      const linked = receipt.logs
+        .map((log) => contract.interface.parseLog(log))
+        .filter((event) => event?.name === 'RefundRedeemed')
+        .some((event) => deposits.has(BigInt(event!.args[0]).toString()));
+      check(
+        goals.refundToDeposit,
+        'no redemption event names a deposit',
+        !linked,
+        'RefundRedeemed publishes idCommitment',
+      );
+    });
+    await verify(goals.solvency, async () => {
+      let owed = 0n;
+      for (const c of (await contract.getAllIdentityCommitments()) as string[]) {
+        const deposit = await contract.getDeposit(c);
+        if (deposit.active) owed += deposit.rlnStake + deposit.policyStake;
+      }
+      const held = await provider.getBalance(address);
+      check(
+        goals.solvency,
+        'after the refund, the contract still holds every active stake',
+        held >= owed,
+        `it holds ${ethers.formatEther(held)} ETH and owes ${ethers.formatEther(owed)} ETH`,
+      );
+    });
+
+    step('9. The attacker double-spends, the operator slashes them');
     await verify(goals.slashing, async () => {
-      const carol = newIdentity();
-      secrets.push(carol.secret);
+      const attacker = newIdentity();
+      secrets.push(attacker.secret);
       const deposited = (await (
-        await contract.deposit(carol.commitment, { value: options.deposit })
+        await contract.deposit(attacker.commitment, { value: options.deposit })
       ).wait()) as ethers.TransactionReceipt;
-      const before = await contract.getDeposit(carol.commitment);
-      const requestFor = (payload: string) =>
-        prove('request', {
-          secretKey: carol.secret,
-          ticketIndex: '0x00',
-          payload,
-          maxCost: MAX_COST.toString(),
-          rpcUrl: options.rpcUrl,
-          contract: address,
-          serverPublicKey: required(serverPublicKey, 'server public key'),
-          circuit: options.circuit,
-        });
-      const first = await requestFor(PAYLOAD);
+      const before = await contract.getDeposit(attacker.commitment);
+      const first = await requestFor(attacker.secret, '0x00', PAYLOAD_ATTACKER);
       const accepted = await post(first);
       if (accepted.status !== 200) {
         throw new Error(
-          `Carol's first request failed: HTTP ${accepted.status} ${await accepted.text()}`,
+          `the attacker's first request failed: HTTP ${accepted.status} ${await accepted.text()}`,
         );
       }
-      const doubleSpend = await requestFor(PAYLOAD_DOUBLE);
+      const doubleSpend = await requestFor(
+        attacker.secret,
+        '0x00',
+        PAYLOAD_DOUBLE,
+      );
       check(
         goals.slashing,
         'the second signal reuses the nullifier',
@@ -703,7 +796,7 @@ async function main() {
         `HTTP ${res.status} ${message}`,
       );
 
-      // Bob sees only the two public signals
+      // The operator holds the two signals, and nothing else is needed
       const slash = await prove('slashing', {
         ticketIndex: '0x00',
         signal1: first.signal,
@@ -711,8 +804,8 @@ async function main() {
       });
       check(
         goals.slashing,
-        'the two signals reveal the secret key',
-        BigInt(slash.secretKey) === BigInt(carol.secret),
+        "the two signals reveal the attacker's secret key",
+        BigInt(slash.secretKey) === BigInt(attacker.secret),
       );
       const verifier = new ethers.Contract(
         (await contract.slashingVerifier()) as string,
@@ -728,7 +821,7 @@ async function main() {
         )) as boolean,
       );
 
-      if (!(await contract.getDeposit(carol.commitment)).active) {
+      if (!(await contract.getDeposit(attacker.commitment)).active) {
         // A server with a transaction signer slashes as soon as it sees the double-spend
         const slashed = await contract.queryFilter(
           contract.filters.DoubleSpendSlashed(null, slash.nullifier),
@@ -736,17 +829,22 @@ async function main() {
         );
         check(
           goals.slashing,
-          'the server slashed the deposit before Bob could',
+          'the server already slashed the deposit',
           slashed.length > 0,
           'the deposit is inactive but no DoubleSpendSlashed event was found',
         );
         return;
       }
-      const bob = new ethers.Wallet(options.bobKey, provider);
-      const balance = await provider.getBalance(bob.address);
+      const slasher = new ethers.Wallet(options.slasherKey, provider);
+      check(
+        goals.slashing,
+        'the slashing wallet is not serverAddress',
+        slasher.address !== (await contract.serverAddress()),
+      );
+      const balance = await provider.getBalance(slasher.address);
       const receipt = (await (
         await (
-          new ethers.Contract(address, ABI, bob) as ethers.Contract
+          new ethers.Contract(address, ABI, slasher) as ethers.Contract
         ).slashDoubleSpend(
           slash.secretKey,
           slash.nullifier,
@@ -756,23 +854,23 @@ async function main() {
         )
       ).wait()) as ethers.TransactionReceipt;
       const reward =
-        (await provider.getBalance(bob.address)) -
+        (await provider.getBalance(slasher.address)) -
         balance +
         receipt.gasUsed * receipt.gasPrice;
       check(
         goals.slashing,
-        'Bob, not the server, receives the RLN and policy stakes',
+        'the slashing wallet receives the RLN and policy stakes',
         reward === before.rlnStake + before.policyStake,
         `${reward} wei`,
       );
       check(
         goals.slashing,
-        'the deposit is no longer active',
-        !(await contract.getDeposit(carol.commitment)).active,
+        "the attacker's deposit is no longer active",
+        !(await contract.getDeposit(attacker.commitment)).active,
       );
     });
 
-    step('9. Check what the client sent the server');
+    step('10. Alice checks what the clients sent the server');
     await verify(goals.secretKey, async () => {
       const forms = secrets.flatMap((secret) => {
         const key = BigInt(secret);
