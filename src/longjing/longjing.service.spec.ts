@@ -10,7 +10,6 @@ import { LongjingService } from './longjing.service';
 import { NullifierStoreService } from './nullifier-store.service';
 import { ProofVerifierService } from './proof-verifier.service';
 import { ComputeLimiterService } from './compute-limiter.service';
-import { ProofGenService } from './proof-gen.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 import { EthRateOracleService } from './eth-rate-oracle.service';
 import { RefundSignerService } from './refund-signer.service';
@@ -66,7 +65,6 @@ describe('LongjingService', () => {
         NullifierStoreService,
         ProofVerifierService,
         ComputeLimiterService,
-        ProofGenService,
         SnarkjsProofService,
         EthRateOracleService,
         RefundSignerService,

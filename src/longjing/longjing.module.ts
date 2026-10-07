@@ -7,7 +7,6 @@ import { ProofVerifierService } from './proof-verifier.service';
 import { EthRateOracleService } from './eth-rate-oracle.service';
 import { RefundSignerService } from './refund-signer.service';
 import { BlockchainService } from './blockchain.service';
-import { ProofGenService } from './proof-gen.service';
 import { SnarkjsProofService } from './snarkjs-proof.service';
 import { SlashingService } from './slashing.service';
 import { ExitWatcherService } from './exit-watcher.service';
@@ -29,7 +28,6 @@ import { AttestationModule } from '../attestation/attestation.module';
     LongjingService,
     NullifierStoreService,
     ProofVerifierService,
-    ProofGenService,
     SnarkjsProofService,
     EthRateOracleService,
     RefundSignerService,
@@ -45,7 +43,7 @@ import { AttestationModule } from '../attestation/attestation.module';
     ComputeLimiterService,
     ClaudeProvider,
   ],
-  exports: [LongjingService, ProofGenService, BlockchainService],
+  exports: [LongjingService, BlockchainService],
 })
 export class LongjingModule implements OnModuleInit {
   constructor(

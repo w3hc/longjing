@@ -1,13 +1,12 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { buildBabyjub, buildEddsa, buildPoseidon } from 'circomlibjs';
-import { RefundTicketDto } from './dto/api-response.dto';
 import { KeyDerivationService } from '../keys/key-derivation.service';
 import { keysOutsideEnclaveAllowed } from '../keys/key-policy';
 import { isProd } from '../config/profile';
 
 /**
- * Service for signing refund tickets using EdDSA with Babyjubjub curve
+ * Signs refund accumulators using EdDSA with Babyjubjub curve
  * Compatible with circomlib EdDSA circuits
  *
  * The private key is derived from the dstack KMS (see docs/KEY_DERIVATION.md).
@@ -96,31 +95,6 @@ export class RefundSignerService implements OnModuleInit {
   }
 
   /**
-   * Sign a refund ticket
-   */
-  async signRefund(refundData: {
-    idCommitment: string;
-    nullifier: string;
-    value: string;
-    timestamp: number;
-  }): Promise<RefundTicketDto> {
-    await this.ensureInitialized();
-
-    // Create message to sign using Poseidon hash
-    const message = this.hashRefundData(refundData);
-
-    // Sign using EdDSA with Babyjubjub
-    const signature = this.sign(message);
-
-    return {
-      nullifier: refundData.nullifier,
-      value: refundData.value,
-      timestamp: refundData.timestamp,
-      signature,
-    };
-  }
-
-  /**
    * Sign a refund accumulator A' = A_pub + v·G + J (docs/SETTLEMENT.md), with
    * EdDSA-Poseidon over Poseidon(A'.x, A'.y), the message request.circom and
    * settlement.circom check
@@ -156,25 +130,6 @@ export class RefundSignerService implements OnModuleInit {
   async getPublicKey(): Promise<{ x: string; y: string }> {
     await this.ensureInitialized();
     return { ...this.publicKey };
-  }
-
-  /**
-   * Verify a refund signature (for testing)
-   */
-  async verifyRefund(
-    ticket: RefundTicketDto,
-    idCommitment: string,
-  ): Promise<boolean> {
-    await this.ensureInitialized();
-
-    const message = this.hashRefundData({
-      idCommitment,
-      nullifier: ticket.nullifier,
-      value: ticket.value,
-      timestamp: ticket.timestamp,
-    });
-
-    return this.verify(message, ticket.signature);
   }
 
   // ============ Private Methods ============
@@ -213,35 +168,6 @@ export class RefundSignerService implements OnModuleInit {
     const hash = createHash('sha256');
     hash.update('longjing-refund-signer-dev-key');
     return '0x' + hash.digest('hex');
-  }
-
-  private hashRefundData(data: {
-    idCommitment: string;
-    nullifier: string;
-    value: string;
-    timestamp: number;
-  }): bigint {
-    // Use Poseidon hash for circuit compatibility
-    // Canonical message format: Poseidon(idCommitment, nullifier, value, timestamp)
-    // This MUST match:
-    // - refund_redemption.circom line 64-69
-    // - api_request_proof.circom refund verification
-    // - LongjingCredits.sol _hashRefundData
-    const idCommitmentBigInt = BigInt(data.idCommitment);
-    const nullifierBigInt = BigInt(data.nullifier);
-    const valueBigInt = BigInt(data.value);
-    const timestampBigInt = BigInt(data.timestamp);
-
-    // Hash with Poseidon(4 inputs)
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-    const hash = this.poseidon([
-      idCommitmentBigInt,
-      nullifierBigInt,
-      valueBigInt,
-      timestampBigInt,
-    ]);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-    return this.poseidon.F.toObject(hash);
   }
 
   private sign(message: bigint): {

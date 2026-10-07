@@ -21,14 +21,6 @@ interface Circuit {
 }
 
 const CIRCUITS: Record<string, Circuit> = {
-  api_request: {
-    zkey: 'api_request.zkey',
-    vkey: 'api_request_verification_key.json',
-  },
-  api_request_local: {
-    zkey: 'api_request_local.zkey',
-    vkey: 'api_request_local_verification_key.json',
-  },
   request: {
     zkey: 'request.zkey',
     vkey: 'request_verification_key.json',

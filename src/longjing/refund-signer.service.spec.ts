@@ -12,13 +12,6 @@ describe('RefundSignerService', () => {
       getRefundSignerPrivateKey: () => key,
     } as unknown as KeyDerivationService);
 
-  const ticket = {
-    idCommitment: '0x01',
-    nullifier: '0x02',
-    value: '1000',
-    timestamp: 1_700_000_000,
-  };
-
   afterEach(() => {
     process.env.NODE_ENV = originalNodeEnv;
     if (originalOperatorKey === undefined) {
@@ -39,8 +32,6 @@ describe('RefundSignerService', () => {
       await create(Buffer.alloc(32, 7)).getPublicKey(),
     );
     expect(derivedKey).not.toEqual(await fromEnv.getPublicKey());
-    const signed = await derived.signRefund(ticket);
-    expect(await derived.verifyRefund(signed, ticket.idCommitment)).toBe(true);
   }, 30000);
 
   // note.fixture's signer is the one the circuit tests prove with

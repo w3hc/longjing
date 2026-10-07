@@ -72,18 +72,6 @@ export class UsageDto {
   _internalOutputTokens?: number;
 }
 
-/** @deprecated A refund ticket of the old circuits, removed with them */
-export class RefundTicketDto {
-  nullifier: string;
-  value: string;
-  timestamp: number;
-  signature: {
-    R8x: string;
-    R8y: string;
-    S: string;
-  };
-}
-
 export class AccumulatorSignatureDto {
   @ApiProperty() R8x: string;
   @ApiProperty() R8y: string;

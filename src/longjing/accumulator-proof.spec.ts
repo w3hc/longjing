@@ -21,7 +21,7 @@ describe('request and settlement proofs', () => {
   beforeAll(async () => {
     fx = await buildNoteFixture();
     note = fx.note(SECRET_KEY, DEPOSIT);
-  });
+  }, 60000);
 
   afterAll(async () => {
     // snarkjs keeps the curve's worker threads alive, which would hang Jest

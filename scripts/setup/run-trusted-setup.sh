@@ -8,12 +8,11 @@ echo ""
 mkdir -p circuits/build
 
 # Circuit constraints:
-# - Withdrawal: 11,749 constraints (needs 2^15 = 32,768)
-# - Refund Redemption: 11,156 constraints (needs 2^15 = 32,768)
-# - Double-Spend Slashing: 1,357 constraints (needs 2^12 = 4,096)
+# - Request: ~37K constraints (needs 2^16 = 65,536)
+# - Settlement: ~22K constraints (needs 2^15 = 32,768)
 
-# We'll use 2^15 to handle the largest circuits
-POWER=15
+# We'll use 2^16 to handle the largest circuit
+POWER=16
 PTAU_FILE="circuits/build/pot${POWER}_final.ptau"
 
 # Check if Powers of Tau already exists
@@ -61,113 +60,44 @@ fi
 echo ""
 echo "🔧 Phase 2: Circuit-Specific Setup"
 
-# Withdrawal Circuit
-echo ""
-echo "1️⃣  Withdrawal Circuit (11,749 constraints)"
-if [ ! -f "circuits/build/withdrawal_final.zkey" ]; then
-    echo "  - Initial setup..."
+setup_circuit() {
+    local name=$1
+    echo ""
+    echo "  ${name}"
+    if [ -f "circuits/build/${name}.zkey" ]; then
+        echo "✓ ${name} already set up"
+        return
+    fi
     npx snarkjs groth16 setup \
-        circuits/build/withdrawal.r1cs \
+        circuits/build/${name}.r1cs \
         ${PTAU_FILE} \
-        circuits/build/withdrawal_0000.zkey \
+        circuits/build/${name}_0000.zkey \
         > /dev/null
-
-    echo "  - Contributing randomness..."
     npx snarkjs zkey contribute \
-        circuits/build/withdrawal_0000.zkey \
-        circuits/build/withdrawal_final.zkey \
+        circuits/build/${name}_0000.zkey \
+        circuits/build/${name}.zkey \
         --name="Production contribution" \
         -e="$(openssl rand -base64 64)" \
         > /dev/null
-
-    echo "  - Exporting verification key..."
     npx snarkjs zkey export verificationkey \
-        circuits/build/withdrawal_final.zkey \
-        circuits/build/withdrawal_verification_key.json
+        circuits/build/${name}.zkey \
+        circuits/build/${name}_verification_key.json
+    rm -f circuits/build/${name}_0000.zkey
+    echo "✓ ${name} set up"
+}
 
-    # Cleanup
-    rm -f circuits/build/withdrawal_0000.zkey
-
-    echo "✓ Withdrawal circuit setup complete"
-else
-    echo "✓ Withdrawal circuit already set up"
-fi
-
-# Refund Redemption Circuit
-echo ""
-echo "2️⃣  Refund Redemption Circuit (11,156 constraints)"
-if [ ! -f "circuits/build/refund_redemption_final.zkey" ]; then
-    echo "  - Initial setup..."
-    npx snarkjs groth16 setup \
-        circuits/build/refund_redemption.r1cs \
-        ${PTAU_FILE} \
-        circuits/build/refund_redemption_0000.zkey \
-        > /dev/null
-
-    echo "  - Contributing randomness..."
-    npx snarkjs zkey contribute \
-        circuits/build/refund_redemption_0000.zkey \
-        circuits/build/refund_redemption_final.zkey \
-        --name="Production contribution" \
-        -e="$(openssl rand -base64 64)" \
-        > /dev/null
-
-    echo "  - Exporting verification key..."
-    npx snarkjs zkey export verificationkey \
-        circuits/build/refund_redemption_final.zkey \
-        circuits/build/refund_redemption_verification_key.json
-
-    # Cleanup
-    rm -f circuits/build/refund_redemption_0000.zkey
-
-    echo "✓ Refund redemption circuit setup complete"
-else
-    echo "✓ Refund redemption circuit already set up"
-fi
-
-# Double-Spend Slashing Circuit
-echo ""
-echo "3️⃣  Double-Spend Slashing Circuit (1,357 constraints)"
-if [ ! -f "circuits/build/double_spend_slashing_final.zkey" ]; then
-    echo "  - Initial setup..."
-    npx snarkjs groth16 setup \
-        circuits/build/double_spend_slashing.r1cs \
-        ${PTAU_FILE} \
-        circuits/build/double_spend_slashing_0000.zkey \
-        > /dev/null
-
-    echo "  - Contributing randomness..."
-    npx snarkjs zkey contribute \
-        circuits/build/double_spend_slashing_0000.zkey \
-        circuits/build/double_spend_slashing_final.zkey \
-        --name="Production contribution" \
-        -e="$(openssl rand -base64 64)" \
-        > /dev/null
-
-    echo "  - Exporting verification key..."
-    npx snarkjs zkey export verificationkey \
-        circuits/build/double_spend_slashing_final.zkey \
-        circuits/build/double_spend_slashing_verification_key.json
-
-    # Cleanup
-    rm -f circuits/build/double_spend_slashing_0000.zkey
-
-    echo "✓ Double-spend slashing circuit setup complete"
-else
-    echo "✓ Double-spend slashing circuit already set up"
-fi
+setup_circuit request
+setup_circuit settlement
 
 echo ""
 echo "🎉 Trusted Setup Ceremony Complete!"
 echo ""
 echo "Generated files:"
 echo "  - circuits/build/pot${POWER}_final.ptau (Powers of Tau)"
-echo "  - circuits/build/withdrawal_final.zkey"
-echo "  - circuits/build/withdrawal_verification_key.json"
-echo "  - circuits/build/refund_redemption_final.zkey"
-echo "  - circuits/build/refund_redemption_verification_key.json"
-echo "  - circuits/build/double_spend_slashing_final.zkey"
-echo "  - circuits/build/double_spend_slashing_verification_key.json"
+echo "  - circuits/build/request.zkey"
+echo "  - circuits/build/request_verification_key.json"
+echo "  - circuits/build/settlement.zkey"
+echo "  - circuits/build/settlement_verification_key.json"
 echo ""
 echo "⚠️  SECURITY NOTE:"
 echo "This is a development ceremony with 2 contributions."
