@@ -21,9 +21,7 @@ https://your-domain.com  (production)
   - [App Endpoints](#app-endpoints)
     - [POST /longjing/request](#post-longjingrequest)
     - [POST /longjing/estimate-cost](#post-longjingestimate-cost)
-    - [POST /longjing/redeem-refund](#post-longjingredeem-refund)
     - [GET /longjing/server-pubkey](#get-longjingserver-pubkey)
-    - [POST /longjing/proofs/slashing](#post-longjingproofsslashing)
   - [TEE Attestation Endpoints](#tee-attestation-endpoints)
     - [GET /attestation](#get-attestation)
     - [GET /attestation/manifest](#get-attestationmanifest)
@@ -37,11 +35,10 @@ https://your-domain.com  (production)
     - [Complete Request Flow](#complete-request-flow)
   - [Client Implementation Guide](#client-implementation-guide)
     - [Prerequisites](#prerequisites)
-    - [1. Generate Identity](#1-generate-identity)
-    - [2. Deposit to Smart Contract](#2-deposit-to-smart-contract)
-    - [3. Generate ZK Proof](#3-generate-zk-proof)
-    - [4. Make API Request](#4-make-api-request)
-    - [5. Redeem Refund Tickets](#5-redeem-refund-tickets)
+    - [1. Create a note and deposit](#1-create-a-note-and-deposit)
+    - [2. Make requests](#2-make-requests)
+    - [3. Withdraw, without the server](#3-withdraw-without-the-server)
+    - [4. Slash a double-spend](#4-slash-a-double-spend)
   - [Cost Calculation](#cost-calculation)
     - [Claude API Pricing (March 2026)](#claude-api-pricing-march-2026)
     - [Example Calculations](#example-calculations)
@@ -56,27 +53,27 @@ https://your-domain.com  (production)
 
 ### POST /longjing/request
 
-Submit anonymous external API request with Zero-Knowledge proof of solvency (example: Claude API).
+Submit an anonymous API request (example: Claude API) with a zero-knowledge proof that the note behind it can pay, as [SETTLEMENT.md](SETTLEMENT.md) specifies. Nothing in the request identifies the note, its deposit or its ticket index.
 
-**Authentication:** None (anonymity is provided by ZK proof)
+**Authentication:** None (anonymity is provided by the ZK proof)
 
 **Request Body:**
 
 ```typescript
 {
-  payload: string;              // The message/prompt for external API
-  proof: string;                // Groth16 ZK proof (JSON string)
-  nullifier: string;            // Unique nullifier for this request
+  payload: string;              // The message/prompt for the external API
+  nonce: string;                // ρ, a fresh field element
+  nullifier: string;            // N = Poseidon(Poseidon(k, i)), fresh for every index
   signal: {
-    x: string;                  // RLN signal x = SHA-256(payload) mod p
-    y: string;                  // RLN signal y component
+    x: string;                  // x = Poseidon(SHA-256(payload) mod p, ρ)
+    y: string;                  // y = k + a · x
   };
-  maxCost: string;              // Maximum cost willing to pay (in wei)
-  merkleRoot: string;           // Merkle root from on-chain state
-  initialDeposit: string;       // Initial deposit amount (in wei)
-  ticketIndex: string;          // Ticket index for this request
-  idCommitment: string;         // Identity commitment (Hash of secret key)
-  idCommitmentExpected: string; // Expected identity commitment (circuit public input)
+  proof: string;                // Groth16 proof of request.circom (JSON string)
+  merkleRoot: string;           // One of the contract's recent roots
+  accumulator: {                // A_pub, the re-randomized accumulator the proof outputs
+    x: string;
+    y: string;
+  };
   model?: string;               // One of claude-fable-5-1, claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5 (default: claude-fable-5-1); anything else is a 400
 }
 ```
@@ -85,16 +82,15 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
 
 ```typescript
 {
-  response: string;             // External API's response
-  actualCost: string;           // Actual cost in wei
-  refundTicket: {
-    nullifier: string;          // Nullifier of this request
-    value: string;              // Refund amount max(0, maxCost - actualCost) in wei
-    timestamp: number;          // Unix timestamp
-    signature: {
-      R8x: string;              // EdDSA signature component
-      R8y: string;              // EdDSA signature component
-      S: string;                // EdDSA signature component
+  response: string;             // External API's response, padded
+  refund: string;               // v = C_MAX − actual cost, in wei, clamped to [0, C_MAX]
+  accumulator: {                // A' = A_pub + v·G + J, the note's next accumulator
+    x: string;
+    y: string;
+    signature: {                // EdDSA-Poseidon over Poseidon(A'.x, A'.y), by the refund key
+      R8x: string;
+      R8y: string;
+      S: string;
     };
   };
   usage: {
@@ -107,49 +103,39 @@ Submit anonymous external API request with Zero-Knowledge proof of solvency (exa
 ```
 
 **Status Codes:**
-- `200 OK` - Request processed successfully
-- `400 Bad Request` - Invalid request parameters (a field element that isn't hex or decimal, an oversized `proof` or `payload`), or `signal.x` does not match the payload hash
-- `401 Unauthorized` - Invalid ZK proof
+- `200 OK` - Request processed. A retry of the same `(nullifier, signal)` within 10 minutes gets the same body back, without a second provider call
+- `400 Bad Request` - Invalid parameters (a field element that isn't hex or decimal, an oversized `proof` or `payload`), `signal.x` doesn't match the payload and nonce, or the request's worst case exceeds `C_MAX`
+- `401 Unauthorized` - Invalid ZK proof, or a root the contract hasn't recorded recently
 - `403 Forbidden` - Nullifier already used, double-spend detected, or rate limit exceeded
 - `429 Too Many Requests` - Rate limit exceeded (generic message for privacy)
-- `500 Internal Server Error` - Server error
-- `503 Service Unavailable` - Too many proof verifications in flight, or the onchain state can't be read in production
+- `502 Bad Gateway` - The provider call failed. The body carries `refund` (all of `C_MAX`) and the signed `accumulator`, so the note moves on without losing value
+- `503 Service Unavailable` - Too many proof verifications in flight, or the onchain state (roots, `C_MAX`) can't be read
 
 **Example:**
 
 ```bash
-# Request
+# Request: pnpm prove request prints this body
 curl -k -X POST https://localhost:3000/longjing/request \
   -H "Content-Type: application/json" \
   -d '{
     "payload": "What does 苟全性命於亂世，不求聞達於諸侯。mean?",
-    "proof": "{\"pi_a\":[\"123...\",\"456...\",\"1\"],\"pi_b\":[[\"789...\",\"012...\"],[\"345...\",\"678...\"],[\"1\",\"0\"]],\"pi_c\":[\"901...\",\"234...\",\"1\"],\"protocol\":\"groth16\",\"curve\":\"bn128\"}",
-    "nullifier": "12345678901234567890123456789012",
-    "signal": {
-      "x": "98765432109876543210987654321098",
-      "y": "11111111111111111111111111111111"
-    },
-    "maxCost": "1000000000000000",
-    "merkleRoot": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-    "initialDeposit": "10000000000000000",
-    "ticketIndex": "0",
-    "idCommitment": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+    "nonce": "1834...",
+    "nullifier": "1209...",
+    "signal": { "x": "7731...", "y": "4402..." },
+    "proof": "{\"pi_a\":[\"123...\",\"456...\",\"1\"],\"pi_b\":[[\"789...\",\"012...\",\"1\"],[\"345...\",\"678...\",\"1\"]],\"pi_c\":[\"901...\",\"234...\",\"1\"],\"protocol\":\"groth16\"}",
+    "merkleRoot": "1546...",
+    "accumulator": { "x": "9921...", "y": "3307..." },
     "model": "claude-fable-5-1"
   }'
 
 # Response
 {
-  "response": "Quantum computing is a type of computation that harnesses quantum mechanical phenomena...",
-  "actualCost": "750000000000000",
-  "refundTicket": {
-    "nullifier": "12345678901234567890123456789012",
-    "value": "250000000000000",
-    "timestamp": 1710857400,
-    "signature": {
-      "R8x": "0x1234...",
-      "R8y": "0x5678...",
-      "S": "0x9abc..."
-    }
+  "response": "It is from Zhuge Liang's Chu Shi Biao...",
+  "refund": "250000000000000",
+  "accumulator": {
+    "x": "1188...",
+    "y": "6094...",
+    "signature": { "R8x": "0x1234...", "R8y": "0x5678...", "S": "0x9abc..." }
   },
   "usage": {
     "unitClass": "small",
@@ -161,94 +147,30 @@ curl -k -X POST https://localhost:3000/longjing/request \
 
 **Security Notes:**
 
-1. **Unique Nullifiers**: Each nullifier can only be used once. Reusing a nullifier triggers:
-   - Same message: Replay attack → Request rejected
-   - Different message: Double-spend → Secret key extracted → RLN stake slashed
+1. **Unique Nullifiers**: Each nullifier can only be used once. Reusing it:
+   - with the same signal: a retry, answered from the 10-minute cache, then refused
+   - with another signal: a double-spend. The two signals reveal `k`, and the server slashes the note with `slash(k)`
 
-2. **ZK Proof Requirements**: The proof must demonstrate:
-   - Identity commitment is in the Merkle tree (membership: `merkleRoot`)
-   - Sufficient balance for this request (solvency: `(ticketIndex+1)*maxCost ≤ initialDeposit`)
-   - All previous refund tickets are valid (EdDSA signatures)
-   - Correct RLN signal generation (nullifier = Hash(a), y = k + a*x)
-   - All public inputs are cryptographically bound to the proof
+2. **ZK Proof Requirements** (`request.circom`): the proof shows that
+   - the leaf `Poseidon(Poseidon(k), D)` is in the tree under `merkleRoot`, so D is what was deposited
+   - the accumulator is the genesis one or signed by the refund key, and opens to `(R, i, Poseidon(k), s)`
+   - `accumulator` is that accumulator re-randomized, `A + s'·H`
+   - solvency holds: `(i + 1) · C_MAX ≤ D + R`
+   - the RLN signal at index `i` is correct
 
-   Two known gaps at v0.4.1, both tracked in [#134](https://github.com/w3hc/longjing/issues/134): `initialDeposit` is a private input the circuit doesn't tie to the onchain deposit, so solvency is not enforced; and `idCommitment` is a public signal, sent in the body and stored by the server, so every request can be linked to its deposit.
+   The server checks it against `[nullifier, signal.y, accumulator, merkleRoot, C_MAX, signal.x, refund key]`, with `C_MAX` and the key from the contract and its own enclave. The commitment, leaf, D, `i` and R stay private.
 
-3. **Cost Protection**: `maxCost` must cover the request's worst-case cost, priced on the payload's UTF-8 byte length plus 32 tokens of input and 4096 output tokens at the model's rates. A lower `maxCost` gets a 400 before the nullifier is used. If the upstream call fails, the nullifier is released, so the same ticket index can be retried
+3. **Cost Protection**: a request's worst case, priced on the payload's UTF-8 byte length plus 32 tokens of input and 4096 output tokens at the model's rates, must fit in `C_MAX`, or it gets a 400 before the nullifier is used.
 
-4. **Rate Limiting**: Nothing is keyed on the client's IP, which `RequestSanitizerMiddleware` hides (see [`src/guards/`](../src/guards/)):
+4. **Sequential requests**: request `i` needs the accumulator the response to request `i − 1` signed, so a note serves one request at a time. Use several notes for parallel requests.
+
+5. **Rate Limiting**: Nothing is keyed on the client's IP, which `RequestSanitizerMiddleware` hides (see [`src/guards/`](../src/guards/)):
    - **Shape checks**: malformed bodies get a 400 before any RPC or Groth16 work
    - **Request fingerprint**: 10 requests/minute per unique request content, without rate limit headers
    - **Per-nullifier**: 3 requests/minute per nullifier
    - **Concurrency caps**: at most `MAX_CONCURRENT_VERIFICATIONS` (default 8) proofs verified at once; over the cap, a 503
 
-**See Also:** [ZK System Guide](ZK.md), [Testing Guide](TESTING_GUIDE.md)
-
----
-
-### POST /longjing/redeem-refund
-
-Submit a refund redemption proof onchain. The client generates the proof from its refund ticket and secret key (see [5. Redeem Refund Tickets](#5-redeem-refund-tickets)); the secret key never reaches the server.
-
-**Authentication:** None (the proof authenticates)
-
-**Request Body:**
-
-```typescript
-{
-  idCommitment: string;         // User's identity commitment
-  nullifier: string;            // Nullifier from the API request
-  value: string;                // Refund amount in wei
-  recipient: string;            // Ethereum address bound in the proof
-  proof: string[];              // Groth16 proof, 8 hex strings
-  publicSignals: string[];      // Public signals, 8 hex strings
-}
-```
-
-**Response:**
-
-```typescript
-{
-  success: boolean;
-  transactionHash: string;      // Ethereum transaction hash
-  message: string;              // Human-readable message
-}
-```
-
-**Status Codes:**
-- `200 OK` - Refund redeemed successfully
-- `400 Bad Request` - Missing or malformed fields
-- `500 Internal Server Error` - Refund already redeemed, proof rejected onchain, or blockchain service not available
-
-**Example:**
-
-```bash
-# Request
-curl -k -X POST https://localhost:3000/longjing/redeem-refund \
-  -H "Content-Type: application/json" \
-  -d '{
-    "idCommitment": "0xabcd...",
-    "nullifier": "0x1234...",
-    "value": "250000000000000",
-    "recipient": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-    "proof": ["0x...", "0x...", "0x...", "0x...", "0x...", "0x...", "0x...", "0x..."],
-    "publicSignals": ["0x...", "0x...", "0x...", "0x...", "0x...", "0x...", "0x...", "0x..."]
-  }'
-
-# Response
-{
-  "success": true,
-  "transactionHash": "0xdef456...",
-  "message": "Refund of 250000000000000 wei redeemed successfully"
-}
-```
-
-**Important Notes:**
-
-- Refund tickets can only be redeemed once
-- The smart contract verifies the Groth16 proof, which checks the EdDSA signature in-circuit and binds the recipient
-- If the nullifier was slashed for double-spending, redemption will fail
-- The server relays the transaction and its wallet pays the gas: the enclave-derived transaction signer with `NODE_ENV=production`, `SERVER_TX_PRIVATE_KEY` otherwise. The caller pays nothing onchain
+**See Also:** [SETTLEMENT.md](SETTLEMENT.md), [ZK System Guide](ZK.md), [Testing Guide](TESTING_GUIDE.md)
 
 ---
 
@@ -327,7 +249,7 @@ curl -k -X POST https://localhost:3000/longjing/estimate-cost \
 
 ### GET /longjing/server-pubkey
 
-Get the server's EdDSA public key for verifying refund ticket signatures.
+Get the refund key the server signs accumulators with. It must match `serverPublicKey` in the contract, which `pnpm prove receive` checks against.
 
 **Authentication:** None
 
@@ -353,46 +275,7 @@ curl -k https://localhost:3000/longjing/server-pubkey
 }
 ```
 
-**Use Case:** Clients can verify refund ticket signatures off-chain before attempting to redeem onchain.
-
----
-
-### POST /longjing/proofs/slashing
-
-Generate the Groth16 proof that slashes a double-spender. The secret key it takes is the one recovered from two RLN signals sharing a nullifier, which anyone can compute from public data, so sending it reveals nothing new.
-
-Longjing has no endpoint that proves withdrawals or refund redemptions: they need the user's own secret key, so the client proves them itself (see [Client Implementation Guide](#client-implementation-guide)).
-
-**Authentication:** None
-
-**Request Body:**
-
-```typescript
-{
-  secretKey: string;    // Recovered secret key (hex)
-  ticketIndex: string;  // Ticket index both signals share (hex)
-  signal1: { x: string; y: string };
-  signal2: { x: string; y: string };  // Different x than signal1
-}
-```
-
-**Response:**
-
-```typescript
-{
-  proof: string[];          // 8 hex strings, for slashDoubleSpend
-  publicSignals: string[];  // hex strings
-  metadata: {
-    idCommitment: string;
-    nullifier: string;
-    timestamp: number;
-  };
-}
-```
-
-**Status Codes:**
-- `400 Bad Request` - A secret key, ticket index or signal that isn't a field element
-- `503 Service Unavailable` - `MAX_CONCURRENT_PROOFS` (default 2) proofs already in flight
+**Use Case:** Clients check that the key served matches the one registered onchain, and the one in the attestation manifest.
 
 ---
 
@@ -574,6 +457,7 @@ All endpoints return consistent error responses:
 | 400 | Bad Request | Invalid parameters, missing fields |
 | 401 | Unauthorized | Invalid ZK proof |
 | 403 | Forbidden | Nullifier reused, double-spend detected, per-nullifier rate limit |
+| 502 | Bad Gateway | The provider call failed; the body carries the full refund and the signed accumulator |
 | 404 | Not Found | Resource does not exist |
 | 429 | Too Many Requests | Request fingerprint rate limit exceeded |
 | 500 | Internal Server Error | Unexpected server error |
@@ -596,264 +480,87 @@ All endpoints return consistent error responses:
 ### Complete Request Flow
 
 ```
-┌─────────────┐
-│   Client    │
-└──────┬──────┘
-       │
-       │ 1. Generate secret key (once)
-       ▼
-   secretKey = random()
-   idCommitment = Hash(secretKey)
-       │
-       │ 2. Deposit to smart contract
-       ▼
-   longjingCredits.deposit(idCommitment, { value: 0.01 ETH })
-       │
-       │ 3. For each request:
-       ▼
-   Generate ZK proof:
-     - Merkle proof of membership
-     - Sum of previous refunds
-     - Solvency: (ticketIndex + 1) × maxCost ≤ deposit + refunds
-       │
-       │ 4. Compute RLN signal
-       ▼
-   a = Hash(secretKey, ticketIndex)
-   nullifier = Hash(a)
-   x = SHA-256(payload) mod p
-   y = secretKey + a × x
-       │
-       │ 5. Submit request
-       ▼
-   POST /longjing/request
-   {
-     payload: "What does 苟全性命於亂世，不求聞達於諸侯。mean?",
-     proof: {...},
-     nullifier: nullifier,
-     signal: { x, y },
-     maxCost: "1000000000000000"
-   }
-       │
-       ▼
-┌──────────────────────────────┐
-│      Server Verification     │
-├──────────────────────────────┤
-│ 1. Check nullifier reuse     │
-│ 2. Verify ZK proof           │
-│ 3. Execute Claude API call   │
-│ 4. Calculate actual cost     │
-│ 5. Sign refund ticket        │
-└──────┬───────────────────────┘
-       │
-       │ 6. Return response + refund ticket
-       ▼
-   {
-     response: "...",
-     actualCost: "750000000000000",
-     refundTicket: { signature: {...} }
-   }
-       │
-       │ 7. Store refund ticket
-       ▼
-   refundTickets.push(refundTicket)
-   ticketIndex++
-       │
-       │ 8. After multiple requests, redeem refunds
-       ▼
-   POST /longjing/redeem-refund
-   { nullifier, value, signature, recipient }
-       │
-       ▼
-   Smart contract verifies signature
-   → Transfers refund to recipient
+Client (note file: k, accumulator opening)            Server                 LongjingCredits
+──────────────────────────────────────────            ──────                 ───────────────
+k = random, c = Poseidon(k)
+deposit(c) with D ───────────────────────────────────────────────────────────▶ leaf = Poseidon(c, D)
+
+For request i:
+  prove request.circom with the accumulator
+  (R, i, c, s), a fresh s' and a fresh ρ
+  POST /longjing/request ───────────────────────────▶ x = Poseidon(H(M), ρ)?
+                                                       root recent? ◀────────── isKnownRoot
+                                                       verify proof with C_MAX
+                                                       store (N, x, y)
+                                                       call the provider
+                                                       v = C_MAX − cost
+  A' = A_pub + v·G + J, signed ◀───────────────────── sign A'
+  check A' and the signature,
+  opening = (R + v, i + 1, c, s + s')
+
+To leave:
+  prove settlement.circom: P = D + R − n · C_MAX
+  initiateWithdrawal ──────────────────────────────────────────────────────────▶ verify, remove leaf
+                                                       watch WithdrawalInitiated ◀──
+                                                       N at n already used? slash(k)
+  after 3 days: finalizeWithdrawal ────────────────────────────────────────────▶ pay P
 ```
 
 ---
 
 ## Client Implementation Guide
 
+`pnpm prove` ([scripts/client/prove.ts](../scripts/client/prove.ts)) is a reference client, built on [scripts/client/note.ts](../scripts/client/note.ts). It keeps the secret key and the accumulator opening in a note file, written with mode 600: keep that file, as it is what you exit with.
+
 ### Prerequisites
 
 ```bash
-pnpm add circomlibjs snarkjs ethers
-pnpm circuits:fetch   # circuit artifacts, in a Longjing checkout
+pnpm install
+pnpm circuits:fetch   # request and settlement artifacts
 ```
 
-### 1. Generate Identity
-
-```typescript
-import { buildPoseidon } from 'circomlibjs';
-import { randomBytes } from 'crypto';
-
-// Generate secret key (store securely!)
-const secretKey = BigInt('0x' + randomBytes(32).toString('hex'));
-
-// Create identity commitment
-const poseidon = await buildPoseidon();
-const idCommitment = poseidon([secretKey]);
-
-console.log('Secret Key:', secretKey.toString(16));
-console.log('ID Commitment:', poseidon.F.toString(idCommitment, 16));
-```
-
-### 2. Deposit to Smart Contract
-
-```typescript
-import { ethers } from 'ethers';
-
-const provider = new ethers.JsonRpcProvider('https://mainnet.infura.io/v3/YOUR_KEY');
-const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-
-const longjingCredits = new ethers.Contract(
-  LONGJING_CREDITS_ADDRESS,
-  LONGJING_CREDITS_ABI,
-  wallet
-);
-
-const tx = await longjingCredits.deposit(idCommitment, {
-  value: ethers.parseEther('0.01')
-});
-
-await tx.wait();
-console.log('Deposit successful!');
-```
-
-### 3. Generate ZK Proof
-
-Production verifies requests with the `api_request` circuit. Everything below runs on the client.
-
-```typescript
-import { groth16 } from 'snarkjs';
-import { createHash } from 'crypto';
-
-const MAX_REFUNDS = 10;
-const pad = (xs: string[]) => [...xs, ...Array(MAX_REFUNDS - xs.length).fill('0')];
-
-async function generateProof(
-  secretKey: bigint,
-  ticketIndex: bigint,
-  merkleProof: { root: string; pathElements: string[]; pathIndices: number[] },
-  refundTickets: RefundTicket[],   // previous refund tickets, at most 10
-  initialDeposit: bigint,
-  maxCost: bigint,
-  serverPublicKey: { x: string; y: string },  // refundSigner from GET /attestation/manifest
-  payload: string
-) {
-  const poseidon = await buildPoseidon();
-  const F = poseidon.F;
-
-  // x is bound to the payload
-  const signalX = BigInt('0x' + createHash('sha256').update(payload, 'utf8').digest('hex')) % F.p;
-
-  const { proof, publicSignals } = await groth16.fullProve(
-    {
-      secretKey: secretKey.toString(),
-      ticketIndex: ticketIndex.toString(),
-      initialDeposit: initialDeposit.toString(),
-      merklePathElements: merkleProof.pathElements,
-      merklePathIndices: merkleProof.pathIndices,
-      numRefunds: refundTickets.length,
-      refundValues: pad(refundTickets.map(t => t.value)),
-      refundTimestamps: pad(refundTickets.map(t => String(t.timestamp))),
-      refundSignaturesR8x: pad(refundTickets.map(t => BigInt(t.signature.R8x).toString())),
-      refundSignaturesR8y: pad(refundTickets.map(t => BigInt(t.signature.R8y).toString())),
-      refundSignaturesS: pad(refundTickets.map(t => BigInt(t.signature.S).toString())),
-      refundNullifiers: pad(refundTickets.map(t => BigInt(t.nullifier).toString())),
-      merkleRootExpected: merkleProof.root,
-      maxCost: maxCost.toString(),
-      signalX: signalX.toString(),
-      serverPublicKeyX: BigInt(serverPublicKey.x).toString(),
-      serverPublicKeyY: BigInt(serverPublicKey.y).toString(),
-    },
-    'circuits/build/api_request_js/api_request.wasm',
-    'circuits/build/api_request.zkey'
-  );
-
-  // Outputs come first: [nullifier, signalY, idCommitment, merkleRoot, ...]
-  const [nullifier, signalY, idCommitment] = publicSignals;
-  return {
-    proof: JSON.stringify(proof),
-    nullifier,
-    signal: { x: signalX.toString(), y: signalY },
-    idCommitment,
-  };
-}
-```
-
-`pnpm prove request` does this from a JSON file holding the secret key, the ticket index, the payload, `maxCost`, the RPC URL, the contract address and the server public key (see [scripts/client/prove.ts](../scripts/client/prove.ts)). It reads the Merkle path, the root and the deposit from the contract, and prints the body for `POST /longjing/request`. It counts no refund tickets toward the balance yet.
+### 1. Create a note and deposit
 
 ```bash
-pnpm prove request request-input.json > request.json
+pnpm prove note alice.json http://127.0.0.1:8545 0xContract
+# { "commitment": "0x..." }
+cast send 0xContract "deposit(bytes32)" 0x<commitment> --value 0.01ether
 ```
 
-### 4. Make API Request
+The deposit is the note's D, at least `C_MAX` and below 2^128 wei.
 
-```typescript
-const payload = 'What does 苟全性命於亂世，不求聞達於諸侯。mean?';
-const maxCost = ethers.parseEther('0.001');
-const { proof, nullifier, signal, idCommitment } = await generateProof(
-  secretKey,
-  ticketIndex,
-  merkleProof,
-  refundTickets,
-  initialDeposit,
-  maxCost,
-  serverPublicKey,
-  payload
-);
-
-const response = await fetch('https://api.longjing.example/longjing/request', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    payload,
-    proof,
-    nullifier,
-    signal,
-    maxCost: maxCost.toString(),
-    merkleRoot: merkleProof.root,
-    initialDeposit: initialDeposit.toString(),
-    ticketIndex: ticketIndex.toString(),
-    idCommitment,
-    idCommitmentExpected: idCommitment,
-    model: 'claude-fable-5-1'
-  })
-});
-
-const result = await response.json();
-console.log('Response:', result.response);
-console.log('Cost:', ethers.formatEther(result.actualCost), 'ETH');
-
-// Store refund ticket for next request
-refundTickets.push(result.refundTicket);
-ticketIndex++;
-```
-
-### 5. Redeem Refund Tickets
-
-Each refund ticket is redeemed with a `refund_redemption` proof, generated on the client. `pnpm prove refund` does it from a JSON file holding the secret key, the ticket index, the request payload, the recipient, the refund ticket and the server public key (see [scripts/client/prove.ts](../scripts/client/prove.ts)):
+### 2. Make requests
 
 ```bash
-pnpm prove refund refund-input.json > refund-proof.json
+pnpm prove request alice.json "What does 苟全性命於亂世 mean?" > body.json
+curl -k -X POST https://localhost:3000/longjing/request \
+  -H "Content-Type: application/json" -d @body.json > response.json
+pnpm prove receive alice.json response.json
 ```
 
-Then submit it:
+`receive` checks that the accumulator adds up to the refund and is signed by the key registered onchain, then moves the note to its next index. If a response is lost, `pnpm prove request` prints the same body again for a retry. A 502 body is received the same way.
 
-```typescript
-const { proof, publicSignals, idCommitment, nullifier, value, recipient } =
-  JSON.parse(fs.readFileSync('refund-proof.json', 'utf8'));
+### 3. Withdraw, without the server
 
-const response = await fetch('https://api.longjing.example/longjing/redeem-refund', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ idCommitment, nullifier, value, recipient, proof, publicSignals })
-});
-
-const result = await response.json();
-console.log('Refund redeemed:', result.transactionHash);
+```bash
+pnpm prove withdrawal alice.json 0xRecipient > exit.json
+# initiateWithdrawal(commitment, recipient, refundKey, proof, nullifier, signalY, payout) from exit.json
+# then, after CHALLENGE_WINDOW (3 days), anyone can call:
+cast send 0xContract "finalizeWithdrawal(bytes32)" 0x<commitment>
 ```
 
-Withdrawal proofs are not covered yet: see [#119](https://github.com/w3hc/longjing/issues/119).
+The payout is `D + R − n · C_MAX`, where `n` is the number of indices the note used, one more if a response was lost. A lower `n` is slashed during the window.
+
+### 4. Slash a double-spend
+
+Two signals with the same nullifier reveal the secret key:
+
+```bash
+pnpm prove slashing signals.json   # { "signal1": {x, y}, "signal2": {x, y} }
+cast send 0xContract "slash(uint256)" <secretKey>
+```
+
+The caller gets `SLASH_BOUNTY`, the operator the rest of the note.
 
 ---
 
@@ -892,23 +599,20 @@ Assuming ETH = $2,000:
    - Never log or print
    - Use hardware security module (HSM) for production
 
-2. **Never Reuse Nullifiers**
-   - Track `ticketIndex` carefully
-   - Increment after each request
-   - Store state persistently
+2. **Keep Your Note File**
+   - It holds the secret key and the accumulator opening, and it is what you exit with
+   - Losing the opening costs your refunds, not the deposit: exit from genesis with an `n` at least as large as the requests you made
 
-3. **Verify Refund Signatures**
-   - Check server's EdDSA signature before redeeming
-   - Compare against server public key
+3. **One Request at a Time per Note**
+   - Wait for each response, and run `pnpm prove receive` before the next request
+   - Two requests from the same accumulator share a nullifier, which reveals your key and gets the note slashed
+   - Use several notes for parallel requests
 
-4. **Set Reasonable Max Cost**
-   - Estimate token usage
-   - Add safety margin (20-50%)
-   - Refunds are automatic
+4. **Check What the Server Signs**
+   - `pnpm prove receive` refuses an accumulator that doesn't add up to the refund or isn't signed by the key registered onchain
 
-5. **Monitor Double-Spend Attempts**
-   - If secret key is compromised, withdraw immediately
-   - Watch for suspicious nullifier patterns
+5. **Claim Every Index at Exit**
+   - A withdrawal that understates the requests made is slashed during the challenge window
 
 ---
 
