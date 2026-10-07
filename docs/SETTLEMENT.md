@@ -2,6 +2,8 @@
 
 Design for issue 134, which binds the deposit amount to the note, settles withdrawals net of spending and removes every identifier that links a request to its deposit, compared against the original RLN proposal and ethereum/zkapi.
 
+**Status:** implemented. The circuits landed in [#167](https://github.com/w3hc/longjing/issues/167), and the contract, server and client in [#168](https://github.com/w3hc/longjing/issues/168) and [#169](https://github.com/w3hc/longjing/issues/169). The circuits are named `request` and `settlement`. The sections below describe the design as built, and the problems they cite are those of v0.4.1.
+
 ## Why this redesign
 
 At v0.4.1 the protocol in [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) (Crapis and Buterin, "the paper" below) is in the circuits, but its two promises are not:
@@ -293,18 +295,18 @@ The window is a risk for the operator, not the user. If the server is offline fo
 
 ## Implementation
 
-Three sub-issues of [#134](https://github.com/w3hc/longjing/issues/134), in order:
+Three sub-issues of [#134](https://github.com/w3hc/longjing/issues/134), in order, all done:
 
-1. **Circuits.** The new `api_request` and `withdrawal` circuits, the generators derived by hashing to the curve, and the removal of `refund_redemption` and `double_spend_slashing`. A `circuits-v2` release with verification keys checked against the verifiers, and tests with real proofs.
-2. **Contract.** Notes keyed by `c` with the leaf computed onchain, `C_MAX`, the two-step withdrawal, `slash(k)` with its bounty, `operatorBalance`, a root history, removing a leaf, accepted refund keys, and removing `redeemRefund`, S and `slashPolicyStake`. Foundry tests run against the real verifiers.
-3. **Backend and client.**
+1. **Circuits** ([#167](https://github.com/w3hc/longjing/issues/167)). The new `request` and `settlement` circuits, the generators derived by hashing to the curve, and the removal of `refund_redemption` and `double_spend_slashing`. A `circuits-v2` release with verification keys checked against the verifiers, and tests with real proofs.
+2. **Contract** ([#168](https://github.com/w3hc/longjing/issues/168)). Notes keyed by `c` with the leaf computed onchain, `C_MAX`, the two-step withdrawal, `slash(k)` with its bounty, `operatorBalance`, a root history, removing a leaf, accepted refund keys, and removing `redeemRefund`, S and `slashPolicyStake`. Foundry tests run against the real verifiers.
+3. **Backend and client** ([#169](https://github.com/w3hc/longjing/issues/169), landed with #168 in one pull request).
    - The request DTO without identifiers, accumulator signing and the retry cache.
    - The `(N, x, y)` nullifier store.
    - Watching `WithdrawalInitiated` and challenging.
    - `pnpm prove` for requests and withdrawals.
    - `API_REFERENCE.md`, `ZK.md`, `SQLITE3.md` and the README's status.
 
-After them, [#119](https://github.com/w3hc/longjing/issues/119) builds the client-side withdrawal prover on the new circuit, and [#157](https://github.com/w3hc/longjing/issues/157) the standalone page on top of it. [#135](https://github.com/w3hc/longjing/issues/135) runs once the circuits are final.
+`pnpm prove withdrawal` also covers [#119](https://github.com/w3hc/longjing/issues/119), the client-side withdrawal prover. [#157](https://github.com/w3hc/longjing/issues/157) builds the standalone page on top of it. [#135](https://github.com/w3hc/longjing/issues/135) runs once the circuits are final.
 
 ### Demo goals
 
