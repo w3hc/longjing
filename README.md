@@ -155,7 +155,7 @@ In production, Longjing runs on [dstack](https://github.com/Dstack-TEE/dstack) a
 docker compose up   # docker-compose.yml mounts /var/run/dstack.sock
 ```
 
-Clients check the deployment with `pnpm verify:attestation`. See [TEE_SETUP.md](docs/TEE_SETUP.md) and [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) for production configurations. Running in a TEE is strongly recommended for any deployment serving users other than yourself — it's what lets users trust the operator without trusting you personally.
+The contract, the enclave and governance are deployed in a set order: see [DEPLOYMENT.md](docs/DEPLOYMENT.md#production-deployment). Clients check the deployment with `pnpm verify:attestation`. See [TEE_SETUP.md](docs/TEE_SETUP.md) and [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) for production configurations. Running in a TEE is strongly recommended for any deployment serving users other than yourself — it's what lets users trust the operator without trusting you personally.
 
 ## Add your own provider
 
@@ -180,6 +180,7 @@ The provider layer is an abstraction — any upstream API plugs in the same way 
 - [MLKEM.md](docs/MLKEM.md) — post-quantum key encapsulation
 
 **Deployment**
+- [DEPLOYMENT.md](docs/DEPLOYMENT.md) — production deployment, in order
 - [TEE_SETUP.md](docs/TEE_SETUP.md) — production TEE deployment
 - [ATTESTATION.md](docs/ATTESTATION.md) — verifying the attestation and the keys it binds
 - [KEY_DERIVATION.md](docs/KEY_DERIVATION.md) — enclave-derived keys and the key manifest
