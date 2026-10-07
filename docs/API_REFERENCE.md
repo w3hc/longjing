@@ -400,17 +400,14 @@ General health check endpoint.
 
 ### GET /health/ready
 
-Readiness probe for orchestration systems (Kubernetes, etc.).
+Readiness probe for orchestration systems (Kubernetes, etc.). With `NODE_ENV=production` it returns 503 until `LongjingCredits` answers at `ZK_CONTRACT_ADDRESS`, as every `/longjing` endpoint does.
 
 **Response:**
 
 ```typescript
 {
-  status: 'ready' | 'not ready';
-  checks: {
-    tee?: boolean;
-    encryption?: boolean;
-  };
+  status: 'ready';
+  timestamp: string;  // ISO 8601 timestamp
 }
 ```
 

@@ -128,6 +128,7 @@ With `NODE_ENV=production`:
 - Startup fails if `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `SERVER_TX_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` is set ([`key-policy.ts`](../src/keys/key-policy.ts)).
 - Contract transactions are signed by the derived transaction signer, never `SERVER_TX_PRIVATE_KEY`, which stays refused even under the opt-out below ([LOCAL_SETUP.md](./LOCAL_SETUP.md#node_env)). Fund `txSignerAddress` for gas.
 - Startup fails if `LongjingCredits.serverPublicKey` isn't the key the refund signer signs with, since every request proof would fail against it. A `serverAddress` that isn't `txSignerAddress` is logged as a warning, as a pending `serverAddress` change can explain it ([`blockchain.service.ts`](../src/longjing/blockchain.service.ts)).
+- If the RPC or the contract at `ZK_CONTRACT_ADDRESS` doesn't answer at boot, the enclave still starts, so a first boot can publish the manifest the contract is deployed with. It retries every 30 s, and until the contract answers every `/longjing` endpoint and `GET /health/ready` return 503. A wrong refund key found by a later retry keeps them at 503 and is logged as an error.
 - `ANTHROPIC_API_KEY`, a third-party credential, necessarily transits env. It is the only secret that does.
 - `docker-compose.yml` sets `NODE_ENV=production` as a literal, and passes none of the above through `${...}` substitution, so the operator cannot set them on a dstack CVM.
 
