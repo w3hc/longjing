@@ -1,6 +1,6 @@
 # Phala Cloud Deployment Guide
 
-This guide covers deploying the Longjing API to Phala Cloud's Trusted Execution Environment (TEE).
+This guide covers deploying the Longjing API to Phala Cloud's Trusted Execution Environment (TEE). A production deployment also needs the contract and governance in a set order: follow [DEPLOYMENT.md](./DEPLOYMENT.md#production-deployment), which links back here for the Phala steps.
 
 ## Overview
 
@@ -18,7 +18,7 @@ Phala Cloud provides confidential computing infrastructure using Intel TDX (Trus
    npm install -g @phala/cli
    ```
 
-2. **Docker Hub account** for hosting your container images
+2. **A released image**: CI publishes it to `ghcr.io/w3hc/longjing`, see [DOCKER.md](./DOCKER.md#releases)
 
 3. **Phala Cloud account** at https://cloud.phala.network
 
@@ -87,27 +87,17 @@ ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,htt
 
 `NODE_ENV` comes from the compose file as a literal. Leave out `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY`, `ANVIL_RPC_URL` and `SERVER_TX_PRIVATE_KEY`: the keys are derived inside the enclave, and `NODE_ENV=production` refuses to start with them in env. Contract transactions, slashing included, are signed by the enclave's transaction signer, so fund its address (`txSignerAddress` in `GET /attestation/manifest`) for gas and set it as the contract's `serverAddress`. Placeholder values, such as Anvil addresses or `example.com` URLs, are refused too, see [LOCAL_SETUP.md](LOCAL_SETUP.md#node_env).
 
-On a first deployment, `LongjingCredits` doesn't exist yet: its constructor needs the refund signer key from `GET /attestation/manifest`. Set `ZK_CONTRACT_ADDRESS` to the address it will be deployed at and boot the CVM: the enclave serves `/attestation` and `/attestation/manifest`, refuses every `/longjing` request with 503 and fails `GET /health/ready`, and connects within 30 s of the contract answering at that address.
+On a first deployment, `LongjingCredits` doesn't exist yet: its constructor needs the refund signer key from `GET /attestation/manifest`. Set `ZK_CONTRACT_ADDRESS` to the address it will be deployed at and boot the CVM: the enclave serves `/attestation` and `/attestation/manifest`, refuses every `/longjing` request with 503 and fails `GET /health/ready`, and connects within 30 s of the contract answering at that address. See [DEPLOYMENT.md](./DEPLOYMENT.md#3-pick-the-contract-address) for picking the address.
 
 **Important**: Add `.env.prod` to [.gitignore](../.gitignore) to prevent committing secrets.
 
-### Generating ML-KEM Keys
+## Deploying
 
-Generate quantum-resistant ML-KEM-1024 keypairs:
+### First deployment
 
-```bash
-pnpm ts-node scripts/generate-admin-keypair.ts
-```
+This is step 4 of [DEPLOYMENT.md](./DEPLOYMENT.md#production-deployment): the image is pinned and `ZK_CONTRACT_ADDRESS` is set.
 
-Copy the output keys to your `.env.prod` file.
-
-## Deployment Process
-
-### Initial Deployment
-
-1. **Pin the release image**: push a `v*` tag, then set `image:` in `docker-compose.yml` to the digest from the release notes (see [DOCKER.md](./DOCKER.md#releases)).
-
-2. **Deploy to Phala Cloud**:
+1. **Deploy to Phala Cloud**:
    ```bash
    phala deploy --interactive
    ```
@@ -119,7 +109,7 @@ Copy the output keys to your `.env.prod` file.
    - Choose region
    - Configure storage
 
-3. **Wait for deployment**:
+2. **Wait for deployment**:
    ```bash
    phala cvms list
    ```
@@ -252,25 +242,14 @@ Phala Cloud uses end-to-end encryption for secrets:
 2. **TEE-only decryption**: Only your application inside the TEE can decrypt the secrets
 3. **No provider access**: Phala Cloud cannot access your decrypted secrets
 
-From [src/config/secrets.service.ts](../src/config/secrets.service.ts:25):
-```typescript
-// In production, check if secrets are injected as environment variables (Phala Cloud)
-// or if we need to fetch from external KMS
-if (process.env.KMS_URL && !process.env.ADMIN_MLKEM_PUBLIC_KEY) {
-  await this.loadFromKms();
-} else {
-  // Load from environment (encrypted secrets in TEE)
-  this.logger.log('Loading secrets from TEE environment variables');
-  // ...
-}
-```
+These are configuration values, never keys: every key is derived inside the enclave, see [KEY_DERIVATION.md](KEY_DERIVATION.md).
 
 ### ML-KEM Encryption
 
 The application uses ML-KEM-1024 (NIST FIPS 203) for quantum-resistant encryption:
 
 - **Public key**: Served in `keys.mlkemPublicKey` of `GET /attestation`
-- **Private key**: Kept secret inside the TEE, never exposed
+- **Private key**: Derived inside the TEE with `GetKey`, never exposed
 - **Security level**: NIST Level 5 (256-bit classical security)
 - **Key sizes**: 1568 bytes (public), 3168 bytes (private)
 
@@ -316,8 +295,8 @@ docker logs dstack-longjing-1
 
 Common issues:
 - **exec format error**: Wrong architecture (must be AMD64, not ARM64)
-- **Missing secrets**: Environment variables not properly configured
-- **KMS errors**: Check KMS_URL or secret loading logic
+- **Missing configuration**: `ETHEREUM_RPC_URLS` or `ZK_CONTRACT_ADDRESS` not set in `.env.prod`
+- **Key derivation errors**: the `/var/run/dstack.sock` mount is missing, or the compose hash isn't allowed on the `DstackApp`
 
 ### "exec format error"
 
@@ -331,10 +310,7 @@ phala ssh --interactive
 docker logs dstack-longjing-1
 ```
 
-Verify secrets are properly injected:
-```bash
-docker exec dstack-longjing-1 env | grep ADMIN_MLKEM
-```
+A container that exits at startup with a key policy error has key material in env, such as `ADMIN_MLKEM_PRIVATE_KEY` or `OPERATOR_PRIVATE_KEY`: remove it from `.env.prod`, see [KEY_DERIVATION.md](KEY_DERIVATION.md#production-policy).
 
 ### Attestation returns `"platform": "none"`
 
@@ -410,7 +386,7 @@ Check current pricing at https://cloud.phala.network/pricing
 
 ## Next Steps
 
-After successful deployment:
+After successful deployment, finish [DEPLOYMENT.md](./DEPLOYMENT.md#production-deployment) from step 5, then:
 
 1. **Test the API**: Make requests to your endpoints
 2. **Monitor logs**: Use `phala logs --interactive` to monitor activity
