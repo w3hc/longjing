@@ -7,7 +7,7 @@ Utility scripts organized by purpose: client proving, the demo, setup, deploymen
 ```
 scripts/
 ├── client/         # Client-side proving
-├── demo/           # One user from deposit to refund
+├── demo/           # Checks each goal and reports its status
 ├── setup/          # Circuit compilation and trusted setup
 ├── deploy/         # Contract generation and deployment
 └── testing/        # Manual testing and verification utilities
@@ -21,6 +21,7 @@ Generates proofs on the client, so the secret key never leaves the user's machin
 
 - `pnpm prove request <input.json>`: a request proof against the on-chain Merkle root, printed as the body for `POST /longjing/request`
 - `pnpm prove refund <input.json>`: a refund redemption proof for a refund ticket
+- `pnpm prove slashing <input.json>`: a double-spend slashing proof from two signals with the same nullifier. It needs no secret key, so anyone holding the two signals can make it
 
 The input formats are in the file's header.
 
@@ -28,7 +29,7 @@ The input formats are in the file's header.
 
 ### `demo/demo.ts`
 
-`pnpm demo` runs one user, Alice, from deposit to refund against Anvil, and exits non-zero on the first failed check. See [docs/TESTING_GUIDE.md](../docs/TESTING_GUIDE.md#prove-it-in-3-commands).
+`pnpm demo` checks each of Longjing's goals and prints one line per goal: verified, not met (with its issue) or not checked yet. It runs against Anvil, or against an existing deployment with `--gateway`, `--contract` and `--rpc`. It exits non-zero only when a goal expected to be verified is not. See [docs/TESTING_GUIDE.md](../docs/TESTING_GUIDE.md#prove-it-in-3-commands).
 
 ## Setup Scripts
 
@@ -104,7 +105,7 @@ Instead of individual test scripts, use the demo and the e2e test suite:
 # Start local blockchain
 anvil
 
-# One user from deposit to refund
+# Check each goal and report its status
 pnpm demo
 
 # Run end-to-end tests

@@ -104,7 +104,7 @@ cp .env.template .env.local
 # Unit tests
 pnpm test
 
-# One user from deposit to refund, every step asserted (requires Anvil running)
+# Check each goal and report it as verified, not met or not checked yet (requires Anvil running)
 anvil                      # Terminal 1
 pnpm demo                  # Terminal 2
 

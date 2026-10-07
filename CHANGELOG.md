@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `pnpm prove slashing` makes a double-spend slashing proof from two signals with the same nullifier, with no secret key ([#158](https://github.com/w3hc/longjing/issues/158)).
+- `pnpm demo --gateway <url> --contract <address> --rpc <url>` runs the demo against an existing deployment instead of Anvil, paying from `DEMO_PRIVATE_KEY` ([#158](https://github.com/w3hc/longjing/issues/158)).
 - `pnpm check:verifiers` fails on any pinned verification key where `vk_delta_2` equals `vk_gamma_2`, which would let anyone forge proofs from the public key alone. A fixture under `scripts/testing/fixtures/` shows it failing. Jest now also runs specs under `scripts/` ([#152](https://github.com/w3hc/longjing/issues/152)).
 
 ### Removed
@@ -17,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `pnpm demo` runs four actors (Alice, the operator, an observer and an attacker), reports each goal as verified, not met (with its issue) or not checked yet, and exits non-zero only when a goal expected to be verified is not. It drops the check that the proof is for the deposited secret, which passed only because requests publish `idCommitment` (LJ-03). It adds checks that report as not met the unlinkability of requests and refund redemptions, and solvency ([#134](https://github.com/w3hc/longjing/issues/134)). It also adds verified checks: double-spend slashing end to end from a wallet that is not `serverAddress`, a refund that can't be redeemed to another address, and no request body containing a secret key ([#158](https://github.com/w3hc/longjing/issues/158)).
 - **Breaking:** `slashPolicyStake(nullifier, idCommitment)` replaces `slashPolicyViolation`. It takes no proof and burns the policy stake, as in the paper. It is a trusted-operator action, and its only guard is the 7-day timelock on `serverAddress`. `PolicyStakeSlashed` replaces `PolicyViolationSlashed`, without `evidenceHash` ([#133](https://github.com/w3hc/longjing/issues/133)).
 
 ### Fixed

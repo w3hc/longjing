@@ -1,11 +1,14 @@
 #!/usr/bin/env ts-node
 /**
  * Generates request and refund redemption proofs on the client, so the secret
- * key never leaves the user's machine. Withdrawal proving is tracked in #119.
+ * key never leaves the user's machine, and double-spend slashing proofs, which
+ * anyone holding the two signals can make. Withdrawal proving is tracked in
+ * #119.
  *
  * Usage:
  *   pnpm prove request <input.json>
  *   pnpm prove refund <input.json>
+ *   pnpm prove slashing <input.json>
  *
  * The request input file holds:
  *   {
@@ -32,6 +35,16 @@
  *     "refundTicket": { ...the refundTicket returned by POST /longjing/request },
  *     "serverPublicKey": { "x": "0x...", "y": "0x..." }
  *   }
+ *
+ * The slashing input file holds two signals with the same nullifier:
+ *   {
+ *     "ticketIndex": "0x00",
+ *     "signal1": { "x": "0x...", "y": "0x..." },
+ *     "signal2": { "x": "0x...", "y": "0x..." }
+ *   }
+ *
+ * It recovers the secret key from the two signals and prints the arguments
+ * for slashDoubleSpend.
  *
  * serverPublicKey is the refundSigner key from GET /attestation/manifest.
  * The RLN signal x is bound to the payload: x = SHA-256(payload) mod p.
@@ -83,10 +96,16 @@ interface RefundInput {
   serverPublicKey: { x: string; y: string };
 }
 
+interface SlashingInput {
+  ticketIndex: string;
+  signal1: { x: string; y: string };
+  signal2: { x: string; y: string };
+}
+
 const toHex = (v: bigint | number | string) => '0x' + BigInt(v).toString(16);
 
 function usage(): never {
-  console.error('Usage: pnpm prove <request|refund> <input.json>');
+  console.error('Usage: pnpm prove <request|refund|slashing> <input.json>');
   process.exit(1);
 }
 
@@ -221,14 +240,47 @@ async function proveRefund(prover: ProofGenService, args: string[]) {
   };
 }
 
+async function proveSlashing(prover: ProofGenService, args: string[]) {
+  if (args.length < 1) usage();
+  const input = JSON.parse(fs.readFileSync(args[0], 'utf8')) as SlashingInput;
+  const point = (s: { x: string; y: string }) => ({
+    x: BigInt(s.x),
+    y: BigInt(s.y),
+  });
+  const signal1 = point(input.signal1);
+  const signal2 = point(input.signal2);
+  const secretKey = await prover.recoverSecretKey(signal1, signal2);
+
+  const { proof, publicSignals } = await prover.generateDoubleSpendProof({
+    secretKey,
+    ticketIndex: BigInt(input.ticketIndex),
+    signal1,
+    signal2,
+  });
+  // [idCommitment, nullifier, secretKeyClaimed, nullifierExpected]
+  const [idCommitment, nullifier] = publicSignals;
+
+  return {
+    secretKey: ethers.toBeHex(secretKey, 32),
+    nullifier: ethers.toBeHex(nullifier, 32),
+    idCommitment: ethers.toBeHex(idCommitment, 32),
+    proof: proof.map(toHex),
+    publicSignals: publicSignals.map(toHex),
+  };
+}
+
 async function main() {
   Logger.overrideLogger(['error']);
   const [kind, ...args] = process.argv.slice(2);
   const prover = new ProofGenService();
 
-  const provers = { request: proveRequest, refund: proveRefund };
-  if (kind !== 'request' && kind !== 'refund') usage();
-  const result = await provers[kind](prover, args);
+  const provers = {
+    request: proveRequest,
+    refund: proveRefund,
+    slashing: proveSlashing,
+  };
+  if (!(kind in provers)) usage();
+  const result = await provers[kind as keyof typeof provers](prover, args);
 
   console.log(JSON.stringify(result, null, 2));
   // snarkjs keeps worker threads alive
