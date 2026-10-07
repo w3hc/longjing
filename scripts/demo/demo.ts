@@ -719,12 +719,18 @@ async function main() {
       const stored = app
         .get(NullifierStoreService)
         .get(required(body, 'request proof').nullifier as string);
+      const extra = Object.entries(stored ?? {})
+        .filter(
+          ([k, v]) =>
+            !['x', 'y'].includes(k) ||
+            commitments.includes(BigInt(v).toString()),
+        )
+        .map(([k]) => k);
       check(
         goals.requestToDeposit,
-        "the operator's database stores no deposit next to the nullifier",
-        !stored?.idCommitment ||
-          !commitments.includes(BigInt(stored.idCommitment).toString()),
-        'it stores idCommitment',
+        "the operator's database stores only (x, y) next to the nullifier",
+        extra.length === 0,
+        `it stores ${extra.join(', ')}`,
       );
     });
 

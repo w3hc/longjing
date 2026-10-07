@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { createHash } from 'crypto';
 import { LongjingRequestDto } from './dto/api-request.dto';
 import { LongjingResponseDto, UsageDto } from './dto/api-response.dto';
 import { NullifierStoreService } from './nullifier-store.service';
@@ -110,12 +109,9 @@ export class LongjingService {
 
     // 5. Atomically check nullifier and insert if new
     // This prevents TOCTOU race conditions in concurrent scenarios
-    const payloadHash = this.hashPayload(req.payload);
     const existingSignal = this.nullifierStore.checkAndSet(req.nullifier, {
-      ...req.signal,
-      payloadHash,
-      ticketIndex: req.ticketIndex,
-      idCommitment: req.idCommitment,
+      x: req.signal.x,
+      y: req.signal.y,
     });
 
     if (existingSignal) {
@@ -362,14 +358,5 @@ export class LongjingService {
    */
   async getServerPublicKey(): Promise<{ x: string; y: string }> {
     return this.refundSigner.getPublicKey();
-  }
-
-  /**
-   * Hash payload, kept as evidence for policy slashing
-   * Uses SHA256 to create a deterministic hash of the request payload
-   */
-  private hashPayload(payload: string): string {
-    const hash = createHash('sha256').update(payload).digest('hex');
-    return '0x' + hash;
   }
 }
