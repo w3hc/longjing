@@ -40,5 +40,11 @@
     "file": "circuits/refund_redemption.circom",
     "location": "signal recipientSquare;",
     "reason": "Intended: the Tornado Cash dummy constraint that binds the public `recipient` in the circuit itself instead of relying on snarkjs setup (LJ-23). It needs only one constraint."
+  },
+  {
+    "check": "CS0010",
+    "file": "circuits/templates/accumulator.circom",
+    "location": "component bits = Num2Bits(BITS);",
+    "reason": "False positive: FixedBaseMul is only instantiated with BITS = 32 or 128, so a value that fits cannot alias modulo p. Field elements go through FieldBaseMul, which uses Num2Bits_strict."
   }
 ]
