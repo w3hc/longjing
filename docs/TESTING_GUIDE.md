@@ -44,7 +44,7 @@ At v0.4.1 the table reads:
 | Solvency is enforced | not met: after one refund, the contract holds less than the active stakes (LJ-01). D bound to the deposit (LJ-02) is not checked | [#134](https://github.com/w3hc/longjing/issues/134) |
 | A double-spend reveals `k` and anyone with the proof can slash the RLN stake | verified | |
 | The client sends nothing that contains the secret key | verified | |
-| The client verifies the attestation before sending anything | not checked yet | [#99](https://github.com/w3hc/longjing/issues/99), [#130](https://github.com/w3hc/longjing/issues/130) |
+| The client verifies the attestation before sending anything | not checked yet | [#99](https://github.com/w3hc/longjing/issues/99) |
 | Protocol, pricing and refunds work with any provider | not checked yet | |
 | A depositor can withdraw without the server | not met, no check yet | [#119](https://github.com/w3hc/longjing/issues/119), [#157](https://github.com/w3hc/longjing/issues/157) |
 | Every depositor can exit if the operator and every host disappear | not met, no check yet | [#157](https://github.com/w3hc/longjing/issues/157), [#135](https://github.com/w3hc/longjing/issues/135) |
@@ -144,7 +144,7 @@ pnpm test:e2e
 
 Jest sets `NODE_ENV=test`, and the tests deploy their own contract with it, so they need nothing from your shell:
 
-- `ZK_CONTRACT_ADDRESS`, `ANVIL_RPC_URL`, `ANVIL_PRIVATE_KEY` and `ETHEREUM_RPC_URLS` are cleared before the app starts, so a sourced `.env.local` cannot point it at another contract.
+- `ZK_CONTRACT_ADDRESS`, `ANVIL_RPC_URL`, `SERVER_TX_PRIVATE_KEY` and `ETHEREUM_RPC_URLS` are cleared before the app starts, so a sourced `.env.local` cannot point it at another contract.
 - The main flow test clears `ANTHROPIC_API_KEY`, so the service answers with mock responses and the run costs nothing.
 
 ### Main Flow Test (`test/app.e2e-spec.ts`)

@@ -248,7 +248,7 @@ curl -k -X POST https://localhost:3000/longjing/redeem-refund \
 - Refund tickets can only be redeemed once
 - The smart contract verifies the Groth16 proof, which checks the EdDSA signature in-circuit and binds the recipient
 - If the nullifier was slashed for double-spending, redemption will fail
-- The server relays the transaction and its wallet pays the gas: the enclave-derived identity key with `NODE_ENV=production`, `ANVIL_PRIVATE_KEY` otherwise. The caller pays nothing onchain
+- The server relays the transaction and its wallet pays the gas: the enclave-derived transaction signer with `NODE_ENV=production`, `SERVER_TX_PRIVATE_KEY` otherwise. The caller pays nothing onchain
 
 ---
 
