@@ -4,10 +4,7 @@ import {
   IsObject,
   ValidateNested,
   IsOptional,
-  IsArray,
   IsIn,
-  ArrayMinSize,
-  ArrayMaxSize,
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -91,83 +88,4 @@ export class LongjingRequestDto {
   @IsOptional()
   @IsIn(CLAUDE_MODELS)
   model?: string;
-}
-
-export class RefundSignatureDto {
-  @ApiProperty({ description: 'EdDSA signature R8x component' })
-  @IsString()
-  @IsNotEmpty()
-  R8x: string;
-
-  @ApiProperty({ description: 'EdDSA signature R8y component' })
-  @IsString()
-  @IsNotEmpty()
-  R8y: string;
-
-  @ApiProperty({ description: 'EdDSA signature S component' })
-  @IsString()
-  @IsNotEmpty()
-  S: string;
-}
-
-export class RedeemRefundRequestDto {
-  @ApiProperty({ description: 'Identity commitment (Hash of secret key)' })
-  @IsFieldElement()
-  idCommitment: string;
-
-  @ApiProperty({ description: 'Nullifier from the API request' })
-  @IsFieldElement()
-  nullifier: string;
-
-  @ApiProperty({ description: 'Refund value in wei' })
-  @IsFieldElement()
-  value: string;
-
-  @ApiProperty({ description: 'Recipient address for the refund' })
-  @IsString()
-  @IsNotEmpty()
-  recipient: string;
-
-  @ApiProperty({
-    description: 'Groth16 ZK proof (array of 8 hex strings)',
-    type: [String],
-    example: [
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-    ],
-  })
-  @IsArray()
-  @ArrayMinSize(8)
-  @ArrayMaxSize(8)
-  @IsString({ each: true })
-  @MaxLength(80, { each: true })
-  proof: string[];
-
-  @ApiProperty({
-    description:
-      'Public signals in snarkjs order (array of 8 hex strings): nullifier, signalY, idCommitment, signalX, refundValueClaimed, serverPublicKeyX, serverPublicKeyY, recipient',
-    type: [String],
-    example: [
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-      '0x...',
-    ],
-  })
-  @IsArray()
-  @ArrayMinSize(8)
-  @ArrayMaxSize(8)
-  @IsString({ each: true })
-  @MaxLength(80, { each: true })
-  publicSignals: string[];
 }

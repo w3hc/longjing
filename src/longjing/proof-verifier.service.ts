@@ -24,16 +24,6 @@ type ApiRequestPublicInputs = {
   idCommitmentExpected: string;
 };
 
-/** Compares two roots by value, so hex and decimal encodings match. */
-function sameFieldElement(a: string, b: string): boolean {
-  if (!a?.trim() || !b?.trim()) return false;
-  try {
-    return BigInt(a) === BigInt(b);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Service for verifying ZK-SNARK proofs using Groth16
  * Now supports real cryptographic verification via snarkjs
@@ -160,23 +150,11 @@ export class ProofVerifierService {
     proofData: any,
     publicInputs: ApiRequestPublicInputs,
   ): Promise<boolean> {
-    // 2. Verify against blockchain state
-    const chain = await this.readChainState(publicInputs.nullifier);
-    if (chain) {
-      if (chain.isSlashed) {
-        this.logger.warn(
-          `Nullifier ${publicInputs.nullifier} has been slashed`,
-        );
-        return false;
-      }
-
-      if (!sameFieldElement(chain.merkleRoot, publicInputs.merkleRoot)) {
-        this.logger.warn('Merkle root mismatch with onchain state', {
-          expected: chain.merkleRoot,
-          provided: publicInputs.merkleRoot,
-        });
-        return false;
-      }
+    // 2. The root must be one the contract recorded recently
+    const knownRoot = await this.isKnownRoot(publicInputs.merkleRoot);
+    if (knownRoot === false) {
+      this.logger.warn('Merkle root is not a recent onchain root');
+      return false;
     }
 
     // 3. Real snarkjs verification (REQUIRED - no mock fallback)
@@ -293,23 +271,17 @@ export class ProofVerifierService {
   }
 
   /**
-   * Reads the onchain root and slashed status. In prod this fails closed:
-   * the root comes from the request, so skipping the check would let a
+   * Whether the contract recorded this root recently. In prod this fails
+   * closed: the root comes from the request, so skipping the check would let a
    * client prove membership in a tree of its own. Elsewhere it returns null
-   * and the checks are skipped.
+   * when the chain is unreachable, and the check is skipped.
    */
-  private async readChainState(
-    nullifier: string,
-  ): Promise<{ merkleRoot: string; isSlashed: boolean } | null> {
+  private async isKnownRoot(root: string): Promise<boolean | null> {
     try {
       if (!this.blockchainService.isAvailable()) {
         throw new Error('Blockchain service not initialized');
       }
-      const [merkleRoot, isSlashed] = await Promise.all([
-        this.blockchainService.getMerkleRoot(),
-        this.blockchainService.isNullifierSlashed(nullifier),
-      ]);
-      return { merkleRoot, isSlashed };
+      return await this.blockchainService.isKnownRoot(root);
     } catch (error) {
       if (isProd()) {
         this.logger.error('Failed to read onchain state', error);
