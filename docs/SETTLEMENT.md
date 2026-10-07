@@ -134,3 +134,101 @@ The cost is that a note serves one request at a time. Two requests from the same
 - **Provider error.** The server still returns `A'` with `v = C_MAX`, a full refund (LJ-12).
 - **Lost response.** The server keeps the signed `A'` keyed by `N` for a short time. A retry with the same `(N, x, y)` returns it without calling the provider again. This reveals nothing new, since `N` is already stored, and `A'` is never shown again in that form.
 - **Refused service.** If the server withholds `A'`, the note can make no further requests. The user can still exit (next section), forfeiting the refund for that one request.
+
+## Withdrawal
+
+Withdrawal pays out what is left: `D + R − n · C_max`, where `n` is the number of indices the note used. It takes two steps with a challenge window `W` in between, because the contract can't see `n`. It has to trust the user's claim unless someone shows the claim is too low.
+
+### The withdrawal proof
+
+The client takes its latest signed accumulator `A`, which opens to `(R, m, c, s)`, chooses a claimed index count `n ≥ m`, and proves:
+
+1. `Poseidon(k) = c`.
+2. `A` is genesis, or the server's signature on `A` is valid.
+3. `A` opens to `(R, m, c, s)` and `n ≥ m`.
+4. The payout `P = D + R − n · C_MAX` and `P ≥ 0`.
+5. An RLN signal at index `n`: `a = Poseidon(k, n)`, `N = Poseidon(a)`, `y = k + a · x`, with `x = Poseidon(recipient, chainId, contract)`.
+
+Public signals: `c`, `D` (the contract supplies `notes[c].amount`), `C_MAX`, the server key, the recipient, `x`, and the outputs `N`, `y` and `P`. The recipient is bound twice, in `x` and as a public input with an explicit constraint, as today.
+
+There is no Merkle path: the contract already knows the note by `c`. The withdrawal page then needs the note's commitment and amount, both onchain, plus the accumulator the user holds. It no longer needs `getMerkleProof`.
+
+Normally `n = m`. A user whose last request got no response claims `n = m + 1` and pays full `C_MAX` for it. A user who lost their accumulator exits from genesis with an `n` at least as large as the requests they made, and forfeits their refunds but not the deposit.
+
+### Two steps
+
+```text
+initiateWithdrawal(c, recipient, proof, N, y, P)
+  require notes[c].status == Active and P ≤ D
+  verify the proof, with x computed by the contract
+  notes[c] = Exiting { N, x, y, P, recipient, exitAt: now + W }
+  replace the leaf with the empty value; emit WithdrawalInitiated(c, N, x, y, P)
+
+finalizeWithdrawal(c)            // anyone, after exitAt
+  pay P to the recipient; operatorBalance += D − P; status = Closed
+```
+
+### Why the claim can't be too low
+
+The used indices form a prefix `0 … n_true − 1` (see [Sequential requests](#sequential-requests-and-the-prefix-property)).
+
+- **Claim too low** (`n < n_true`): index `n` was used by a real request, so the server already holds `(N, x', y')` with `x' ≠ x`. It recovers `k = (y · x' − y' · x) / (x' − x)` and slashes the note during the window.
+- **Claim too high**: `N` is fresh, so nobody can challenge, and the user only underpays themselves.
+
+The payout never exceeds D. Every signed step adds one to `m` and at most `C_MAX` to `R`, so `R ≤ m · C_MAX ≤ n · C_MAX`. The contract also checks `P ≤ D` itself, in case a signing key is ever compromised. Each note pays out at most D in total, split between recipient, slasher and operator, so the pool stays solvent whatever happens (LJ-01).
+
+### After an exit starts
+
+- The server reads `WithdrawalInitiated` and adds `N` to its spent set before serving anything else. A request at index `n` is then refused. Requests at indices between `m` and `n` are already paid for by the claim, and anything above `n` needs an accumulator for index `n + 1`, which can't exist.
+- The leaf is replaced with the empty value, so new proofs can't use it. The server accepts a root only if it is one of the last few roots the contract records, and that history is much shorter than `W`. So once an exit is final, no root that contains the note is still accepted.
+
+### What an exit reveals
+
+The exit shows that note `c` closed, to which recipient, and for what payout. `D − P` is the note's net spending. It doesn't show which requests the note made, or how many apart from what `D − P` implies. A user who doesn't want the deposit address linked to the recipient picks a fresh recipient. The exit's own `N` has never been used for a request, so it links to nothing in the server's store.
+
+## Slashing
+
+```text
+slash(k)
+  c = Poseidon(k)
+  require notes[c].status is Active or Exiting
+  bounty = min(SLASH_BOUNTY, D) to msg.sender
+  operatorBalance += D − bounty
+  status = Slashed; replace the leaf with the empty value
+```
+
+Knowing `k` is the proof: only the owner holds it, and it leaks only when two signals share a nullifier. Anyone who has `k` can call `slash`, so slashing stays permissionless. Recovering `k` from two signals is one modular division, done offchain, so `double_spend_slashing.circom` and its verifier go away.
+
+The caller gets a **fixed bounty, not the stake** (problem 3 above). If the caller took D, the owner could slash their own note at any time and get the whole deposit back, refunding every request. With a small `SLASH_BOUNTY`, self-slashing pays the owner at most the bounty, less than an honest exit unless the note is nearly drained. The rest of D goes to the operator, which is owed the spending the double-spend tried to dodge. The operator can't fake a slash, because that needs `k`.
+
+Front-running a `slash` call only moves the bounty, so no commit-reveal scheme is needed.
+
+## Expiry and operator revenue
+
+- `claimExpired(c)`: the operator takes D from a note that is still `Active` after `NOTE_TTL`. As today, the TTL is pushed back by time spent paused. A note that is `Exiting` can't be claimed, so an exit started before expiry always completes.
+- `operatorBalance` collects `D − P` from finalized exits, slash remainders and expired notes. `serverAddress` withdraws it.
+- The operator gets paid when a note closes, not per request. ethereum/zkapi makes the same trade, with one net settlement at close.
+
+## The policy stake
+
+The policy stake S goes away. The paper burns S through `slashPolicyStake(nullifier)`, which has to find the deposit behind a request. Once requests carry no identifier, the only way to find it is the link this redesign removes. No proof statement fixes that: proving a nullifier belongs to a given note is exactly what unlinkability rules out.
+
+Enforcement moves to what the server already controls:
+
+- **Withholding the accumulator.** For a request that breaks the policy, the server serves nothing and returns no `A'`. The note can't make another request, and the user loses at most `C_MAX` at exit, since the refund for that request is forfeit.
+- **Refusing service** before the provider call, as today.
+
+The penalty is bounded and burns nothing. A malicious operator can freeze a note's service, but not its deposit: the exit doesn't need the server. This matches ethereum/zkapi's bounded `S_max` deduction more than the paper's burn, and it is listed under [departures](#departures-from-the-paper). LJ-17 (the stranded policy stake) goes away with S.
+
+## What the server stores
+
+| Data | Kept | Why |
+| --- | --- | --- |
+| `N`, `x`, `y` | Yes, for as long as the contract is live | Rejecting replays and recovering `k` from a second signal, both during requests and against exits |
+| `A'` and its signature, keyed by `N` | Minutes | Retries after a lost response |
+| `idCommitment`, leaf, D | Never sent | The request doesn't contain them |
+| `ticketIndex` | Never sent | Private in the proof (problem 4) |
+| `payload_hash` | Dropped | See below |
+| Timestamps | No | Nothing needs them, and they help timing correlation |
+
+`x` stays `Hash(M)` as in the paper, with a nonce: `x = Poseidon(H(M), ρ)`. The client sends `ρ` with the request, and the server recomputes `x` from the payload and `ρ`, then forgets both. Without `ρ`, anyone holding the database could confirm a guessed prompt by hashing it. With `ρ`, a stored `x` is just a field element. The separate `payload_hash` column was only a copy of what `x` encodes, so it goes.
