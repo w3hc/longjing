@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
   accumulatorGenerators,
   addPoints,
@@ -40,6 +42,19 @@ describe('accumulator', () => {
   it('derives the generators deterministically from their seeds', () => {
     expect(hashToCurve('longjing/accumulator/G')).toEqual(G);
     expect(hashToCurve('longjing/accumulator/X')).not.toEqual(G);
+  });
+
+  it('matches the generators the circuits embed', () => {
+    const source = readFileSync(
+      join(__dirname, '../../circuits/templates/accumulator.circom'),
+      'utf8',
+    );
+    for (const [name, point] of Object.entries({ G, J, K, H })) {
+      const body = new RegExp(
+        `function GENERATOR_${name}\\(\\) \\{\\s*return \\[\\s*(\\d+),\\s*(\\d+)`,
+      ).exec(source);
+      expect(body?.slice(1).map(BigInt)).toEqual(point);
+    }
   });
 
   it('starts from c·K', () => {
