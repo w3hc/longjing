@@ -147,7 +147,7 @@ curl -k https://localhost:3000/attestation/manifest
 
 ## Rotation and the contract
 
-The derived refund signer is a new key, and `LongjingCredits.serverPublicKey` is set only in the constructor. Moving a deployment to derived keys means:
+The derived refund signer is a new key, and `LongjingCredits.serverPublicKey` is set only in the constructor. A new deployment follows [DEPLOYMENT.md](./DEPLOYMENT.md#production-deployment). Moving an existing deployment to derived keys means:
 
 1. Deploy the new image on dstack.
 2. Read `refundSigner.x` and `refundSigner.y` from `GET /attestation/manifest`.

@@ -285,7 +285,7 @@ The two designs end up close in mechanics: one signed commitment per note and se
 
 - **Exit.** `initiateWithdrawal`, then `finalizeWithdrawal` after `W`. It needs the chain, any RPC, `k`, the accumulator and the withdrawal page: no server signature, API call or admin action. The proposed `W` is 3 days.
 - **State.** `c` and D are onchain. The accumulator and its opening are held by the user. Losing them costs the refunds, not the deposit: the user exits from genesis with a conservative `n`.
-- **Artifacts.** The page needs `withdrawal.wasm` and `withdrawal.zkey`, pinned by hash, and no Merkle path.
+- **Artifacts.** The page needs `settlement.wasm` and `settlement.zkey`, pinned by hash in `circuits/artifacts.json`, and no Merkle path.
 - **Admin.** `C_MAX` and `SLASH_BOUNTY` are immutable. Changes to the verifiers, `serverAddress` and the refund key wait behind `ADMIN_DELAY` (7 days), which is longer than `W` plus the time to submit. A rotated refund key stays accepted for withdrawals, so older accumulators still verify. Pausing blocks deposits and requests, never `initiateWithdrawal`, `finalizeWithdrawal` or `slash`.
 - **Expiry.** `NOTE_TTL` stays at 365 days, far longer than `W`, and an exit already started can't be claimed.
 - **Slashing.** `slash(k)` is open to anyone holding `k`.

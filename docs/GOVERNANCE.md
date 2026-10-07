@@ -37,7 +37,7 @@ forge test --match-path "test/{LongjingAppOwner,DeployGovernance}.t.sol"
 
 ## Setup
 
-On Base, against the on-chain `DstackKms`, once the `DstackApp` exists and runs the first release:
+On Base, against the on-chain `DstackKms`, once the `DstackApp` exists and runs the first release. This is step 8 of [DEPLOYMENT.md](./DEPLOYMENT.md#production-deployment): hand over only once `LongjingCredits` is deployed with the manifest's keys.
 
 1. **Deploy** the timelock and owner:
    ```bash
