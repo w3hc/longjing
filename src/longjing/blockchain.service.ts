@@ -46,6 +46,7 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
   private cMax: bigint | null = null;
   private retry: NodeJS.Timeout | null = null;
   private destroyed = false;
+  private readonly connectedHandlers: Array<() => Promise<void>> = [];
 
   constructor(
     private readonly configService: ConfigService,
@@ -145,6 +146,22 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Connected to LongjingCredits at ${address}, C_MAX ${this.cMax} wei`,
     );
+    for (const handler of this.connectedHandlers.splice(0)) {
+      await handler().catch((error) =>
+        this.logger.error('A handler failed once connected', error),
+      );
+    }
+  }
+
+  /**
+   * Runs the handler once the contract answers: now if it already does,
+   * otherwise when a production retry connects
+   */
+  async onConnected(handler: () => Promise<void>): Promise<void> {
+    if (this.isAvailable()) {
+      return handler();
+    }
+    this.connectedHandlers.push(handler);
   }
 
   private build(

@@ -377,10 +377,15 @@ describe('BlockchainService', () => {
       expect(blockchain.isAvailable()).toBe(false);
       expect(() => blockchain.getCMax()).toThrow();
 
+      const handler = jest.fn().mockResolvedValue(undefined);
+      await blockchain.onConnected(handler);
+      expect(handler).not.toHaveBeenCalled();
+
       await jest.advanceTimersByTimeAsync(30_000);
 
       expect(blockchain.isAvailable()).toBe(true);
       expect(blockchain.getCMax()).toBe(10n ** 15n);
+      expect(handler).toHaveBeenCalledTimes(1);
     });
 
     it('stays unavailable in prod when a retry finds the wrong refund key', async () => {

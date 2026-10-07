@@ -48,6 +48,48 @@ describe('ExitWatcherService', () => {
     ]);
   });
 
+  describe('at bootstrap', () => {
+    function withContract(available: boolean) {
+      let connect: () => Promise<void> = () => Promise.resolve();
+      const blockchain = {
+        isAvailable: () => available,
+        onConnected: jest.fn((handler: () => Promise<void>) => {
+          connect = handler;
+          return available ? handler() : Promise.resolve();
+        }),
+        watchWithdrawals: jest.fn().mockResolvedValue(undefined),
+      };
+      const service = new ExitWatcherService(
+        blockchain as unknown as BlockchainService,
+        store,
+        { slashRevealed } as unknown as SlashingService,
+      );
+      (service as unknown as { logger: object }).logger = {
+        log: jest.fn(),
+        warn: jest.fn(),
+      };
+      return { service, blockchain, connect: () => connect() };
+    }
+
+    it('watches exits when the contract answers at boot', async () => {
+      const { service, blockchain } = withContract(true);
+
+      await service.onApplicationBootstrap();
+
+      expect(blockchain.watchWithdrawals).toHaveBeenCalledTimes(1);
+    });
+
+    it('watches exits once a contract that was down answers', async () => {
+      const { service, blockchain, connect } = withContract(false);
+
+      await service.onApplicationBootstrap();
+      expect(blockchain.watchWithdrawals).not.toHaveBeenCalled();
+
+      await connect();
+      expect(blockchain.watchWithdrawals).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('ignores the same exit seen twice', async () => {
     await watcher.ingest({ nullifier: 5n, signalX: 7n, signalY: 9n });
     await watcher.ingest({ nullifier: 5n, signalX: 7n, signalY: 9n });
