@@ -430,7 +430,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         uint256 index = _leafIndex;
         for (uint256 level = 0; level < TREE_DEPTH; level++) {
             pathIndices[level] = uint8(index % 2);
-            pathElements[level] = _node(level, index ^ 1);
+            pathElements[level] = _node(level, _sibling(index));
             index /= 2;
         }
     }
@@ -524,6 +524,10 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         _updateLeaf(_leafIndex);
     }
 
+    function _sibling(uint256 _index) internal pure returns (uint256) {
+        return _index % 2 == 0 ? _index + 1 : _index - 1;
+    }
+
     function _node(uint256 _level, uint256 _index) internal view returns (bytes32) {
         bytes32 node = treeNodes[_level][_index];
         return node != bytes32(0) ? node : zeros[_level];
@@ -535,7 +539,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
         uint256 index = _leafIndex;
         treeNodes[0][index] = current;
         for (uint256 level = 0; level < TREE_DEPTH; level++) {
-            bytes32 sibling = _node(level, index ^ 1);
+            bytes32 sibling = _node(level, _sibling(index));
             current = index % 2 == 0
                 ? bytes32(PoseidonHasher.hash(uint256(current), uint256(sibling)))
                 : bytes32(PoseidonHasher.hash(uint256(sibling), uint256(current)));

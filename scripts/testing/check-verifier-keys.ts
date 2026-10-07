@@ -29,16 +29,6 @@ const CIRCUITS: Record<string, Circuit> = {
     zkey: 'api_request_local.zkey',
     vkey: 'api_request_local_verification_key.json',
   },
-  refund_redemption: {
-    zkey: 'refund_redemption.zkey',
-    vkey: 'refund_redemption_verification_key.json',
-    verifier: 'RefundRedemptionVerifier.sol',
-  },
-  withdrawal: {
-    zkey: 'withdrawal.zkey',
-    vkey: 'withdrawal_verification_key.json',
-    verifier: 'WithdrawalVerifier.sol',
-  },
   request: {
     zkey: 'request.zkey',
     vkey: 'request_verification_key.json',
@@ -47,11 +37,6 @@ const CIRCUITS: Record<string, Circuit> = {
     zkey: 'settlement.zkey',
     vkey: 'settlement_verification_key.json',
     verifier: 'SettlementVerifier.sol',
-  },
-  double_spend_slashing: {
-    zkey: 'double_spend_slashing_final.zkey',
-    vkey: 'double_spend_slashing_verification_key.json',
-    verifier: 'DoubleSpendSlashingVerifier.sol',
   },
 };
 
