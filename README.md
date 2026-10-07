@@ -9,7 +9,7 @@
 
 # Longjing
 
-Anonymous, prepaid API access behind a TEE gateway. Deposit ETH once, then make API requests that are meant to be unlinkable to you — by an eavesdropper, and by the operator running the service. That is the design goal; v0.4.1 does not deliver it yet (see [Status](#status)).
+Anonymous, prepaid API access behind a TEE gateway. Deposit ETH once, then make API requests that the operator running the service can't link to your deposit or to each other. Network metadata and the trusted setup are still open (see [Status](#status)).
 
 Most paid API access today silently ties every request to a payment identity. There's no technical reason it has to. This project is an attempt to make unlinkable, prepaid API access a normal thing that exists — something anyone can run, fork, and build on.
 
@@ -25,10 +25,10 @@ Longjing implements the original Rate-Limit Nullifier (RLN) protocol from [ZK AP
 
 | | Longjing | ethereum/zkapi |
 |---|---|---|
-| **Double-spend protection** | Original RLN: reusing a ticket index leaks the secret key, and anyone can slash the RLN stake | State-anchor chain: each request consumes a one-time, server-signed state; replaying an old state is caught during a withdrawal challenge window |
-| **Accounting** | Signed refund tickets accumulate client-side and are proven in-circuit (`(i + 1) · C_max ≤ D + R`) | Private balance carried in the signed state; net settlement in gwei at withdrawal or expiry |
-| **Stakes** | Separate RLN stake (claimable) and policy stake (burnable) | No policy stake; policy penalties are a bounded balance deduction |
-| **Withdrawal** | Direct ZK withdrawal, no server involvement | Instant mutual close with the server, or an escape hatch with a 24h challenge window |
+| **Double-spend protection** | Original RLN: reusing a ticket index leaks the secret key, and anyone holding it can slash the note | State-anchor chain: each request consumes a one-time, server-signed state; replaying an old state is caught during a withdrawal challenge window |
+| **Accounting** | Refunds accumulate in a server-signed commitment, re-randomized on every request, and solvency is proven in-circuit (`(i + 1) · C_max ≤ D + R`) | Private balance carried in the signed state; net settlement in gwei at withdrawal or expiry |
+| **Stakes** | One stake, the whole deposit; no policy stake | No policy stake; policy penalties are a bounded balance deduction |
+| **Withdrawal** | ZK withdrawal of `D + R − n · C_max`, no server involvement, after a 3-day challenge window | Instant mutual close with the server, or an escape hatch with a 24h challenge window |
 | **Request path** | Client → TEE gateway → provider; the gateway holds the provider credentials | Browser → provider directly; the server authorizes leases and settles |
 | **Stack** | Circom + snarkjs (Groth16, EdDSA), NestJS, Foundry | Rust + WASM (Groth16, Schnorr), browser SDK, Foundry |
 
@@ -38,40 +38,48 @@ If you want the simplified protocol with a browser SDK, use zkapi. If you want t
 
 Working implementation, actively developed, not ready to hold real value. Read [What this protects — and what it doesn't](#what-this-protects--and-what-it-doesnt) before relying on it for anything.
 
-At v0.4.1, unlinkability is a design goal, not a property of the code:
+On `main`, since the settlement redesign ([docs/SETTLEMENT.md](docs/SETTLEMENT.md), not yet released):
 
-- Every request publishes the user's `idCommitment`, the same value that indexes their onchain deposit, and the server stores it next to the nullifier. The operator can map each request to its deposit and group requests by user. Redemption publishes it onchain too. Tracked in [#134](https://github.com/w3hc/longjing/issues/134).
-- The protocol's accounting is not settled yet: the deposit amount in the solvency proof is unconstrained, and withdrawal does not net out spending. Also [#134](https://github.com/w3hc/longjing/issues/134).
+- A request carries no identifier: no commitment, leaf, deposit amount or ticket index. The server stores only `(N, x, y)` per request, and each request publishes a freshly re-randomized accumulator.
+- Spending is settled: the deposit is bound into its leaf, and a withdrawal pays `D + R − n · C_max` after a challenge window, during which an exit that understates its usage is slashed.
+- A user exits without the server, using `pnpm prove withdrawal` and the chain.
+
+Still open:
+
+- Timing and network metadata can still correlate requests: see [#99](https://github.com/w3hc/longjing/issues/99).
+- The Groth16 keys come from a single-party setup: see [#135](https://github.com/w3hc/longjing/issues/135).
+- There is no standalone withdrawal page yet: see [#157](https://github.com/w3hc/longjing/issues/157).
+- A note serves one request at a time, and nothing has been audited since the redesign.
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## How it works
 
-1. **Deposit once.** You send ETH to a smart contract along with an identity commitment. This is the only step that touches your onchain identity.
-2. **Prove, don't reveal.** For each request, your client generates a zero-knowledge proof that you have credits — without exposing your balance, your deposit, or your past requests. Your secret key never leaves your machine: the server never generates proofs that need it.
-3. **Request anonymously.** You submit the API request with the proof and a one-time nullifier. The operator verifies the proof and forwards the request. The goal is that it can't tell which depositor you are; at v0.4.1 it can (see [Status](#status)).
-4. **Unlinkable by design.** Each request uses a fresh nullifier, so that two requests from the same person can't be correlated with each other. Not yet true at v0.4.1, since every request also carries the same `idCommitment`.
-5. **Get unused credits back.** Refund tickets let you redeem what you didn't spend, onchain, with a proof your client generates (`pnpm prove refund`).
+1. **Deposit once.** You send ETH to a smart contract along with a commitment to your secret key. The contract binds the amount into your note's Merkle leaf. This is the only step that touches your onchain identity.
+2. **Prove, don't reveal.** For each request, your client generates a zero-knowledge proof that you have credits — without exposing your balance, your deposit, or your past requests. Your secret key and your refund accumulator never leave your machine: the server never generates proofs that need them.
+3. **Request anonymously.** You submit the API request with the proof and a one-time nullifier. The operator verifies the proof against a recent onchain root and forwards the request, without learning which depositor you are.
+4. **Unlinkable by cryptography.** Each request uses a fresh nullifier and a freshly re-randomized accumulator, so two requests from the same person share no value.
+5. **Get unused credits back.** Each response adds `C_max − C_actual` to your signed accumulator. When you leave, you prove a withdrawal of what's left, `D + R − n · C_max`, with `pnpm prove withdrawal`, and the contract pays it after the challenge window.
 
-The goal: the operator sees valid proofs and the requests it forwards, but not who you are, and it can't link your requests together, by cryptography rather than by a policy promise. At v0.4.1 that goal is not met: the operator can link every request to its deposit (see [Status](#status)).
+The operator sees valid proofs and the requests it forwards, but not who you are, and it can't link your requests together, by cryptography rather than by a policy promise. Timing and network metadata are a separate problem (see [What this protects](#what-this-protects--and-what-it-doesnt)).
 
 ## Features
 
 - **Anonymous API access** — make requests without revealing your identity
-- **Unlinkable requests (design goal)** — a unique nullifier per request; not yet unlinkable at v0.4.1, see [#134](https://github.com/w3hc/longjing/issues/134)
+- **Unlinkable requests** — a unique nullifier and a re-randomized accumulator per request, and no identifier anywhere in the request path
 - **Prove solvency, not balance** — ZK proofs confirm you can pay without exposing how much you have or what you've spent
 - **Multi-provider** — a provider abstraction any API can plug into; Claude ships as the reference provider
-- **Trustless refunds** — automatic refund tickets for unused credits
+- **Settled refunds** — unused credit accumulates in a server-signed commitment and is paid out at withdrawal
 - **TEE support** — runs on [dstack](https://github.com/Dstack-TEE/dstack) (Intel TDX, e.g. Phala Cloud), with keys derived in the enclave and an attestation clients can verify
-- **Production circuits** — Groth16 verifiers for withdrawal, refund, and slashing proofs
-- **SQLite storage** — nullifiers, RLN signals and the Merkle tree; it currently keeps `id_commitment` and `payload_hash` per request, see [SQLITE3.md](docs/SQLITE3.md)
+- **Production circuits** — Groth16 request and settlement circuits; slashing needs no proof, only the revealed key
+- **SQLite storage** — `(nullifier, x, y)` per request and nothing else, see [SQLITE3.md](docs/SQLITE3.md)
 - **Tested** — 580+ unit tests plus end-to-end integration tests with real proofs
 
 ## What this protects — and what it doesn't
 
 Privacy tooling is only as honest as its threat model. Here's the real boundary, stated plainly.
 
-**It is designed to protect** (not yet delivered at v0.4.1, see [Status](#status)):
+**It protects** (see [Status](#status) for what is still open):
 - The link between your payment identity and your individual requests
 - The correlation between two requests made by the same person
 - Your balance and spending history from the operator and from observers
