@@ -18,6 +18,10 @@
  *   pnpm verify:attestation <url> --app <DstackApp> [--from-block <n>]
  *     [--rpc <url>] [--min-delay <seconds>]
  *
+ * Check who can change LongjingCredits' verifiers and serverAddress:
+ *   pnpm verify:attestation <url> --credits <LongjingCredits>
+ *     [--credits-rpc <url>] [--min-delay <seconds>]
+ *
  * What it verifies:
  *   1. Platform detection (not 'mock')
  *   2. report_data commits to the returned ML-KEM, identity and refund
@@ -31,6 +35,7 @@
  *   7. With --app: the key manifest names that DstackApp, a LongjingAppOwner
  *      behind a timelock of at least --min-delay owns it, requireTcbUpToDate
  *      is set, and the running compose hash is allowed
+ *   8. With --credits: a timelock of at least --min-delay owns LongjingCredits
  *
  * What it does NOT verify (requires platform-specific verification):
  *   - Full cryptographic signature verification
@@ -50,6 +55,10 @@ import {
   composeHashFromEventLog,
   readAppGovernance,
 } from '../../src/attestation/app-governance';
+import {
+  checkCreditsGovernance,
+  readCreditsGovernance,
+} from '../../src/attestation/credits-governance';
 import { BoundAttestation } from '../../src/attestation/attestation.types';
 import { verifyKeyBinding } from '../../src/attestation/key-binding';
 import { SignedKeyManifest } from '../../src/keys/key-derivation.service';
@@ -60,6 +69,12 @@ interface GovernanceOptions {
   app: string;
   rpc: string;
   fromBlock?: number;
+  minDelay: bigint;
+}
+
+interface CreditsOptions {
+  credits: string;
+  rpc: string;
   minDelay: bigint;
 }
 
@@ -471,11 +486,42 @@ async function verifyGovernance(
 }
 
 /**
+ * Check who can change LongjingCredits' verifiers, serverAddress and refund
+ * key. Exits on failure.
+ */
+async function verifyCreditsGovernance(options: CreditsOptions) {
+  log(`\n🏦 LongjingCredits Governance Check:`, 'blue');
+  info(`  LongjingCredits: ${options.credits}`);
+  info(`  RPC: ${options.rpc}`);
+
+  const governance = await readCreditsGovernance(
+    new JsonRpcProvider(options.rpc),
+    options.credits,
+  );
+  info(`  Owner: ${governance.owner}`);
+  if (governance.timelock) {
+    info(`  Timelock delay: ${governance.timelock.minDelay}s, then ADMIN_DELAY`);
+  }
+
+  const { failures, warnings } = checkCreditsGovernance(governance, {
+    minDelay: options.minDelay,
+  });
+  warnings.forEach((message) => warning(message));
+  if (failures.length > 0) {
+    failures.forEach((failure) => error(failure));
+    error('LongjingCredits can be changed without the published governance.');
+    process.exit(1);
+  }
+  success('Only the timelock can change LongjingCredits');
+}
+
+/**
  * Main verification function
  */
 async function verifyAttestation(
   source: string,
   governanceOptions?: GovernanceOptions,
+  creditsOptions?: CreditsOptions,
 ) {
   log('\n🔍 Longjing TEE Attestation Verifier', 'cyan');
   log('═══════════════════════════════════\n', 'cyan');
@@ -550,6 +596,13 @@ async function verifyAttestation(
     } else {
       warning('Skipped governance: pass --app <DstackApp> to check who can add builds');
     }
+    if (creditsOptions) {
+      await verifyCreditsGovernance(creditsOptions);
+    } else {
+      warning(
+        'Skipped LongjingCredits: pass --credits <address> to check who can change its verifiers',
+      );
+    }
 
     // 7. Summary
     log(`\n═══════════════════════════════════`, 'cyan');
@@ -562,6 +615,9 @@ async function verifyAttestation(
     success('Timestamp: Fresh ✓');
     if (governanceOptions) {
       success('Governance: Timelocked ✓');
+    }
+    if (creditsOptions) {
+      success('LongjingCredits: Timelocked ✓');
     }
 
     log(`\n✅ Basic verification PASSED\n`, 'green');
@@ -861,11 +917,23 @@ const app = flag('--app');
 const rpc = flag('--rpc') ?? process.env.BASE_RPC_URL ?? 'https://mainnet.base.org';
 const fromBlock = flag('--from-block');
 const minDelay = flag('--min-delay');
+const credits = flag('--credits');
+const creditsRpc =
+  flag('--credits-rpc') ??
+  process.env.ETHEREUM_RPC_URLS?.split(',')[0] ??
+  'https://ethereum-rpc.publicnode.com';
 const governanceOptions: GovernanceOptions | undefined = app
   ? {
       app,
       rpc,
       fromBlock: fromBlock ? Number(fromBlock) : undefined,
+      minDelay: minDelay ? BigInt(minDelay) : DEFAULT_MIN_DELAY_SECONDS,
+    }
+  : undefined;
+const creditsOptions: CreditsOptions | undefined = credits
+  ? {
+      credits,
+      rpc: creditsRpc,
       minDelay: minDelay ? BigInt(minDelay) : DEFAULT_MIN_DELAY_SECONDS,
     }
   : undefined;
@@ -875,11 +943,11 @@ if (args.length === 0) {
   const defaultUrl = 'http://localhost:3000/attestation';
   log(`No URL provided, using default: ${defaultUrl}`, 'yellow');
   log(
-    'Usage: pnpm verify:attestation [url-or-file] [--app <DstackApp>] [--from-block <n>] [--rpc <url>] [--min-delay <seconds>]\n',
+    'Usage: pnpm verify:attestation [url-or-file] [--app <DstackApp>] [--from-block <n>] [--rpc <url>] [--credits <LongjingCredits>] [--credits-rpc <url>] [--min-delay <seconds>]\n',
     'cyan',
   );
-  verifyAttestation(defaultUrl, governanceOptions);
+  verifyAttestation(defaultUrl, governanceOptions, creditsOptions);
 } else {
   const source = args[0];
-  verifyAttestation(source, governanceOptions);
+  verifyAttestation(source, governanceOptions, creditsOptions);
 }
