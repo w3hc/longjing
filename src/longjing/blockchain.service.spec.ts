@@ -407,12 +407,12 @@ describe('BlockchainService', () => {
 
     function signerFor(
       prod: boolean,
-      identity: ethers.Wallet | null,
+      txSigner: ethers.Wallet | null,
       values: Record<string, string> = { ANVIL_PRIVATE_KEY: ANVIL_KEY },
     ) {
       const get = jest.fn((key: string) => values[key]);
       const keyDerivation = {
-        getIdentitySigner: jest.fn(() => identity),
+        getTxSigner: jest.fn(() => txSigner),
       } as unknown as KeyDerivationService;
       const blockchain = new BlockchainService(
         { get } as unknown as ConfigService,
@@ -426,18 +426,18 @@ describe('BlockchainService', () => {
       return { signer, get };
     }
 
-    it('signs with the identity key in prod, never ANVIL_PRIVATE_KEY', () => {
-      const identity = ethers.Wallet.createRandom().connect(
+    it('signs with the derived transaction signer in prod, never ANVIL_PRIVATE_KEY', () => {
+      const txSigner = ethers.Wallet.createRandom().connect(
         provider,
       ) as unknown as ethers.Wallet;
 
-      const { signer, get } = signerFor(true, identity);
+      const { signer, get } = signerFor(true, txSigner);
 
-      expect(signer?.address).toBe(identity.address);
+      expect(signer?.address).toBe(txSigner.address);
       expect(get).not.toHaveBeenCalledWith('ANVIL_PRIVATE_KEY');
     });
 
-    it('is read-only in prod without a derived identity', () => {
+    it('is read-only in prod without a derived transaction signer', () => {
       expect(signerFor(true, null).signer).toBeNull();
     });
 

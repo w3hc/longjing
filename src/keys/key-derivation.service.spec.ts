@@ -18,6 +18,7 @@ import {
   KEY_MANIFEST_TYPES,
   KeyDerivationService,
   REFUND_SIGNER_DOMAIN,
+  TX_SIGNER_DOMAIN,
 } from './key-derivation.service';
 import { RefundSignerService } from '../longjing/refund-signer.service';
 import {
@@ -132,16 +133,22 @@ describe('KeyDerivationService', () => {
       expect(service.getIdentityAddress()).toBe(
         '0x031f079bd169eE6651d2ecE665aF167f68434b1A',
       );
+      expect(service.getTxSignerAddress()).toBe(
+        '0xa3C8d0EB3af2AB1d70571F60ecB84c803530c383',
+      );
     });
   });
 
   describe('derivation', () => {
-    it('exposes the identity key as a transaction signer', async () => {
+    it('signs transactions with its own key, not the identity key', async () => {
       const service = await create();
+      const { key } = await dstack.getKey(TX_SIGNER_DOMAIN, 'secp256k1');
 
-      expect(service.getIdentitySigner(null as never)?.address).toBe(
-        service.getIdentityAddress(),
-      );
+      const signer = service.getTxSigner(null as never)!;
+
+      expect(signer.address).toBe(service.getTxSignerAddress());
+      expect(signer.privateKey).toBe(hexlify(key));
+      expect(signer.address).not.toBe(service.getIdentityAddress());
     });
 
     it('has no transaction signer without derived keys', async () => {
@@ -150,7 +157,7 @@ describe('KeyDerivationService', () => {
 
       const service = await create();
 
-      expect(service.getIdentitySigner(null as never)).toBeNull();
+      expect(service.getTxSigner(null as never)).toBeNull();
     });
 
     it('is deterministic across instances', async () => {
@@ -162,6 +169,7 @@ describe('KeyDerivationService', () => {
         hex(b.getRefundSignerPrivateKey()!),
       );
       expect(a.getIdentityAddress()).toBe(b.getIdentityAddress());
+      expect(a.getTxSignerAddress()).toBe(b.getTxSignerAddress());
     });
 
     it('expands the refund signer GetKey output under its own label', async () => {
@@ -228,6 +236,7 @@ describe('KeyDerivationService', () => {
         '0x' + sha256(service.getMlKemPublicKey()!),
       );
       expect(manifest.tlsCertificateHash).toBe(ZeroHash);
+      expect(manifest.txSignerAddress).toBe(service.getTxSignerAddress());
       expect(
         verifyTypedData(
           KEY_MANIFEST_DOMAIN,
