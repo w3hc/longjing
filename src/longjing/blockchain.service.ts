@@ -9,6 +9,7 @@ import { ethers } from 'ethers';
 import LongjingCreditsABI from './contracts/LongjingCredits.abi.json';
 import { isProd } from '../config/profile';
 import { KeyDerivationService } from '../keys/key-derivation.service';
+import { RefundSignerService } from './refund-signer.service';
 import { assertChainMatchesProfile, fetchChainId, selectRpcUrl } from './chain';
 
 /** An exit's RLN signal at its claimed index */
@@ -42,6 +43,7 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly configService: ConfigService,
     private readonly keyDerivation: KeyDerivationService,
+    private readonly refundSigner: RefundSignerService,
   ) {}
 
   async onModuleInit() {
@@ -110,6 +112,39 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
         });
       }
       this.logger.error('Failed to connect to blockchain', error);
+      return;
+    }
+
+    if (prod) {
+      await this.checkServerKeys(this.connected());
+    }
+  }
+
+  /**
+   * Refuses a contract whose serverPublicKey isn't the key refunds are signed
+   * with: every request proof would fail against it. A serverAddress that
+   * isn't the signer is only logged, since a pending change can explain it.
+   */
+  private async checkServerKeys(contract: ethers.Contract): Promise<void> {
+    const onchain = (await contract.serverPublicKey()) as {
+      x: string;
+      y: string;
+    };
+    const signer = await this.refundSigner.getPublicKey();
+    if (
+      BigInt(onchain.x) !== BigInt(signer.x) ||
+      BigInt(onchain.y) !== BigInt(signer.y)
+    ) {
+      throw new Error(
+        `Cannot start in production: LongjingCredits.serverPublicKey (${onchain.x}, ${onchain.y}) is not the refund signer (${signer.x}, ${signer.y})`,
+      );
+    }
+
+    const serverAddress = (await contract.serverAddress()) as string;
+    if (this.wallet && serverAddress !== this.wallet.address) {
+      this.logger.warn(
+        `LongjingCredits.serverAddress ${serverAddress} is not the transaction signer ${this.wallet.address}`,
+      );
     }
   }
 

@@ -127,6 +127,7 @@ With `NODE_ENV=production`:
 - Startup fails if `GetKey` fails, or if `DSTACK_SIMULATOR_ENDPOINT` is set, since the simulator's root key is public.
 - Startup fails if `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `SERVER_TX_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` is set ([`key-policy.ts`](../src/keys/key-policy.ts)).
 - Contract transactions are signed by the derived transaction signer, never `SERVER_TX_PRIVATE_KEY`, which stays refused even under the opt-out below ([LOCAL_SETUP.md](./LOCAL_SETUP.md#node_env)). Fund `txSignerAddress` for gas.
+- Startup fails if `LongjingCredits.serverPublicKey` isn't the key the refund signer signs with, since every request proof would fail against it. A `serverAddress` that isn't `txSignerAddress` is logged as a warning, as a pending `serverAddress` change can explain it ([`blockchain.service.ts`](../src/longjing/blockchain.service.ts)).
 - `ANTHROPIC_API_KEY`, a third-party credential, necessarily transits env. It is the only secret that does.
 - `docker-compose.yml` sets `NODE_ENV=production` as a literal, and passes none of the above through `${...}` substitution, so the operator cannot set them on a dstack CVM.
 

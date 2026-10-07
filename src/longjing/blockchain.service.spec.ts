@@ -7,6 +7,22 @@ import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 import { BlockchainService } from './blockchain.service';
 import { KeyDerivationService } from '../keys/key-derivation.service';
+import { RefundSignerService } from './refund-signer.service';
+
+// Lets a test hand onModuleInit a fake contract instead of an RPC-backed one
+jest.mock('ethers', () => {
+  const actual = jest.requireActual<typeof import('ethers')>('ethers');
+  return {
+    ...actual,
+    ethers: {
+      ...actual.ethers,
+      Contract: jest.fn(
+        (...args: ConstructorParameters<typeof actual.ethers.Contract>) =>
+          new actual.ethers.Contract(...args),
+      ),
+    },
+  };
+});
 
 describe('BlockchainService', () => {
   let service: BlockchainService;
@@ -29,6 +45,7 @@ describe('BlockchainService', () => {
       providers: [
         BlockchainService,
         { provide: KeyDerivationService, useValue: {} },
+        { provide: RefundSignerService, useValue: {} },
         {
           provide: ConfigService,
           useValue: {
@@ -129,6 +146,7 @@ describe('BlockchainService', () => {
       const blockchain = new BlockchainService(
         config,
         {} as KeyDerivationService,
+        {} as RefundSignerService,
       );
       (blockchain as any).logger = { log: jest.fn(), warn: jest.fn() };
       return blockchain.onModuleInit();
@@ -187,6 +205,7 @@ describe('BlockchainService', () => {
       const blockchain = new BlockchainService(
         { get: (key: string) => values[key] } as unknown as ConfigService,
         {} as KeyDerivationService,
+        {} as RefundSignerService,
       );
       (blockchain as any).logger = {
         log: jest.fn(),
@@ -229,6 +248,7 @@ describe('BlockchainService', () => {
       const blockchain = new BlockchainService(
         { get } as unknown as ConfigService,
         {} as KeyDerivationService,
+        {} as RefundSignerService,
       );
       (blockchain as any).logger = { log: jest.fn(), warn: jest.fn() };
 
@@ -236,6 +256,106 @@ describe('BlockchainService', () => {
 
       expect(get).not.toHaveBeenCalledWith('SERVER_TX_PRIVATE_KEY');
       expect(get).not.toHaveBeenCalledWith('ANVIL_RPC_URL');
+    });
+  });
+
+  describe('Server keys at startup', () => {
+    const REFUND_KEY = {
+      x: '0x0abc' + '0'.repeat(60),
+      y: '0x' + '1'.repeat(64),
+    };
+    const txSigner = ethers.Wallet.createRandom();
+    let warn: jest.Mock;
+    let contract: Record<string, jest.Mock>;
+
+    function startup(
+      nodeEnv: string,
+      onchain: { key: { x: string; y: string }; address: string },
+    ) {
+      process.env.NODE_ENV = nodeEnv;
+      jest.spyOn(global, 'fetch').mockResolvedValue(
+        Response.json({
+          jsonrpc: '2.0',
+          id: 1,
+          result: nodeEnv === 'production' ? '0x1' : '0x7a69',
+        }),
+      );
+      contract = {
+        C_MAX: jest.fn().mockResolvedValue(10n ** 15n),
+        serverPublicKey: jest.fn().mockResolvedValue(onchain.key),
+        serverAddress: jest.fn().mockResolvedValue(onchain.address),
+        connect: jest.fn(() => contract),
+      };
+      (ethers.Contract as unknown as jest.Mock).mockImplementationOnce(
+        () => contract,
+      );
+      const values: Record<string, string> = {
+        ETHEREUM_RPC_URLS: 'http://127.0.0.1:1',
+        ANVIL_RPC_URL: 'http://127.0.0.1:1',
+        ZK_CONTRACT_ADDRESS: '0x1234567890123456789012345678901234567890',
+      };
+      const blockchain = new BlockchainService(
+        { get: (key: string) => values[key] } as unknown as ConfigService,
+        {
+          getTxSigner: (provider: ethers.Provider) =>
+            txSigner.connect(provider),
+        } as unknown as KeyDerivationService,
+        {
+          getPublicKey: jest.fn().mockResolvedValue(REFUND_KEY),
+        } as unknown as RefundSignerService,
+      );
+      warn = jest.fn();
+      (blockchain as any).logger = { log: jest.fn(), warn, error: jest.fn() };
+      return blockchain.onModuleInit();
+    }
+
+    afterEach(() => {
+      process.env.NODE_ENV = 'test';
+      jest.restoreAllMocks();
+    });
+
+    it('starts in prod when the contract holds the refund signer and the tx signer', async () => {
+      await expect(
+        startup('production', {
+          key: {
+            x: '0xABC' + '0'.repeat(60),
+            y: REFUND_KEY.y.toUpperCase().replace('0X', '0x'),
+          },
+          address: txSigner.address,
+        }),
+      ).resolves.toBeUndefined();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('refuses to start in prod when serverPublicKey is not the refund signer', async () => {
+      await expect(
+        startup('production', {
+          key: { x: REFUND_KEY.y, y: REFUND_KEY.x },
+          address: txSigner.address,
+        }),
+      ).rejects.toThrow('is not the refund signer');
+    });
+
+    it('warns in prod when serverAddress is not the tx signer', async () => {
+      const other = ethers.Wallet.createRandom().address;
+
+      await expect(
+        startup('production', { key: REFUND_KEY, address: other }),
+      ).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(
+        `LongjingCredits.serverAddress ${other} is not the transaction signer ${txSigner.address}`,
+      );
+    });
+
+    it('skips the check in local', async () => {
+      await expect(
+        startup('test', {
+          key: { x: '0x01', y: '0x02' },
+          address: ethers.ZeroAddress,
+        }),
+      ).resolves.toBeUndefined();
+      expect(contract.serverPublicKey).not.toHaveBeenCalled();
+      expect(contract.serverAddress).not.toHaveBeenCalled();
     });
   });
 
@@ -258,6 +378,7 @@ describe('BlockchainService', () => {
       const blockchain = new BlockchainService(
         { get } as unknown as ConfigService,
         keyDerivation,
+        {} as RefundSignerService,
       );
       const signer = (blockchain as any).createSigner(
         prod,
