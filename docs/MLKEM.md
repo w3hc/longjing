@@ -1,10 +1,16 @@
-# ML-KEM Quantum-Resistant Encryption
+# ML-KEM Key Encapsulation
 
 > **Status: attested, but not used by any endpoint.** In v0.4.1, the server derives an ML-KEM-1024 key in the enclave, serves its public key in `keys.mlkemPublicKey` of `GET /attestation` and binds it in `report_data`. No endpoint accepts ML-KEM ciphertext: no controller uses `MlkemEncryptionService` (`src/encryption/mlkem-encryption.service.ts`), and the `/secret/*` endpoints this page describes are not served. Encrypting to this key today protects nothing, because nothing on the server decrypts it. The key exists so that future features, such as the attested onion service in [#99](https://github.com/w3hc/longjing/issues/99), can rely on it. The rest of this page documents that intended design, not current behavior.
 
 ## Overview
 
-Longjing includes **ML-KEM-1024** (Module-Lattice-Based Key-Encapsulation Mechanism) for post-quantum cryptographic security. ML-KEM is standardized by NIST as [FIPS 203](https://csrc.nist.gov/pubs/fips/203/final) and provides security against both classical and quantum computer attacks.
+Longjing includes **ML-KEM-1024** (Module-Lattice-Based Key-Encapsulation Mechanism), standardized by NIST as [FIPS 203](https://csrc.nist.gov/pubs/fips/203/final). It resists every known quantum attack, Shor's algorithm included, but its security rests on a lattice problem (Module-LWE).
+
+### A lattice assumption, not a hash
+
+Lattices carry algebraic structure, and structure is what cryptanalysis exploits. AI-accelerated mathematics may find better attacks on lattices, as on elliptic curves, sooner than expected, while hash functions, designed to have no such structure, are expected to hold. ML-KEM-1024 is the largest standard parameter set, which leaves the most margin, but it is not a hash-based guarantee.
+
+Any endpoint that starts using this key must therefore combine it with a classical exchange in a **hybrid** KEM (X25519 + ML-KEM-1024, as in [X25519MLKEM768](https://datatracker.ietf.org/doc/draft-ietf-tls-ecdhe-mlkem/) for TLS), so that breaking one assumption alone recovers nothing. See [ZK.md](ZK.md#cryptographic-assumptions) for the assumptions the rest of Longjing rests on.
 
 ## Table of Contents
 
@@ -27,7 +33,7 @@ Current encryption standards like RSA and ECDH are vulnerable to quantum compute
 
 ### ML-KEM Advantages
 
-✅ **Post-Quantum Secure**: Resistant to both classical and quantum attacks
+✅ **Quantum-Resistant**: No known quantum attack, under a lattice assumption
 ✅ **NIST Standardized**: Official FIPS 203 standard (2024)
 ✅ **Efficient**: ~1-2ms encryption/decryption on modern hardware
 ✅ **Reasonable Size**: 1568-byte public keys, 3168-byte private keys
@@ -48,7 +54,7 @@ Client                          Server
   |                          (Quantum computer can break this!)
 ```
 
-### ML-KEM Encryption (Quantum-Safe)
+### ML-KEM Encryption (Quantum-Resistant)
 
 ```
 Client                          Server (TEE)
@@ -119,8 +125,9 @@ const plaintext2 = await fetch('/secret/access/slot123', {
 
 | Attack Vector | Mitigation |
 |---------------|------------|
-| **Quantum Computer (Shor's)** | ✅ ML-KEM immune to Shor's algorithm |
-| **Harvest-Now-Decrypt-Later** | ✅ Data encrypted with ML-KEM at rest |
+| **Quantum Computer (Shor's)** | ✅ Shor's algorithm does not apply to ML-KEM |
+| **Lattice cryptanalysis** | ⚠️ Not mitigated alone: pair ML-KEM with X25519 in a hybrid KEM |
+| **Harvest-Now-Decrypt-Later** | ⚠️ Holds while Module-LWE holds; a hybrid KEM also needs X25519 broken |
 | **Man-in-the-Middle** | ✅ TEE attestation verification required |
 | **Admin Access** | ✅ Private key sealed in TEE hardware |
 | **Code Tampering** | ✅ Attestation measurement verifies code integrity |
@@ -341,7 +348,7 @@ This will output:
 ```
 ✅ Keypair generated successfully!
 
-📋 Add these to your .env.local file:
+📋 Add these to your .env file:
 
 ADMIN_MLKEM_PUBLIC_KEY=ZLVMNpXCmEp7vhcylKzGXcx8wVEcaQKI...
 ADMIN_MLKEM_PRIVATE_KEY=82eI7sQLvGEut7Z4RvaF+Ju60Esj/AW/...
@@ -351,10 +358,10 @@ ADMIN_MLKEM_PRIVATE_KEY=82eI7sQLvGEut7Z4RvaF+Ju60Esj/AW/...
 
 #### Step 2: Configure Environment
 
-Create or update `.env.local`:
+Create or update `.env`:
 
 ```bash
-# ML-KEM-1024 Admin Keypair (quantum-resistant encryption)
+# ML-KEM-1024 Admin Keypair
 ADMIN_MLKEM_PUBLIC_KEY=<paste_public_key_here>
 ADMIN_MLKEM_PRIVATE_KEY=<paste_private_key_here>
 ```
@@ -997,7 +1004,7 @@ A: Yes. ML-KEM uses standard base64 encoding and can be integrated into existing
 ### Security Questions
 
 **Q: What happens if quantum computers arrive sooner than expected?**
-A: Your data is already protected. ML-KEM provides quantum resistance today.
+A: ML-KEM resists every known quantum attack, so data encrypted with it is protected against a quantum computer. It is not protected against a break of the lattice assumption itself, which is why a hybrid KEM is recommended.
 
 **Q: How do I verify TEE attestation?**
 A: Compare the `measurement` field with the published source code hash. Verify the TEE platform signature. (Implementation guide coming soon in w3pk.)
