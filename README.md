@@ -3,99 +3,22 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.35-363636?logo=solidity)](https://soliditylang.org/)
 [![Circom](https://img.shields.io/badge/Circom-2-1E1E1E)](https://docs.circom.io/)
-[![pnpm](https://img.shields.io/badge/pnpm-10.23-F69220?logo=pnpm)](https://pnpm.io/)
-[![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=node.js)](https://nodejs.org/)
-[![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 
 # Longjing
 
-Anonymous, prepaid API access behind a TEE gateway. Deposit ETH once, then make API requests that the operator running the service can't link to your deposit or to each other. Network metadata and the trusted setup are still open (see [Status](#status)).
+Longjing provides anonymous, prepaid access to third-party APIs. A user deposits ETH once and subsequently submits requests that neither the operator nor an observer can link to the deposit or to one another.
 
-Most paid API access today silently ties every request to a payment identity. There's no technical reason it has to. This project is an attempt to make unlinkable, prepaid API access a normal thing that exists — something anyone can run, fork, and build on.
+It implements the Rate-Limit Nullifier (RLN) protocol described in [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) (Crapis and Buterin), and serves it from a gateway running in an attested Intel TDX enclave.
 
-Longjing implements the original Rate-Limit Nullifier (RLN) protocol from [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) by Davide Crapis & Vitalik Buterin, and wraps it in what the protocol alone doesn't give you:
+## Design
 
-- **A TEE gateway** — the server runs in an Intel TDX enclave, terminates TLS inside it, and binds its TLS and ML-KEM keys to the attestation quote, so clients can check what they're talking to before sending anything.
-- **A generic provider layer** — any upstream API (LLMs or otherwise) plugs in behind the same proof, pricing and refund flow.
-- **Metadata hardening** — header sanitizing, timing protection, response padding and cost quantization, so the traffic around a valid proof doesn't give the user away.
+1. **Deposit.** The user deposits ETH together with a commitment to a secret key. The contract binds the amount into the note's Merkle leaf.
+2. **Request.** For each request, the client proves in zero knowledge that the note is solvent, `(i + 1) · C_max ≤ D + R`, and publishes a one-time RLN signal. The request carries no commitment, leaf, deposit amount or ticket index.
+3. **Refund.** Each response adds `C_max − C_actual` to a server-signed accumulator, which the client re-randomizes before every request.
+4. **Withdrawal.** The user proves a withdrawal of `D + R − n · C_max`. The contract pays it after a three-day challenge window, without the server's involvement.
+5. **Slashing.** Reusing a ticket index reveals the secret key, and anyone holding it may slash the note.
 
-## Longjing and ethereum/zkapi
-
-[ethereum/zkapi](https://github.com/ethereum/zkapi) is a separate implementation of the same proposal, built by Open Anonymity with the Ethereum Foundation. The two projects made different choices:
-
-| | Longjing | ethereum/zkapi |
-|---|---|---|
-| **Double-spend protection** | Original RLN: reusing a ticket index leaks the secret key, and anyone holding it can slash the note | State-anchor chain: each request consumes a one-time, server-signed state; replaying an old state is caught during a withdrawal challenge window |
-| **Accounting** | Refunds accumulate in a server-signed commitment, re-randomized on every request, and solvency is proven in-circuit (`(i + 1) · C_max ≤ D + R`) | Private balance carried in the signed state; net settlement in gwei at withdrawal or expiry |
-| **Stakes** | One stake, the whole deposit; no policy stake | No policy stake; policy penalties are a bounded balance deduction |
-| **Withdrawal** | ZK withdrawal of `D + R − n · C_max`, no server involvement, after a 3-day challenge window | Instant mutual close with the server, or an escape hatch with a 24h challenge window |
-| **Request path** | Client → TEE gateway → provider; the gateway holds the provider credentials | Browser → provider directly; the server authorizes leases and settles |
-| **Stack** | Circom + snarkjs (Groth16, EdDSA), NestJS, Foundry | Rust + WASM (Groth16, Schnorr), browser SDK, Foundry |
-
-If you want the simplified protocol with a browser SDK, use zkapi. If you want the original RLN design behind an attested gateway that can front any provider, that's what Longjing is for. See [OVERVIEW.md](docs/OVERVIEW.md#longjing-and-ethereumzkapi) for details.
-
-## Status
-
-Working implementation, actively developed, not ready to hold real value. Read [What this protects — and what it doesn't](#what-this-protects--and-what-it-doesnt) before relying on it for anything.
-
-On `main`, since the settlement redesign ([docs/SETTLEMENT.md](docs/SETTLEMENT.md), not yet released):
-
-- A request carries no identifier: no commitment, leaf, deposit amount or ticket index. The server stores only `(N, x, y)` per request, and each request publishes a freshly re-randomized accumulator.
-- Spending is settled: the deposit is bound into its leaf, and a withdrawal pays `D + R − n · C_max` after a challenge window, during which an exit that understates its usage is slashed.
-- A user exits without the server, using `pnpm prove withdrawal` and the chain.
-
-Still open:
-
-- Timing and network metadata can still correlate requests: see [#99](https://github.com/w3hc/longjing/issues/99).
-- The Groth16 keys come from a single-party setup: see [#135](https://github.com/w3hc/longjing/issues/135).
-- There is no standalone withdrawal page yet: see [#157](https://github.com/w3hc/longjing/issues/157).
-- A note serves one request at a time, and nothing has been audited since the redesign.
-
-To report a vulnerability, see [SECURITY.md](SECURITY.md).
-
-## How it works
-
-1. **Deposit once.** You send ETH to a smart contract along with a commitment to your secret key. The contract binds the amount into your note's Merkle leaf. This is the only step that touches your onchain identity.
-2. **Prove, don't reveal.** For each request, your client generates a zero-knowledge proof that you have credits — without exposing your balance, your deposit, or your past requests. Your secret key and your refund accumulator never leave your machine: the server never generates proofs that need them.
-3. **Request anonymously.** You submit the API request with the proof and a one-time nullifier. The operator verifies the proof against a recent onchain root and forwards the request, without learning which depositor you are.
-4. **Unlinkable by cryptography.** Each request uses a fresh nullifier and a freshly re-randomized accumulator, so two requests from the same person share no value.
-5. **Get unused credits back.** Each response adds `C_max − C_actual` to your signed accumulator. When you leave, you prove a withdrawal of what's left, `D + R − n · C_max`, with `pnpm prove withdrawal`, and the contract pays it after the challenge window.
-
-The operator sees valid proofs and the requests it forwards, but not who you are, and it can't link your requests together, by cryptography rather than by a policy promise. Timing and network metadata are a separate problem (see [What this protects](#what-this-protects--and-what-it-doesnt)).
-
-## Features
-
-- **Anonymous API access** — make requests without revealing your identity
-- **Unlinkable requests** — a unique nullifier and a re-randomized accumulator per request, and no identifier anywhere in the request path
-- **Prove solvency, not balance** — ZK proofs confirm you can pay without exposing how much you have or what you've spent
-- **Multi-provider** — a provider abstraction any API can plug into; Claude ships as the reference provider
-- **Settled refunds** — unused credit accumulates in a server-signed commitment and is paid out at withdrawal
-- **TEE support** — runs on [dstack](https://github.com/Dstack-TEE/dstack) (Intel TDX, e.g. Phala Cloud), with keys derived in the enclave and an attestation clients can verify
-- **Production circuits** — Groth16 request and settlement circuits; slashing needs no proof, only the revealed key
-- **SQLite storage** — `(nullifier, x, y)` per request and nothing else, see [SQLITE3.md](docs/SQLITE3.md)
-- **Tested** — 580+ unit tests plus end-to-end integration tests with real proofs
-
-## What this protects — and what it doesn't
-
-Privacy tooling is only as honest as its threat model. Here's the real boundary, stated plainly.
-
-**It protects** (see [Status](#status) for what is still open):
-- The link between your payment identity and your individual requests
-- The correlation between two requests made by the same person
-- Your balance and spending history from the operator and from observers
-
-**It does not, on its own, protect:**
-- **The content of your request from the upstream API provider.** If you query an LLM, that provider still sees the plaintext prompt. Longjing hides *who* asked, not *what was asked* from the endpoint that answers it.
-- **Network-layer identity.** Your IP can deanonymize you regardless of the proof. Use Tor or an equivalent if that's part of your threat model — this is not optional for adversaries who can watch the network.
-- **Timing and metadata.** Request timing, frequency, and size can leak information. Batching and padding help; they don't make the problem disappear.
-- **A compromised or malicious TEE.** TEE guarantees rest on hardware and vendor trust assumptions. A nation-state adversary is a different threat model than a curious operator, and this project does not claim to defeat the former.
-- **Whoever ran the trusted setup.** The Groth16 keys come from a single-party phase 2, so whoever ran it could forge proofs, including ones the contract pays out on, if they kept the toxic waste. A public multi-party ceremony is tracked in [#135](https://github.com/w3hc/longjing/issues/135); see [TRUSTED_SETUP_CEREMONY.md](docs/TRUSTED_SETUP_CEREMONY.md).
-
-If your safety depends on this, assume a sophisticated adversary and design accordingly — Tor, careful operational security, and an understanding that the upstream provider still sees your query. Don't treat "cryptographically unlinkable" as "safe." They are not the same sentence.
-
-## Run it yourself
-
-The most private deployment is the one where no third party — including this project's maintainer — is in the loop. Self-hosting is the intended path.
+The secret key and the accumulator never leave the client. Every key the gateway relies on, except the upstream provider's API key, is derived in the enclave and bound to its attestation. Departures from the paper are recorded in [SETTLEMENT.md](docs/SETTLEMENT.md).
 
 ### Install
 
@@ -147,24 +70,41 @@ pnpm start:dev
 
 Server runs at `https://localhost:3000`, with the Swagger UI at its root. Outside production, keys come from the [dstack simulator](https://github.com/Dstack-TEE/dstack) when `DSTACK_SIMULATOR_ENDPOINT` is set; otherwise the refund signer uses a dev-only random key.
 
-### Deploy to production
+## Deployment
 
-In production, Longjing runs on [dstack](https://github.com/Dstack-TEE/dstack) and derives every key inside the enclave with `GetKey`: the ML-KEM key, the refund signer, the TLS key, the transaction signer that pays gas as the contract's `serverAddress`, and an identity key that signs a key manifest, served at `GET /attestation/manifest`. No one handles them, the operator included, and production refuses to start with key material in env. The upstream provider's API key (`ANTHROPIC_API_KEY`) is the exception: a third-party credential, it necessarily transits env. See [KEY_DERIVATION.md](docs/KEY_DERIVATION.md).
+In production, Longjing runs on [dstack](https://github.com/Dstack-TEE/dstack) and derives every key inside the enclave. The trusted setup, contract, enclave and governance are deployed in a fixed order, described in [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-```
-docker compose up   # docker-compose.yml mounts /var/run/dstack.sock
-```
+## Threat model
 
-The contract, the enclave and governance are deployed in a set order: see [DEPLOYMENT.md](docs/DEPLOYMENT.md#production-deployment). Clients check the deployment with `pnpm verify:attestation`. See [TEE_SETUP.md](docs/TEE_SETUP.md) and [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) for production configurations. Running in a TEE is strongly recommended for any deployment serving users other than yourself — it's what lets users trust the operator without trusting you personally.
+Longjing is intended to protect the link between a deposit and its requests, the link between two requests, and the user's balance.
 
-## Add your own provider
+It does not protect:
 
-The provider layer is an abstraction — any upstream API plugs in the same way as the Claude provider. See [QUICK_START.md](docs/QUICK_START.md) to add a new provider in 10 steps.
+- the content of a request from the upstream provider;
+- the user's network identity, for which Tor or an equivalent is required;
+- request timing and size, which may still correlate requests ([#99](https://github.com/w3hc/longjing/issues/99));
+- against a compromised TEE or its hardware vendor;
+- against whoever performed the trusted setup, while it remains single-party.
+
+## Longjing compared to ethereum/zkapi
+
+[ethereum/zkapi](https://github.com/ethereum/zkapi) implements the same proposal under different design choices.
+
+| | Longjing | ethereum/zkapi |
+|---|---|---|
+| Double-spend protection | RLN: a reused ticket index reveals the secret key | Chain of one-time, server-signed states |
+| Accounting | Server-signed refund accumulator; solvency proven in-circuit | Private balance carried in the signed state |
+| Withdrawal | Zero-knowledge proof, 3-day challenge window, no server | Mutual close with the server, or an escape hatch with a 24-hour window |
+| Request path | Client → TEE gateway → provider | Browser → provider directly |
+| Stack | Circom, Groth16, NestJS, Foundry | Rust, WASM, Groth16, Foundry |
+
+Longjing retains the original RLN design and places it behind an attested gateway able to front any provider. ethereum/zkapi offers a simplified protocol with a browser SDK. Further detail is given in [OVERVIEW.md](docs/OVERVIEW.md#longjing-and-ethereumzkapi).
 
 ## Documentation
 
 **Core**
 - [OVERVIEW.md](docs/OVERVIEW.md) — system architecture and status
+- [SETTLEMENT.md](docs/SETTLEMENT.md) — settlement and unlinkability design, and departures from the paper
 - [QUICK_START.md](docs/QUICK_START.md) — add a new provider in 10 steps
 - [LOCAL_SETUP.md](docs/LOCAL_SETUP.md) — local development setup
 - [API_REFERENCE.md](docs/API_REFERENCE.md) — endpoints, request formats and client-side proving
@@ -193,15 +133,7 @@ The provider layer is an abstraction — any upstream API plugs in the same way 
 
 ## Contributing
 
-This is built to be run, forked, and improved by people other than its author — that's the point. Issues and pull requests welcome, especially ones that tighten the privacy guarantees, sharpen the threat-model docs, or lower the friction of self-hosting.
-
-## License
-
-LGPL-3.0
-
-## Credits
-
-Based on [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) by Davide Crapis & Vitalik Buterin.
+Contributions of any size are welcome, from a typo fix to a new provider. If something is unclear, broken or missing, open an issue: questions count too. Pull requests that tighten the privacy guarantees, sharpen the threat model or make self-hosting easier are especially appreciated. Not sure where to start? The [open issues](https://github.com/w3hc/longjing/issues) are a good place, or just say hi on one of the channels below.
 
 ## Contact
 
@@ -210,3 +142,11 @@ Based on [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-u
 - Element: [@julienbrg:matrix.org](https://matrix.to/#/@julienbrg:matrix.org)
 - Farcaster: [julien-](https://warpcast.com/julien-)
 - Telegram: [@julienbrg](https://t.me/julienbrg)
+
+## Credits
+
+Based on [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) by Davide Crapis & Vitalik Buterin.
+
+## License
+
+LGPL-3.0
