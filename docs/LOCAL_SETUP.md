@@ -27,10 +27,10 @@ This guide covers running Longjing locally on your machine without Docker, ideal
 Create your local environment file:
 
 ```bash
-cp .env.template .env.local
+cp .env.template .env
 ```
 
-Edit `.env.local` and configure:
+Edit `.env` and configure:
 
 ```bash
 # Required: development, test or production, see NODE_ENV below

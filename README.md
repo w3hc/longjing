@@ -10,6 +10,15 @@ Longjing provides anonymous, prepaid access to third-party APIs. A user deposits
 
 It implements the Rate-Limit Nullifier (RLN) protocol described in [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) (Crapis and Buterin), and serves it from a gateway running in an attested Intel TDX enclave.
 
+## Status
+
+v0.5.0 is a testnet release. Do not deposit funds you can't afford to lose.
+
+- **Keys:** the circuit keys come from a single-party trusted setup, so whoever ran it could forge proofs. They are for testnets only until a public ceremony replaces them ([#135](https://github.com/w3hc/longjing/issues/135)).
+- **Audit:** the code has had internal reviews only, no external audit.
+- **Exit:** withdrawing needs the `pnpm prove` client. The standalone withdrawal page is not built yet ([#157](https://github.com/w3hc/longjing/issues/157)).
+- **Network:** request timing, size and the client's network identity are not protected yet ([#99](https://github.com/w3hc/longjing/issues/99)).
+
 ## Design
 
 1. **Deposit.** The user deposits ETH together with a commitment to a secret key. The contract binds the amount into the note's Merkle leaf.
@@ -26,7 +35,7 @@ The secret key and the accumulator never leave the client. Every key the gateway
 pnpm install
 pnpm circuits:fetch
 forge install
-cp .env.template .env.local
+cp .env.template .env
 ```
 
 ### Test
@@ -86,6 +95,8 @@ It does not protect:
 - against a compromised TEE or its hardware vendor;
 - against whoever performed the trusted setup, while it remains single-party.
 
+Privacy rests on hashes alone, while funds also rest on elliptic curves and pairings: a break of those could cost funds but not privacy. See [ZK.md](docs/ZK.md#cryptographic-assumptions).
+
 ## Longjing compared to ethereum/zkapi
 
 [ethereum/zkapi](https://github.com/ethereum/zkapi) implements the same proposal under different design choices.
@@ -117,7 +128,7 @@ Longjing retains the original RLN design and places it behind an attested gatewa
 **Architecture**
 - [PROVIDERS.md](docs/PROVIDERS.md) — provider abstraction design
 - [SQLITE3.md](docs/SQLITE3.md) — database and privacy design
-- [MLKEM.md](docs/MLKEM.md) — post-quantum key encapsulation
+- [MLKEM.md](docs/MLKEM.md) — lattice-based key encapsulation (attested, not used yet)
 
 **Deployment**
 - [DEPLOYMENT.md](docs/DEPLOYMENT.md) — production deployment, in order
