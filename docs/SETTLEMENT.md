@@ -252,7 +252,7 @@ New departures, each deliberate:
 | Homomorphic `E(R)`, re-randomized, with [BBS+](https://datatracker.ietf.org/doc/draft-irtf-cfrg-bbs-signatures/) suggested in the thread | A Pedersen commitment, re-randomized inside the request proof, signed with EdDSA | The proof shows knowledge of a signed commitment without revealing it, so no blind signature is needed |
 | Any request order with the ticket list | Strictly sequential per note | Settling on the highest index needs the used indices to form a prefix |
 | No exit procedure | Two-step withdrawal with a challenge window | The contract can't see `n`, so an understated claim must be challengeable |
-| [ZK-STARK](https://eprint.iacr.org/2018/046) | [Groth16](https://eprint.iacr.org/2016/260) | Unchanged from today. The trusted setup is tracked in [#135](https://github.com/w3hc/longjing/issues/135) (LJ-04) |
+| [ZK-STARK](https://eprint.iacr.org/2018/046) | [Groth16](https://eprint.iacr.org/2016/260) | Smaller proofs and cheaper verification. It adds a trusted setup, tracked in [#135](https://github.com/w3hc/longjing/issues/135) (LJ-04), and soundness rests on pairings rather than hashes alone: a pairing break, quantum or from faster cryptanalysis, would let anyone forge a withdrawal, though past proofs stay private ([ZK.md](ZK.md#cryptographic-assumptions)) |
 
 RLN signals, `a = Hash(k, i)`, `N = Hash(a)`, `y = k + a · x`, `x = Hash(M)` (with a nonce), the solvency formula and a stake forfeited on double-signaling all stay.
 

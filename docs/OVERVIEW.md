@@ -26,8 +26,8 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
   - Smaller proofs (~200 bytes vs ~80-200KB)
   - Lower onchain gas costs (~280k vs ~1-5M)
   - Requires trusted setup (vs transparent)
-  - Not post-quantum secure (vs quantum-resistant)
-- **Decision**: Prioritized efficiency for near-term deployment; a STARK migration remains possible later
+  - Soundness rests on pairings, a structured assumption that a quantum computer breaks and that AI-accelerated cryptanalysis may weaken sooner (vs hashes only)
+- **Decision**: Prioritized efficiency for near-term deployment; a STARK migration remains possible later. A pairing break costs funds, not privacy: Groth16 is perfectly zero-knowledge, so past proofs stay private, but anyone could forge a withdrawal of any note. See [ZK.md](./ZK.md#cryptographic-assumptions)
 
 ## Longjing and ethereum/zkapi
 
