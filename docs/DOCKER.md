@@ -29,7 +29,7 @@ Development mode uses hot reload and mounts your local code as a volume for live
 
 1. **Create environment file** (optional for dev):
    ```bash
-   cp .env.template .env.local
+   cp .env.template .env
    ```
 
    The dev compose file has sensible defaults, but you can override in `.env`:

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A "Cryptographic assumptions" section in `docs/ZK.md`: each primitive, the assumption it rests on, and whether a break costs privacy or funds. A break of curves or pairings costs no privacy, since nothing encrypted is posted onchain, the accumulator is perfectly hiding and the proofs are perfectly zero-knowledge, but a Groth16 break would let anyone forge a withdrawal ([#176](https://github.com/w3hc/longjing/issues/176)).
+- A Status section in the README: v0.5.0 is a testnet release with single-party circuit keys, no external audit, no withdrawal page yet and no protection of request timing and size ([#176](https://github.com/w3hc/longjing/issues/176)).
+- The options for the phase 2 trusted setup ceremony in `docs/TRUSTED_SETUP_CEREMONY.md`, with a recommendation ([#135](https://github.com/w3hc/longjing/issues/135)).
+
+### Changed
+
+- The README is shorter: status, design, threat model, a comparison with ethereum/zkapi, usage, deployment and documentation. Its threat model adds request timing and size, and enclave key derivation is no longer claimed for the provider's API key ([#176](https://github.com/w3hc/longjing/issues/176)).
+- `docs/MLKEM.md` no longer calls ML-KEM plainly "post-quantum secure": it names the lattice assumption it rests on and recommends a hybrid X25519 + ML-KEM KEM for any endpoint that uses it ([#176](https://github.com/w3hc/longjing/issues/176)).
+- The Groth16 trade-off in `docs/OVERVIEW.md` and `docs/SETTLEMENT.md` names the risk of a pairing break, not only the quantum one ([#176](https://github.com/w3hc/longjing/issues/176)).
+- The docs present Longjing as a template for any upstream API, with Claude as the reference provider, and say that `POST /longjing/request` still calls Claude directly ([#176](https://github.com/w3hc/longjing/issues/176)).
+
+### Fixed
+
+- The setup steps in the README, `docs/LOCAL_SETUP.md` and `docs/DOCKER.md` copy the template to `.env`, the only file the server loads, not `.env.local` ([#176](https://github.com/w3hc/longjing/issues/176)).
+
 ## [0.5.0] - 2026-10-07
 
 ### Added

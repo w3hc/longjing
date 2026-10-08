@@ -47,7 +47,7 @@ Before deploying to any TEE platform, ensure you have:
 
 **Attestation** in production goes only through dstack. The server refuses to start without `/var/run/dstack.sock`, with `DSTACK_SIMULATOR_ENDPOINT` set, or with `TEE_PLATFORM` set to anything but `auto` or `phala`, and it checks that a first quote carries the requested `report_data` before serving.
 
-The strategies below apply to the remaining secrets, such as `ANTHROPIC_API_KEY`.
+The strategies below apply to the remaining secrets, such as the upstream provider's API key (`ANTHROPIC_API_KEY` for the reference Claude provider).
 
 ### Strategy 1: KMS with TEE Attestation (Most Secure)
 

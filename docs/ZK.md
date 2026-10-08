@@ -6,7 +6,7 @@ How Longjing's proofs, circuits and contract fit together. The protocol itself, 
 
 Users deposit ETH once into a note, then make API requests that neither the operator nor an observer can link to the deposit or to each other. Each request carries a Groth16 proof that the note can pay for it, a Rate-Limit Nullifier and a re-randomized refund accumulator, and nothing else that identifies it. When users leave, they prove a withdrawal of what they didn't spend.
 
-**Reference Implementation**: Claude API integration is provided as a complete example.
+**Reference Implementation**: Claude is the reference upstream provider. The protocol doesn't depend on it, and any paid API can replace it ([PROVIDERS.md](PROVIDERS.md)).
 
 ## Core Concepts
 
@@ -186,9 +186,31 @@ const valid = eddsa.verifyPoseidon(eddsa.F.e(message), signature, publicKey);
 
 The accumulator is a Pedersen commitment over four generators of the prime-order subgroup. It is binding as long as nobody knows a discrete log between the generators, which hashing them to the curve from public seeds rules out, and hiding thanks to the blinding factor.
 
+### Cryptographic assumptions
+
+Privacy and funds rest on different assumptions. Hash functions are designed to have no algebraic structure. Elliptic curves, pairings and lattices have structure, and AI-accelerated cryptanalysis may exploit it sooner than expected, well before a quantum computer does.
+
+| Primitive | Used for | Assumption | If it breaks |
+| --- | --- | --- | --- |
+| Poseidon | Commitments, leaves, Merkle tree, RLN nullifiers and shares | Hash | **Privacy and funds.** A commitment or nullifier could reveal `k` or link requests, and a collision could fake a Merkle path |
+| Pedersen, hiding | Re-randomized refund accumulator | None: perfectly hiding | Nothing. A published accumulator reveals nothing about `R`, the note or the index |
+| Groth16, zero-knowledge | Request and settlement proofs | None: perfectly zero-knowledge | Nothing. Past proofs reveal nothing |
+| Groth16, soundness | Request and settlement proofs | Pairings on BN254, plus an honest trusted setup (LJ-04, [#135](https://github.com/w3hc/longjing/issues/135)) | **Funds.** Anyone can forge a withdrawal of any note, other users' included |
+| Pedersen, binding | Refund accumulator | Discrete log on Baby Jubjub | **Funds.** A user opens the accumulator to a larger `R`, capped by `P ≤ D` at their own deposit |
+| EdDSA-Poseidon | The refund key signing accumulators | Discrete log on Baby Jubjub | **Funds.** A user forges accumulators, capped by `P ≤ D` at their own deposit |
+| ECDSA | `serverAddress`, the Safe's signers | Discrete log on secp256k1 | **Operator funds.** A recovered `serverAddress` key takes the operator balance. A recovered Safe can only queue admin changes, which wait `ADMIN_DELAY`, so users can exit first |
+| ML-KEM-1024 | Nothing yet: the key is attested but unused ([MLKEM.md](MLKEM.md)) | Lattices (Module-LWE) | Nothing today |
+
+What follows:
+
+- **A break of curves or pairings costs no privacy.** Nothing encrypted is ever posted onchain, the accumulator is perfectly hiding and the proofs are perfectly zero-knowledge, so no past request or withdrawal can be deanonymized later. Privacy depends only on Poseidon.
+- **It does cost funds.** A Groth16 break is the worst case: the 7-day `ADMIN_DELAY` guards changes to a verifier, not a verifier that is itself broken.
+- **Rotating the refund key doesn't revoke the old one.** Every refund key ever accepted stays valid for withdrawals, so that exits never depend on the operator. Recovering any past key is enough to forge accumulators.
+- **The way out is hash-only soundness**: a STARK instead of Groth16, which is what the paper uses, and a hash-based signature for refunds. See [SETTLEMENT.md](SETTLEMENT.md#departures-from-the-paper).
+
 ## Cost Calculation
 
-### Claude API Pricing (October 2026)
+### Reference provider pricing: Claude (October 2026)
 
 Single source: [`src/pricing/claude-pricing.ts`](../src/pricing/claude-pricing.ts). The request DTO, `LongjingService`, `ClaudeProvider` and `/longjing/estimate-cost` all read it, and a model outside it is rejected.
 

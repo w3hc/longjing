@@ -168,6 +168,8 @@ Signature: [digital_signature]
 - [snarkjs Documentation](https://github.com/iden3/snarkjs)
 - [Vitalik's Introduction to zk-SNARKs](https://vitalik.ca/general/2021/01/26/snarks.html)
 - [Phase 2 Ceremony Guide](https://github.com/kobigurk/phase2-bn254)
+- [Privacy Pools on L2BEAT's ZK catalog](https://l2beat.com/zk-catalog/privacy-pools)
+- [p0tion](https://github.com/privacy-ethereum/p0tion) and its [retrospective](https://pse.dev/blog/retrospective-trusted-setups-and-p0tion-project)
 
 ## For This Project
 
@@ -184,6 +186,36 @@ A zkey with no phase 2 contribution keeps δ = γ, and then anyone can forge pro
 - ⚠️ Automated entropy (not airgapped)
 - A public multi-party phase 2 ceremony is tracked in [#135](https://github.com/w3hc/longjing/issues/135)
 
+### Ceremony Options
+
+Phase 1 is settled: `ppot_0080_17.ptau` already carries 80 public contributions. What remains is phase 2 for `request` and `settlement`. Their zkeys are about 20 MB and 12 MB, small enough for a contribution to run in a browser in seconds.
+
+1. **Pull-request ceremony.** Each contributor downloads the latest zkey, runs `snarkjs zkey contribute` and opens a pull request with the new zkey and its contribution hash. CI runs `snarkjs zkey verify` against the r1cs and the ptau before the next contribution is accepted. The git history is the transcript. It costs nothing and needs no server, but few people will take part.
+2. **Browser ceremony page.** A static page runs snarkjs in the browser, with a small queue so one contributor works on the latest zkey at a time, and storage for the zkeys. Contributors sign in, wait their turn and add entropy. It is the only option that reaches hundreds of contributors.
+3. **[p0tion](https://github.com/privacy-ethereum/p0tion) / DefinitelySetup.** PSE's toolkit for phase 2 ceremonies: a web app and a CLI, GitHub sign-in against sybils, and contributions verified on the coordinator's side. It is sunset and in long-term support only, and it needs AWS and Firebase infrastructure, which is a lot for two small circuits.
+4. **No phase 2.** PLONK or fflonk on the same ppot file needs only phase 1. This is a redesign rather than a ceremony: client proving, which runs on every API request, gets several times slower, onchain verification costs more gas, and the verifiers and the [fidelity note](./notes/fidelity-zk-api-credits-proposal.md) change.
+
+#### Example: Privacy Pools
+
+[Privacy Pools](https://l2beat.com/zk-catalog/privacy-pools) by 0xbow is a Groth16 (snarkjs) protocol that ran option 2. Phase 1 is the 80th contribution to the Perpetual Powers of Tau, the same file Longjing uses. For phase 2, anyone could open the ceremony page, sign in with GitHub, press "Begin Contribution" and move the mouse to add entropy. Anonymous and identified participants were both welcome. It closed in March 2025 with 514 contributions to the Withdraw circuit and 513 to the Ragequit circuit.
+
+[L2BEAT](https://l2beat.com/zk-catalog/privacy-pools) checked it independently: compile the circuits, download the phase 1 file, check the final zkeys against the compiled circuits, and compare the verification keys exported from them with the ones in the contracts. It rates the setup medium risk, because its green rating needs at least 150 contributions per circuit.
+
+#### Best Practices
+
+- **Freeze the circuits first.** Any change to a circuit discards its phase 2. Run the ceremony only once the circuits are reviewed and final.
+- **Make the starting zkey reproducible.** Pin the circom version and the commit, and publish the r1cs hash, so anyone derives the same `_0000.zkey` from the r1cs and the ptau.
+- **Verify every contribution** with `snarkjs zkey verify` before accepting the next, and publish each contribution hash, ideally with every intermediate zkey. Ask contributors to post their hash somewhere the coordinator does not control.
+- **Let anyone contribute.** One honest contributor is enough, so anonymous contributions are fine. Sign-in only protects the queue. Invite a few known people to contribute from airgapped or unusual setups.
+- **Finish with a random beacon.** Apply `snarkjs zkey beacon` with a value nobody can know in advance, such as the hash of an Ethereum block at a height announced beforehand.
+- **Publish a verification recipe**: compile at the pinned commit, check the r1cs hash, run `zkey verify` against the ptau, export the verification key and compare it with the deployed verifier. `pnpm check:verifiers` already covers part of it.
+- **Keep the transcript independent of any server.** Publish the final zkeys, their hashes and the transcript as a `circuits-v3` release that anyone can mirror. The ceremony page must not be needed afterwards.
+- **Plan the rollout around the timelock.** New verifiers reach `LongjingCredits` through the 7-day `ADMIN_DELAY`.
+
+#### Recommendation
+
+Start with the pull-request ceremony: it meets [#135](https://github.com/w3hc/longjing/issues/135)'s criterion of at least 3 independent contributors and leaves a complete public transcript. Before any deployment holding real value, add a browser ceremony page on top of the same transcript to reach the scale of Privacy Pools.
+
 ### Production Deployment Roadmap
 
 When implementing the trusted setup ceremony for production:
@@ -193,12 +225,12 @@ When implementing the trusted setup ceremony for production:
    - ✅ Production refuses to start without the `request` verification key
 
 2. **Testnet** (Next):
-   - Small ceremony (3-5 participants) to validate process
+   - Pull-request ceremony with at least 3 independent contributors
    - Practice ceremony coordination and verification
-   - Document ceremony process
+   - Publish the transcript as `circuits-v3`
 
 3. **Mainnet** (Production):
-   - Organize public ceremony with 50+ participants for maximum security
+   - Browser ceremony page open to anyone, aiming for 150+ contributions per circuit
    - Use production circuits:
      - [request.circom](../circuits/request.circom) - Membership, the signed accumulator, solvency and the RLN signal
      - [settlement.circom](../circuits/settlement.circom) - The withdrawal payout `D + R − n · C_max`, bound to its recipient

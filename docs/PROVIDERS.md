@@ -6,6 +6,8 @@ This document describes the provider abstraction layer introduced in Phase 1 of 
 
 The provider abstraction layer enables Longjing to support multiple external API services (Claude, OpenAI, Stripe, etc.) through a unified interface, while maintaining zero-knowledge privacy guarantees and hardcoded pricing configuration.
 
+Longjing is meant to be used as a template: fork it, add your provider and deploy your own gateway. Claude is the reference implementation, not a dependency of the protocol. Today `POST /longjing/request` still calls Claude directly from `LongjingService` instead of going through the provider registry, so a new provider also has to be wired into that path.
+
 **Status**: Phase 1 & 2 Complete ✅
 - Provider abstraction interface
 - Pricing oracle with database backend and caching

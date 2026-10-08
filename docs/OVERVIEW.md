@@ -14,8 +14,8 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
 ### What Longjing adds
 
 - **TEE gateway**: Intel TDX with in-enclave TLS termination; attestation `report_data` binds the ML-KEM, identity and refund signer public keys, the TLS certificate and a client nonce, so a client can verify the endpoint before sending secrets ([ATTESTATION.md](./ATTESTATION.md), [TEE_SETUP.md](./TEE_SETUP.md)).
-- **Generic provider layer**: dynamic provider registration, per-provider pricing and pre-request cost estimation; Claude is the reference provider ([PROVIDERS.md](./PROVIDERS.md)).
-- **Metadata hardening**: `MetadataSanitizerInterceptor`, `TimingProtectionInterceptor`, response padding, cost quantization and ML-KEM encryption.
+- **Generic provider layer**: dynamic provider registration, per-provider pricing and pre-request cost estimation. Longjing is a template for any upstream API, and Claude is only the reference provider ([PROVIDERS.md](./PROVIDERS.md), [QUICK_START.md](./QUICK_START.md)). Today `POST /longjing/request` still calls Claude directly from `LongjingService` instead of going through the provider registry, so a new provider also has to be wired into that path.
+- **Metadata hardening**: `MetadataSanitizerInterceptor`, `TimingProtectionInterceptor`, response padding and cost quantization. An attested ML-KEM key is available but not used yet ([MLKEM.md](./MLKEM.md)).
 - **ZK-first settlement**: a withdrawal is a Groth16 proof of `D + R − n · C_max` that the user generates, so exiting needs neither the server nor the secret key onchain.
 - **Production infrastructure**: ETH/USD oracle, rate limiting, persistent nullifier storage.
 
@@ -26,8 +26,8 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
   - Smaller proofs (~200 bytes vs ~80-200KB)
   - Lower onchain gas costs (~280k vs ~1-5M)
   - Requires trusted setup (vs transparent)
-  - Not post-quantum secure (vs quantum-resistant)
-- **Decision**: Prioritized efficiency for near-term deployment; a STARK migration remains possible later
+  - Soundness rests on pairings, a structured assumption that a quantum computer breaks and that AI-accelerated cryptanalysis may weaken sooner (vs hashes only)
+- **Decision**: Prioritized efficiency for near-term deployment; a STARK migration remains possible later. A pairing break costs funds, not privacy: Groth16 is perfectly zero-knowledge, so past proofs stay private, but anyone could forge a withdrawal of any note. See [ZK.md](./ZK.md#cryptographic-assumptions)
 
 ## Longjing and ethereum/zkapi
 
@@ -248,7 +248,7 @@ While the system provides strong cryptographic privacy guarantees, users should 
 4. **Message content**
    - **Risk**: Prompt content could reveal identity ("As the CEO of FooBar Inc...")
    - **Mitigation**: Sanitize prompts, avoid PII
-   - **Note**: Server cannot correlate prompts to identities, but prompts are visible to API provider (Claude/OpenAI)
+   - **Note**: Server cannot correlate prompts to identities, but prompts are visible to the upstream provider
 
 5. **Browser/device fingerprinting**
    - **Risk**: Unique browser fingerprints could link requests
@@ -303,7 +303,7 @@ While the system provides strong cryptographic privacy guarantees, users should 
 
 **Provider Abstraction**
 - Multi-provider architecture with dynamic pricing
-- Claude provider (claude-fable-5-1 by default)
+- Claude as the reference provider (claude-fable-5-1 by default)
   - $3/M input tokens, $15/M output tokens
   - Cache-aware pricing (90% read discount)
   - Token counting and cost estimation
@@ -352,7 +352,7 @@ This is a research implementation of the protocol described in the [Ethresear.ch
 - [ ] **Spin up a UI**
   - Wallet connection (MetaMask, WalletConnect)
   - Deposit/withdraw interface
-  - Anonymous chat with Claude
+  - Anonymous requests to the configured provider (chat with Claude in the reference setup)
   - Balance and accumulator visualization
   - Network switcher (Sepolia/Mainnet)
 - [ ] **Beta testing**
