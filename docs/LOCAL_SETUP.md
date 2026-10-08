@@ -122,7 +122,7 @@ Key endpoints:
 
 - `GET /` - Swagger UI documentation
 - `GET /health` - Health check
-- `POST /longjing/request` - Submit anonymous Claude API request
+- `POST /longjing/request` - Submit an anonymous request to the upstream provider (Claude in the reference setup)
 - `GET /longjing/server-pubkey` - Get the refund key the server signs accumulators with
 
 See [API_REFERENCE.md](./API_REFERENCE.md) for complete endpoint documentation.

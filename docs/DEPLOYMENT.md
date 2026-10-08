@@ -127,4 +127,4 @@ Publish what a user needs to check the deployment and to exit without it:
 
 ### Known gap
 
-`docker-compose.yml` doesn't pass `ANTHROPIC_API_KEY`, so a production enclave answers with mock responses. Adding it changes the compose hash, so it ships as a release.
+`docker-compose.yml` doesn't pass the upstream provider's API key (`ANTHROPIC_API_KEY` for the reference Claude provider), so a production enclave answers with mock responses. Adding it changes the compose hash, so it ships as a release.

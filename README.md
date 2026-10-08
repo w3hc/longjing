@@ -10,6 +10,8 @@ Longjing provides anonymous, prepaid access to third-party APIs. A user deposits
 
 It implements the Rate-Limit Nullifier (RLN) protocol described in [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104) (Crapis and Buterin), and serves it from a gateway running in an attested Intel TDX enclave.
 
+Longjing is a template: the protocol, pricing and refund logic don't depend on the upstream API, and anyone can plug in their own provider, an LLM or any other paid API. Claude is the reference provider, not a requirement. [QUICK_START.md](docs/QUICK_START.md) adds a provider in 10 steps. Today `POST /longjing/request` still calls Claude directly from `LongjingService` instead of going through the provider registry, so a new provider also has to be wired into that path.
+
 ## Status
 
 v0.5.0 is a testnet release. Do not deposit funds you can't afford to lose.
@@ -116,7 +118,7 @@ Longjing retains the original RLN design and places it behind an attested gatewa
 **Core**
 - [OVERVIEW.md](docs/OVERVIEW.md) — system architecture and status
 - [SETTLEMENT.md](docs/SETTLEMENT.md) — settlement and unlinkability design, and departures from the paper
-- [QUICK_START.md](docs/QUICK_START.md) — add a new provider in 10 steps
+- [QUICK_START.md](docs/QUICK_START.md) — add your own upstream provider in 10 steps
 - [LOCAL_SETUP.md](docs/LOCAL_SETUP.md) — local development setup
 - [API_REFERENCE.md](docs/API_REFERENCE.md) — endpoints, request formats and client-side proving
 

@@ -6,7 +6,7 @@ How Longjing's proofs, circuits and contract fit together. The protocol itself, 
 
 Users deposit ETH once into a note, then make API requests that neither the operator nor an observer can link to the deposit or to each other. Each request carries a Groth16 proof that the note can pay for it, a Rate-Limit Nullifier and a re-randomized refund accumulator, and nothing else that identifies it. When users leave, they prove a withdrawal of what they didn't spend.
 
-**Reference Implementation**: Claude API integration is provided as a complete example.
+**Reference Implementation**: Claude is the reference upstream provider. The protocol doesn't depend on it, and any paid API can replace it ([PROVIDERS.md](PROVIDERS.md)).
 
 ## Core Concepts
 
@@ -210,7 +210,7 @@ What follows:
 
 ## Cost Calculation
 
-### Claude API Pricing (October 2026)
+### Reference provider pricing: Claude (October 2026)
 
 Single source: [`src/pricing/claude-pricing.ts`](../src/pricing/claude-pricing.ts). The request DTO, `LongjingService`, `ClaudeProvider` and `/longjing/estimate-cost` all read it, and a model outside it is rejected.
 

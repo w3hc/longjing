@@ -2,7 +2,7 @@
 
 Complete API reference for the Longjing privacy-preserving system for accessing external API services.
 
-**Reference Implementation**: This documentation uses Claude API as an example. The same patterns apply to any external API service integration.
+**Reference Implementation**: This documentation uses Claude, the reference provider, as its example. Longjing is a template, and the same proofs, pricing and refunds apply to any upstream API ([PROVIDERS.md](PROVIDERS.md)). Today `POST /longjing/request` still calls Claude directly from `LongjingService` instead of going through the provider registry, so a new provider also has to be wired into that path.
 
 ## Base URL
 
@@ -40,7 +40,7 @@ https://your-domain.com  (production)
     - [3. Withdraw, without the server](#3-withdraw-without-the-server)
     - [4. Slash a double-spend](#4-slash-a-double-spend)
   - [Cost Calculation](#cost-calculation)
-    - [Claude API Pricing (March 2026)](#claude-api-pricing-march-2026)
+    - [Reference provider pricing: Claude (October 2026)](#reference-provider-pricing-claude-october-2026)
     - [Example Calculations](#example-calculations)
   - [Security Best Practices](#security-best-practices)
   - [Support](#support)
@@ -563,7 +563,7 @@ The caller gets `SLASH_BOUNTY`, the operator the rest of the note.
 
 ## Cost Calculation
 
-### Claude API Pricing (October 2026)
+### Reference provider pricing: Claude (October 2026)
 
 | Model | Input ($/M tokens) | Output ($/M tokens) |
 |-------|-------------------|---------------------|
