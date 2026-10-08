@@ -31,7 +31,7 @@ v0.5.0 is a testnet release. Do not deposit funds you can't afford to lose.
 
 The secret key and the accumulator never leave the client. Every key the gateway relies on, except the upstream provider's API key, is derived in the enclave and bound to its attestation. Departures from the paper are recorded in [SETTLEMENT.md](docs/SETTLEMENT.md).
 
-### Install
+## Install
 
 ```
 pnpm install
@@ -40,7 +40,7 @@ forge install
 cp .env.template .env
 ```
 
-### Test
+## Test
 
 ```bash
 # Unit tests
@@ -64,7 +64,7 @@ pnpm format:check
 pnpm lint:check
 ```
 
-### Run locally
+## Run
 
 ```
 # Generate TLS certificates
@@ -81,7 +81,7 @@ pnpm start:dev
 
 Server runs at `https://localhost:3000`, with the Swagger UI at its root. Outside production, keys come from the [dstack simulator](https://github.com/Dstack-TEE/dstack) when `DSTACK_SIMULATOR_ENDPOINT` is set; otherwise the refund signer uses a dev-only random key.
 
-## Deployment
+## Deploy
 
 In production, Longjing runs on [dstack](https://github.com/Dstack-TEE/dstack) and derives every key inside the enclave. The trusted setup, contract, enclave and governance are deployed in a fixed order, described in [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 

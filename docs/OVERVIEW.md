@@ -15,7 +15,7 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
 
 - **TEE gateway**: Intel TDX with in-enclave TLS termination; attestation `report_data` binds the ML-KEM, identity and refund signer public keys, the TLS certificate and a client nonce, so a client can verify the endpoint before sending secrets ([ATTESTATION.md](./ATTESTATION.md), [TEE_SETUP.md](./TEE_SETUP.md)).
 - **Generic provider layer**: dynamic provider registration, per-provider pricing and pre-request cost estimation. Longjing is a template for any upstream API, and Claude is only the reference provider ([PROVIDERS.md](./PROVIDERS.md), [QUICK_START.md](./QUICK_START.md)). Today `POST /longjing/request` still calls Claude directly from `LongjingService` instead of going through the provider registry, so a new provider also has to be wired into that path.
-- **Metadata hardening**: `MetadataSanitizerInterceptor`, `TimingProtectionInterceptor`, response padding, cost quantization and ML-KEM encryption.
+- **Metadata hardening**: `MetadataSanitizerInterceptor`, `TimingProtectionInterceptor`, response padding and cost quantization. An attested ML-KEM key is available but not used yet ([MLKEM.md](./MLKEM.md)).
 - **ZK-first settlement**: a withdrawal is a Groth16 proof of `D + R − n · C_max` that the user generates, so exiting needs neither the server nor the secret key onchain.
 - **Production infrastructure**: ETH/USD oracle, rate limiting, persistent nullifier storage.
 

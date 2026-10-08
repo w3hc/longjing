@@ -50,13 +50,13 @@ SERVER_TX_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7b
 # ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,https://rpc.flashbots.net,https://ethereum-rpc.publicnode.com
 
 # Optional: ML-KEM-1024 Admin Keypair (DEVELOPMENT ONLY - for non-TEE environments)
-# In production, keys are generated INSIDE the TEE automatically
+# In production, the key is derived inside the TEE
 # ADMIN_MLKEM_PUBLIC_KEY=<your-public-key>
 # ADMIN_MLKEM_PRIVATE_KEY=<your-private-key>
 ```
 
 **Note:**
-- **Production (TEE)**: ML-KEM keys are automatically generated inside the TEE on first startup. The private key never leaves the secure enclave.
+- **Production (TEE)**: the ML-KEM key is derived inside the TEE with `GetKey`, see [KEY_DERIVATION.md](./KEY_DERIVATION.md). The private key never leaves the enclave.
 - **Development (non-TEE)**: You can optionally provide pre-generated keys via environment variables for testing. Generate them with `pnpm ts-node scripts/generate-admin-keypair.ts`.
 - ML-KEM encryption utilities are available in `src/encryption/mlkem-encryption.service.ts` but not currently exposed via endpoints.
 

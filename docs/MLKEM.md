@@ -1,6 +1,6 @@
 # ML-KEM Key Encapsulation
 
-> **Status: attested, but not used by any endpoint.** In v0.4.1, the server derives an ML-KEM-1024 key in the enclave, serves its public key in `keys.mlkemPublicKey` of `GET /attestation` and binds it in `report_data`. No endpoint accepts ML-KEM ciphertext: no controller uses `MlkemEncryptionService` (`src/encryption/mlkem-encryption.service.ts`), and the `/secret/*` endpoints this page describes are not served. Encrypting to this key today protects nothing, because nothing on the server decrypts it. The key exists so that future features, such as the attested onion service in [#99](https://github.com/w3hc/longjing/issues/99), can rely on it. The rest of this page documents that intended design, not current behavior.
+> **Status: available and attested, not used yet.** Since v0.4.1, the server derives an ML-KEM-1024 key in the enclave, serves its public key in `keys.mlkemPublicKey` of `GET /attestation` and binds it in `report_data`. No endpoint accepts ML-KEM ciphertext: no controller uses `MlkemEncryptionService` (`src/encryption/mlkem-encryption.service.ts`), and the `/secret/*` endpoints this page describes are not served. Encrypting to this key today protects nothing, because nothing on the server decrypts it. The key is there for any endpoint or provider that later needs to receive payloads encrypted to the enclave, such as a prompt that a relay forwards without reading it. The rest of this page documents that intended design, not current behavior.
 
 ## Overview
 
