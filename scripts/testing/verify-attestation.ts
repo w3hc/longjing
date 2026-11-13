@@ -18,7 +18,8 @@
  *   pnpm verify:attestation <url> --app <DstackApp> [--from-block <n>]
  *     [--rpc <url>] [--min-delay <seconds>]
  *
- * Check who can change LongjingCredits' verifiers and serverAddress:
+ * Check who can change LongjingCredits' verifiers, serverAddress and
+ * operatorPayout:
  *   pnpm verify:attestation <url> --credits <LongjingCredits>
  *     [--credits-rpc <url>] [--min-delay <seconds>]
  *
@@ -519,8 +520,8 @@ async function verifyGovernance(
 }
 
 /**
- * Check who can change LongjingCredits' verifiers, serverAddress and refund
- * key. Exits on failure.
+ * Check who can change LongjingCredits' verifiers, serverAddress,
+ * operatorPayout and refund key. Exits on failure.
  */
 async function verifyCreditsGovernance(options: CreditsOptions) {
   log(`\n🏦 LongjingCredits Governance Check:`, 'blue');
