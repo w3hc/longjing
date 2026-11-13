@@ -70,7 +70,7 @@ services:
 
 **Important**:
 - The image is pinned by digest, so the attested compose hash commits to the code that runs. Never use a mutable tag such as `latest`
-- The `/var/run/dstack.sock` volume mount is **required**: the ML-KEM, refund signer, identity, transaction signer and TLS keys are derived through it with dstack v1 `GetKey` (dstack ≥ 0.6.0), and production refuses to start without it. See [KEY_DERIVATION.md](KEY_DERIVATION.md)
+- The `/var/run/dstack.sock` volume mount is **required**: the refund signer, identity, transaction signer and TLS keys are derived through it with dstack v1 `GetKey` (dstack ≥ 0.6.0), and production refuses to start without it. See [KEY_DERIVATION.md](KEY_DERIVATION.md)
 
 ### .env.prod
 
@@ -85,7 +85,7 @@ ZK_CONTRACT_ADDRESS=<your-contract-address>
 ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,https://rpc.mevblocker.io/noreverts,https://rpc.mevblocker.io/fast,https://rpc.mevblocker.io,https://rpc.flashbots.net/fast,https://rpc.flashbots.net,https://mainnet.gateway.tenderly.co,https://ethereum-rpc.publicnode.com
 ```
 
-`NODE_ENV` comes from the compose file as a literal. Leave out `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY`, `ANVIL_RPC_URL` and `SERVER_TX_PRIVATE_KEY`: the keys are derived inside the enclave, and `NODE_ENV=production` refuses to start with them in env. Contract transactions, slashing included, are signed by the enclave's transaction signer, so fund its address (`txSignerAddress` in `GET /attestation/manifest`) for gas and set it as the contract's `serverAddress`. Placeholder values, such as Anvil addresses or `example.com` URLs, are refused too, see [LOCAL_SETUP.md](LOCAL_SETUP.md#node_env).
+`NODE_ENV` comes from the compose file as a literal. Leave out `OPERATOR_PRIVATE_KEY`, `ANVIL_RPC_URL` and `SERVER_TX_PRIVATE_KEY`: the keys are derived inside the enclave, and `NODE_ENV=production` refuses to start with them in env. Contract transactions, slashing included, are signed by the enclave's transaction signer, so fund its address (`txSignerAddress` in `GET /attestation/manifest`) for gas and set it as the contract's `serverAddress`. Placeholder values, such as Anvil addresses or `example.com` URLs, are refused too, see [LOCAL_SETUP.md](LOCAL_SETUP.md#node_env).
 
 On a first deployment, `LongjingCredits` doesn't exist yet: its constructor needs the refund signer key from `GET /attestation/manifest`. Set `ZK_CONTRACT_ADDRESS` to the address it will be deployed at and boot the CVM: the enclave serves `/attestation` and `/attestation/manifest`, refuses every `/longjing` request with 503 and fails `GET /health/ready`, and connects within 30 s of the contract answering at that address. See [DEPLOYMENT.md](./DEPLOYMENT.md#3-pick-the-contract-address) for picking the address.
 
@@ -244,17 +244,6 @@ Phala Cloud uses end-to-end encryption for secrets:
 
 These are configuration values, never keys: every key is derived inside the enclave, see [KEY_DERIVATION.md](KEY_DERIVATION.md).
 
-### ML-KEM Encryption
-
-The application uses ML-KEM-1024 (NIST FIPS 203) for quantum-resistant encryption:
-
-- **Public key**: Served in `keys.mlkemPublicKey` of `GET /attestation`
-- **Private key**: Derived inside the TEE with `GetKey`, never exposed
-- **Security level**: NIST Level 5 (256-bit classical security)
-- **Key sizes**: 1568 bytes (public), 3168 bytes (private)
-
-See [MLKEM.md](MLKEM.md) for more details.
-
 ### Attestation
 
 Verify the TEE environment by accessing:
@@ -310,7 +299,7 @@ phala ssh --interactive
 docker logs dstack-longjing-1
 ```
 
-A container that exits at startup with a key policy error has key material in env, such as `ADMIN_MLKEM_PRIVATE_KEY` or `OPERATOR_PRIVATE_KEY`: remove it from `.env.prod`, see [KEY_DERIVATION.md](KEY_DERIVATION.md#production-policy).
+A container that exits at startup with a key policy error has key material in env, such as `OPERATOR_PRIVATE_KEY` or `SERVER_TX_PRIVATE_KEY`: remove it from `.env.prod`, see [KEY_DERIVATION.md](KEY_DERIVATION.md#production-policy).
 
 ### Attestation returns `"platform": "none"`
 

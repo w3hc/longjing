@@ -43,7 +43,7 @@ Before deploying to any TEE platform, ensure you have:
 
 ## Secret Management
 
-**Keys** (ML-KEM, refund signer, identity, transaction signer, TLS) are never secrets you manage: on dstack they are derived inside the enclave with `GetKey`, and production refuses to start with `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `SERVER_TX_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env. See [KEY_DERIVATION.md](KEY_DERIVATION.md), including the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out.
+**Keys** (refund signer, identity, transaction signer, TLS) are never secrets you manage: on dstack they are derived inside the enclave with `GetKey`, and production refuses to start with `OPERATOR_PRIVATE_KEY`, `SERVER_TX_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` in env. See [KEY_DERIVATION.md](KEY_DERIVATION.md), including the `ALLOW_KEYS_OUTSIDE_ENCLAVE` opt-out.
 
 **Attestation** in production goes only through dstack. The server refuses to start without `/var/run/dstack.sock`, with `DSTACK_SIMULATOR_ENDPOINT` set, or with `TEE_PLATFORM` set to anything but `auto` or `phala`, and it checks that a first quote carries the requested `report_data` before serving.
 
@@ -195,7 +195,7 @@ AMD Secure Encrypted Virtualization - Secure Nested Paging provides VM-level iso
 
 ```bash
 # Get attestation report
-curl -k https://your-server:443/secret/attestation > attestation.json
+curl -k https://your-server:443/attestation > attestation.json
 
 # Extract and verify the report
 cat attestation.json | jq -r '.report' | base64 -d > report.bin
@@ -312,7 +312,7 @@ Intel Trust Domain Extensions provides VM-level isolation with hardware-enforced
 
 ```bash
 # Get attestation report
-curl -k https://your-server:443/secret/attestation > attestation.json
+curl -k https://your-server:443/attestation > attestation.json
 
 # Verify the platform is TDX
 cat attestation.json | jq -r '.platform'
@@ -477,7 +477,7 @@ AWS Nitro Enclaves provide isolated compute environments on EC2 instances.
 
 ```bash
 # Get attestation report
-curl https://your-server:443/secret/attestation > attestation.json
+curl https://your-server:443/attestation > attestation.json
 
 # Extract and parse attestation document (CBOR format)
 cat attestation.json | jq -r '.report' | base64 -d > attestation.cbor
@@ -769,7 +769,7 @@ curl -k https://your-server:443/attestation | jq .
 #   "quote": "base64-encoded-attestation-quote",
 #   "reportData": "hex: key commitment || nonce, 128 chars",
 #   "nonce": null,
-#   "keys": { "mlkemPublicKey": "...", "identityPublicKey": "0x04...", ... },
+#   "keys": { "identityPublicKey": "0x04...", "refundSignerPublicKey": {...}, ... },
 #   "eventLog": "[...]",
 #   "measurement": "hex-measurement-hash",
 #   "timestamp": "2026-03-17T...",
@@ -781,22 +781,22 @@ curl -k https://your-server:443/attestation | jq .
 
 ### 2. Verify the Key Binding (Critical Security Check)
 
-The attestation quote's `report_data` commits to every public key Longjing uses, the **ML-KEM key**, the **identity key** and the **refund signer key**, and to the **in-enclave TLS certificate**, followed by a **nonce** the client chooses. This provides four guarantees:
+The attestation quote's `report_data` commits to every public key Longjing uses, the **identity key** and the **refund signer key**, and to the **in-enclave TLS certificate**, followed by a **nonce** the client chooses. This provides four guarantees:
 
 1. **Key Origin**: The keys were derived **inside the TEE**, not loaded from environment variables
-2. **MITM Prevention**: An attacker cannot serve their own encryption key, or sign refund tickets outside the enclave, while replaying a valid TEE attestation
+2. **MITM Prevention**: An attacker cannot serve their own TLS certificate, or sign refund tickets outside the enclave, while replaying a valid TEE attestation
 3. **TLS Endpoint Binding**: The TLS certificate the server presents is bound to the quote, proving the TLS session terminates **inside the attested enclave** (not at an external proxy)
 4. **Freshness**: The quote carries the client's nonce, so it was generated for this request
 
 **How it works:**
-- At startup, Longjing derives its ML-KEM-1024, identity and refund signer keys inside the enclave from the dstack KMS (`GetKey`, see [KEY_DERIVATION.md](KEY_DERIVATION.md))
+- At startup, Longjing derives its identity, refund signer and transaction signer keys inside the enclave from the dstack KMS (`GetKey`, see [KEY_DERIVATION.md](KEY_DERIVATION.md))
 - The private keys are never stored and never leave the TEE, and every instance of the app derives the same keys
 - The TLS private key is derived in-enclave via the dstack KMS (or loaded from enclave-only storage)
 - `GET /attestation?nonce=<hex>` returns the quote, the keys `report_data` commits to and the event log; the layout is in [ATTESTATION.md](ATTESTATION.md#report_data)
 - A null `keys.tlsCertificate` means the server is **not** terminating TLS itself — treat that as a weaker deployment
 
 **Security comparison:**
-- ❌ **Old approach**: Keys in `ADMIN_MLKEM_PRIVATE_KEY` environment variable → Operator can access private key
+- ❌ **Old approach**: Keys in environment variables such as `OPERATOR_PRIVATE_KEY` → Operator can access private key
 - ✅ **New approach**: Keys derived in TEE → Private key never known to anyone, cryptographically proven via attestation and the signed key manifest (`GET /attestation/manifest`)
 
 **Automated Verification:**
@@ -812,13 +812,13 @@ pnpm verify:attestation https://your-server:443/attestation
 **What This Proves:**
 - The attestation quote was generated for your nonce, with knowledge of the returned keys
 - An attacker cannot substitute their own key or replay an old quote (the commitment or the nonce won't match)
-- The encryption and refund signing keys are cryptographically bound to the TEE measurement
+- The TLS and refund signing keys are cryptographically bound to the TEE measurement
 
 **Security Impact:**
 Without the key binding, an attacker could:
-1. Serve their own ML-KEM public key (to decrypt your secrets)
+1. Terminate TLS with their own certificate (to read your requests)
 2. Replay a valid TEE attestation from the real server
-3. Client thinks it's secure, but secrets are encrypted to attacker's key
+3. Client thinks it's secure, but sends its prompts and proofs to the attacker
 
 With the key binding and a fresh nonce, this attack is cryptographically impossible.
 
@@ -1064,7 +1064,7 @@ phala cvms list                 # List your CVMs
 # See: https://docs.phala.com/phala-cloud/phala-cloud-cli/start-from-cloud-cli
 
 # Longjing Application
-curl -k https://localhost:443/secret/attestation
+curl -k https://localhost:443/attestation
 curl -k https://localhost:443/health
 NODE_ENV=production node dist/main.js
 

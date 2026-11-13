@@ -43,7 +43,6 @@ export function verifyKeyBinding(
 ): string[] {
   const failures: string[] = [];
   const { keys } = evidence;
-  const ek = Buffer.from(keys.mlkemPublicKey, 'base64');
   const identity = keys.identityPublicKey
     ? Buffer.from(strip0x(keys.identityPublicKey), 'hex')
     : undefined;
@@ -53,7 +52,6 @@ export function verifyKeyBinding(
 
   const expected = buildReportData(
     {
-      mlkemPublicKey: ek,
       identityPublicKey: identity,
       refundSignerPublicKey: keys.refundSignerPublicKey
         ? encodeRefundSignerPublicKey(keys.refundSignerPublicKey)
@@ -94,13 +92,7 @@ export function verifyKeyBinding(
 
   if (options.keyManifest) {
     failures.push(
-      ...verifyManifest(
-        options.keyManifest,
-        ek,
-        keys,
-        identity,
-        tlsCertificate,
-      ),
+      ...verifyManifest(options.keyManifest, keys, identity, tlsCertificate),
     );
   }
 
@@ -109,15 +101,11 @@ export function verifyKeyBinding(
 
 function verifyManifest(
   { manifest, signature }: SignedKeyManifest,
-  ek: Buffer,
   keys: BoundKeys,
   identity: Buffer | undefined,
   tlsCertificate: Buffer | undefined,
 ): string[] {
   const failures: string[] = [];
-  if (manifest.mlkemPublicKeyHash.toLowerCase() !== sha256Hex(ek)) {
-    failures.push('The key manifest commits to a different ML-KEM key');
-  }
   const refundSigner = keys.refundSignerPublicKey;
   if (
     !refundSigner ||

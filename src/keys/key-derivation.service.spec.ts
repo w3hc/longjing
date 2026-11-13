@@ -7,7 +7,6 @@ import {
   hexlify,
   verifyTypedData,
 } from 'ethers';
-import { createMlKem1024 } from 'mlkem';
 import {
   DstackV1Client,
   GetKeyResponse,
@@ -16,6 +15,7 @@ import {
 import {
   KEY_MANIFEST_DOMAIN,
   KEY_MANIFEST_TYPES,
+  IDENTITY_DOMAIN,
   KeyDerivationService,
   REFUND_SIGNER_DOMAIN,
   TX_SIGNER_DOMAIN,
@@ -43,6 +43,7 @@ const lp = (value: string) => {
 class FakeDstack {
   simulator = false;
   failing = false;
+  requested: string[] = [];
 
   isSimulator() {
     return this.simulator;
@@ -56,6 +57,7 @@ class FakeDstack {
     if (this.failing) {
       return Promise.reject(new Error('connect ENOENT /var/run/dstack.sock'));
     }
+    this.requested.push(domain);
     const info = Buffer.concat([
       lp('dstack-guest-v1-key'),
       lp(algorithm),
@@ -121,12 +123,9 @@ describe('KeyDerivationService', () => {
 
     it('derives the pinned keys from the spec root key', async () => {
       // Changing these rotates every key: the contract's serverPublicKey
-      // and clients' pinned ML-KEM key stop matching
+      // and serverAddress stop matching
       const service = await create();
 
-      expect(sha256(service.getMlKemPublicKey()!)).toBe(
-        'e3d78b123044b4c76cc54604ec6a62f2c8027dd91482f7cff092a5a6e6d29b83',
-      );
       expect(hex(service.getRefundSignerPrivateKey()!)).toBe(
         '52498b625136c3fc7034d9dc2eb8b48158abe6a7e4dff1f9270db1d959c80890',
       );
@@ -164,7 +163,6 @@ describe('KeyDerivationService', () => {
       const a = await create();
       const b = await create();
 
-      expect(hex(a.getMlKemPublicKey()!)).toBe(hex(b.getMlKemPublicKey()!));
       expect(hex(a.getRefundSignerPrivateKey()!)).toBe(
         hex(b.getRefundSignerPrivateKey()!),
       );
@@ -213,15 +211,14 @@ describe('KeyDerivationService', () => {
       );
     });
 
-    it('decapsulates what is encapsulated to its public key', async () => {
-      const service = await create();
-      const mlkem = await createMlKem1024();
+    it('derives only the refund signer, identity and transaction signer keys', async () => {
+      await create();
 
-      const [ciphertext, sharedSecret] = mlkem.encap(
-        service.getMlKemPublicKey()!,
-      );
-
-      expect(hex(service.decapsulate(ciphertext))).toBe(hex(sharedSecret));
+      expect(dstack.requested).toEqual([
+        REFUND_SIGNER_DOMAIN,
+        IDENTITY_DOMAIN,
+        TX_SIGNER_DOMAIN,
+      ]);
     });
   });
 
@@ -232,9 +229,7 @@ describe('KeyDerivationService', () => {
       const { manifest, signature } = service.getKeyManifest()!;
 
       expect(manifest.appId).toBe(APP_ID);
-      expect(manifest.mlkemPublicKeyHash).toBe(
-        '0x' + sha256(service.getMlKemPublicKey()!),
-      );
+      expect(manifest).not.toHaveProperty('mlkemPublicKeyHash');
       expect(manifest.tlsCertificateHash).toBe(ZeroHash);
       expect(manifest.txSignerAddress).toBe(service.getTxSignerAddress());
       expect(
@@ -317,11 +312,7 @@ describe('KeyDerivationService', () => {
       const service = await create();
 
       expect(service.isAvailable()).toBe(false);
-      expect(service.getMlKemPublicKey()).toBeNull();
       expect(service.getRefundSignerPrivateKey()).toBeNull();
-      expect(() => service.decapsulate(new Uint8Array(1568))).toThrow(
-        'not derived',
-      );
     });
   });
 });

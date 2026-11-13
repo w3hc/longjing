@@ -38,8 +38,6 @@ export interface AttestationQuote {
  * can rebuild it. A null key was not derived from dstack.
  */
 export interface BoundKeys {
-  /** Base64 ML-KEM-1024 encapsulation key */
-  mlkemPublicKey: string;
   /** 0x-hex uncompressed secp256k1 identity public key */
   identityPublicKey: string | null;
   /** 0x-hex Babyjubjub coordinates of the refund signer */

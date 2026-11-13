@@ -18,7 +18,6 @@ describe('AttestationController', () => {
     timestamp: '2026-03-17T00:00:00.000Z',
     nonce: null,
     keys: {
-      mlkemPublicKey: 'AQI=',
       identityPublicKey: null,
       refundSignerPublicKey: null,
       tlsCertificate: null,
@@ -28,7 +27,6 @@ describe('AttestationController', () => {
   beforeEach(async () => {
     keyDerivation = {
       getKeyManifest: jest.fn().mockReturnValue(null),
-      getMlKemPublicKey: jest.fn().mockReturnValue(new Uint8Array([1, 2])),
       getIdentityAddress: jest.fn().mockReturnValue('0xabc'),
       getIdentityPublicKey: jest.fn().mockReturnValue(new Uint8Array([4])),
       getIdentitySignatureChain: jest
@@ -86,8 +84,7 @@ describe('AttestationController', () => {
 
       expect(result).toMatchObject({
         ...signed,
-        domain: { name: 'Longjing', version: '1' },
-        mlkemPublicKey: 'AQI=',
+        domain: { name: 'Longjing', version: '2' },
         identity: {
           address: '0xabc',
           publicKey: '0x04',
@@ -95,6 +92,7 @@ describe('AttestationController', () => {
         },
         refundSigner: { x: '0x01', y: '0x02', signatureChain: ['0x06'] },
       });
+      expect(result).not.toHaveProperty('mlkemPublicKey');
     });
   });
 

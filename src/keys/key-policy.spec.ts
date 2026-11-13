@@ -2,7 +2,6 @@ import { assertNoKeyMaterialInEnv } from './key-policy';
 
 describe('assertNoKeyMaterialInEnv', () => {
   it.each([
-    'ADMIN_MLKEM_PRIVATE_KEY',
     'OPERATOR_PRIVATE_KEY',
     'SERVER_TX_PRIVATE_KEY',
     'TLS_KEY_PATH',
@@ -17,7 +16,7 @@ describe('assertNoKeyMaterialInEnv', () => {
     expect(() =>
       assertNoKeyMaterialInEnv({
         NODE_ENV: 'production',
-        ADMIN_MLKEM_PUBLIC_KEY: 'public',
+        KMS_URL: 'https://kms.example.com/release',
       }),
     ).not.toThrow();
   });
@@ -36,7 +35,7 @@ describe('assertNoKeyMaterialInEnv', () => {
     expect(() =>
       assertNoKeyMaterialInEnv({
         NODE_ENV: 'development',
-        ADMIN_MLKEM_PRIVATE_KEY: 'x',
+        OPERATOR_PRIVATE_KEY: 'x',
       }),
     ).not.toThrow();
   });

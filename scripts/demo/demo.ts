@@ -361,8 +361,6 @@ async function startServer(contract: string): Promise<INestApplication> {
     ZK_CONTRACT_ADDRESS: contract,
     DATA_DIR: workDir,
     KMS_URL: 'http://localhost:3001',
-    ADMIN_MLKEM_PUBLIC_KEY: Buffer.alloc(1568).toString('base64'),
-    ADMIN_MLKEM_PRIVATE_KEY: Buffer.alloc(3168).toString('base64'),
   });
   for (const name of [
     'ANTHROPIC_API_KEY',

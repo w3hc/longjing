@@ -12,26 +12,22 @@ import {
   hexlify,
   sha256,
 } from 'ethers';
-import { createMlKem1024 } from 'mlkem';
 import { getTlsLeafCertificate } from '../tls/tls-context';
 import { DstackV1Client } from './dstack-v1.client';
 import { keysOutsideEnclaveAllowed } from './key-policy';
 import { isProd } from '../config/profile';
 
-export const MLKEM_DOMAIN = 'longjing/mlkem-1024/v1';
 export const REFUND_SIGNER_DOMAIN = 'longjing/refund-signer/babyjub/v1';
 export const IDENTITY_DOMAIN = 'longjing/identity/v1';
 export const TX_SIGNER_DOMAIN = 'longjing/tx-signer/v1';
 
 const HKDF_SALT = 'longjing';
-const MLKEM_SEED_INFO = lengthPrefixed('longjing-mlkem-1024-seed-v1');
 const REFUND_SIGNER_INFO = lengthPrefixed('longjing-refund-signer-babyjub-v1');
 
-export const KEY_MANIFEST_DOMAIN = { name: 'Longjing', version: '1' };
+export const KEY_MANIFEST_DOMAIN = { name: 'Longjing', version: '2' };
 export const KEY_MANIFEST_TYPES = {
   KeyManifest: [
     { name: 'appId', type: 'address' },
-    { name: 'mlkemPublicKeyHash', type: 'bytes32' },
     { name: 'refundSignerX', type: 'bytes32' },
     { name: 'refundSignerY', type: 'bytes32' },
     { name: 'tlsCertificateHash', type: 'bytes32' },
@@ -42,7 +38,6 @@ export const KEY_MANIFEST_TYPES = {
 
 export interface KeyManifest {
   appId: string;
-  mlkemPublicKeyHash: string;
   refundSignerX: string;
   refundSignerY: string;
   /** SHA-256 of the served TLS leaf certificate (DER), or zero if none. */
@@ -57,8 +52,6 @@ export interface SignedKeyManifest {
   signature: string;
 }
 
-type MlKem = Awaited<ReturnType<typeof createMlKem1024>>;
-
 /**
  * Derives Longjing's long-lived keys inside the enclave from the dstack KMS.
  *
@@ -71,9 +64,6 @@ type MlKem = Awaited<ReturnType<typeof createMlKem1024>>;
 @Injectable()
 export class KeyDerivationService implements OnModuleInit {
   private readonly logger = new Logger(KeyDerivationService.name);
-  private mlkem: MlKem | null = null;
-  private mlkemPublicKey: Uint8Array | null = null;
-  private mlkemSecretKey: Uint8Array | null = null;
   private refundSignerKey: Buffer | null = null;
   private refundSignerPublicKey: { x: string; y: string } | null = null;
   private refundSignerSignatureChain: Uint8Array[] = [];
@@ -112,20 +102,11 @@ export class KeyDerivationService implements OnModuleInit {
       this.logger.warn('Keys derived from the dstack simulator (public root)');
     }
     this.logger.log(
-      `Keys derived: ML-KEM-1024 ${Buffer.from(this.mlkemPublicKey!).toString('base64').substring(0, 32)}..., identity ${this.getIdentityAddress()}, tx signer ${this.getTxSignerAddress()}`,
+      `Keys derived: identity ${this.getIdentityAddress()}, tx signer ${this.getTxSignerAddress()}`,
     );
   }
 
   private async derive(): Promise<void> {
-    const mlkemSource = await this.dstack.getKey(MLKEM_DOMAIN, 'ed25519');
-    const seed = new Uint8Array(
-      hkdfSync('sha256', mlkemSource.key, HKDF_SALT, MLKEM_SEED_INFO, 64),
-    );
-    const mlkem = await createMlKem1024();
-    const [publicKey, secretKey] = mlkem.deriveKeyPair(seed);
-    mlkemSource.key.fill(0);
-    seed.fill(0);
-
     // ed25519 only because its 32 bytes are an opaque seed: the Baby Jubjub
     // EdDSA private key is any 32 bytes, hashed by circomlibjs before use
     const refundSigner = await this.dstack.getKey(
@@ -150,9 +131,6 @@ export class KeyDerivationService implements OnModuleInit {
 
     const appId = await this.dstack.getAppId();
 
-    this.mlkem = mlkem;
-    this.mlkemPublicKey = publicKey;
-    this.mlkemSecretKey = secretKey;
     this.refundSignerKey = refundSignerKey;
     this.refundSignerPublicKey = refundSignerPublicKey;
     this.refundSignerSignatureChain = refundSigner.signatureChain;
@@ -164,22 +142,10 @@ export class KeyDerivationService implements OnModuleInit {
 
   isAvailable(): boolean {
     return (
-      this.mlkemSecretKey !== null &&
       this.refundSignerKey !== null &&
       this.identity !== null &&
       this.txSigner !== null
     );
-  }
-
-  getMlKemPublicKey(): Uint8Array | null {
-    return this.mlkemPublicKey;
-  }
-
-  decapsulate(ciphertext: Uint8Array): Uint8Array {
-    if (!this.mlkem || !this.mlkemSecretKey) {
-      throw new Error('ML-KEM keys not derived');
-    }
-    return this.mlkem.decap(ciphertext, this.mlkemSecretKey);
   }
 
   /**
@@ -251,17 +217,11 @@ export class KeyDerivationService implements OnModuleInit {
     tlsCertificateHash: string,
     epoch = 1,
   ): SignedKeyManifest {
-    if (
-      !this.identity ||
-      !this.txSigner ||
-      !this.mlkemPublicKey ||
-      !this.refundSignerPublicKey
-    ) {
+    if (!this.identity || !this.txSigner || !this.refundSignerPublicKey) {
       throw new Error('Keys not derived');
     }
     const manifest: KeyManifest = {
       appId,
-      mlkemPublicKeyHash: sha256(this.mlkemPublicKey),
       refundSignerX: this.refundSignerPublicKey.x,
       refundSignerY: this.refundSignerPublicKey.y,
       tlsCertificateHash,

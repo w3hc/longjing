@@ -87,10 +87,6 @@ See [docs/TEE_SETUP.md](../docs/TEE_SETUP.md) for production verification.
 
 Computes a Poseidon hash, such as a note's commitment.
 
-### `testing/generate-admin-keypair.ts`
-
-Generates ML-KEM-1024 admin keypair for secret management.
-
 ### `testing/generate-settlement-fixtures.ts`
 
 Writes `contracts/test/fixtures/settlement.json`, real settlement proofs the Foundry tests verify with the real `SettlementVerifier`. Run it after changing the settlement circuit or its keys.

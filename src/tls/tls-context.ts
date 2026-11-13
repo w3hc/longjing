@@ -7,7 +7,9 @@
  * Holds the DER encoding of the TLS leaf certificate the HTTPS server is
  * actually serving, so it can be bound into the TEE attestation quote:
  *
- *   report_data = SHA-256(mlkem_public_key) || SHA-256(tls_leaf_cert_der)
+ *   report_data = SHA-256(..., SHA-256(tls_leaf_cert_der)) || nonce
+ *
+ * See src/attestation/report-data.ts.
  *
  * The certificate is loaded in main.ts (before the Nest application exists),
  * which is why this is a plain module-level singleton rather than a Nest

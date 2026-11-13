@@ -44,7 +44,6 @@
     "class-validator": "^0.15.1",
     "ethers": "^6.17.0",
     "helmet": "^8.3.0",
-    "mlkem": "^2.7.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "swagger-ui-express": "^5.0.1"

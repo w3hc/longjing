@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 
-export const REPORT_DATA_LABEL = 'longjing-report-v1';
+export const REPORT_DATA_LABEL = 'longjing-report-v2';
 export const NONCE_LENGTH = 32;
 
 /**
@@ -8,8 +8,6 @@ export const NONCE_LENGTH = 32;
  * exist yet contributes an empty term.
  */
 export interface ReportDataInputs {
-  /** ML-KEM-1024 encapsulation key `ek`. */
-  mlkemPublicKey: Uint8Array;
   /** Uncompressed secp256k1 identity public key, 65 bytes. */
   identityPublicKey?: Uint8Array;
   /** Babyjubjub refund signer public key as x || y, 32 bytes each. */
@@ -21,7 +19,7 @@ export interface ReportDataInputs {
 /**
  * Builds the 64-byte `report_data`:
  *
- *   [0..32]  SHA-256(LP(label) || LP(ek) || LP(identity_pubkey)
+ *   [0..32]  SHA-256(LP(label) || LP(identity_pubkey)
  *                    || LP(refund_signer_x || refund_signer_y)
  *                    || LP(SHA-256(tls_leaf_cert_der)))
  *   [32..64] client nonce, or zeros
@@ -41,7 +39,6 @@ export function buildReportData(
     : empty;
   const commitment = createHash('sha256')
     .update(lengthPrefixed(Buffer.from(REPORT_DATA_LABEL, 'utf-8')))
-    .update(lengthPrefixed(inputs.mlkemPublicKey))
     .update(lengthPrefixed(inputs.identityPublicKey ?? empty))
     .update(lengthPrefixed(inputs.refundSignerPublicKey ?? empty))
     .update(lengthPrefixed(certificateHash))

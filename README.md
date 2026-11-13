@@ -130,7 +130,7 @@ Longjing retains the original RLN design and places it behind an attested gatewa
 **Architecture**
 - [PROVIDERS.md](docs/PROVIDERS.md) — provider abstraction design
 - [SQLITE3.md](docs/SQLITE3.md) — database and privacy design
-- [MLKEM.md](docs/MLKEM.md) — lattice-based key encapsulation (attested, not used yet)
+- [MLKEM.md](docs/MLKEM.md) — ML-KEM in the TLS key exchange, and why there is no application-layer encryption
 
 **Deployment**
 - [DEPLOYMENT.md](docs/DEPLOYMENT.md) — production deployment, in order

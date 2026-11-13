@@ -25,7 +25,6 @@ https://your-domain.com  (production)
   - [TEE Attestation Endpoints](#tee-attestation-endpoints)
     - [GET /attestation](#get-attestation)
     - [GET /attestation/manifest](#get-attestationmanifest)
-  - [Available for Future Implementation](#available-for-future-implementation)
   - [Health Check Endpoints](#health-check-endpoints)
     - [GET /health](#get-health)
     - [GET /health/ready](#get-healthready)
@@ -283,7 +282,7 @@ curl -k https://localhost:3000/longjing/server-pubkey
 
 ### GET /attestation
 
-Returns a TEE attestation quote whose `report_data` commits to every public key the service uses (ML-KEM, identity, refund signer) and to the in-enclave TLS certificate, followed by the client's nonce. This prevents key substitution and replays. See [ATTESTATION.md](ATTESTATION.md#report_data).
+Returns a TEE attestation quote whose `report_data` commits to every public key the service uses (identity, refund signer) and to the in-enclave TLS certificate, followed by the client's nonce. This prevents key substitution and replays. See [ATTESTATION.md](ATTESTATION.md#report_data).
 
 **Authentication:** None (public endpoint)
 
@@ -303,7 +302,6 @@ Returns a TEE attestation quote whose `report_data` commits to every public key 
   timestamp: string;          // ISO 8601 timestamp
   nonce: string | null;       // 0x-hex nonce bound in report_data, or null
   keys: {
-    mlkemPublicKey: string;                          // Base64 ML-KEM-1024 key
     identityPublicKey: string | null;                // 0x-hex secp256k1 key
     refundSignerPublicKey: { x: string; y: string } | null; // Baby Jubjub
     tlsCertificate: string | null;                   // Base64 DER
@@ -324,7 +322,6 @@ Returns a TEE attestation quote whose `report_data` commits to every public key 
   "timestamp": "2026-04-18T12:00:00.000Z",
   "nonce": "0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
   "keys": {
-    "mlkemPublicKey": "AgABACsAIAAA...base64...==",
     "identityPublicKey": "0x04...",
     "refundSignerPublicKey": { "x": "0x...", "y": "0x..." },
     "tlsCertificate": "MIIB...base64...=="
@@ -359,25 +356,13 @@ curl "https://your-server/attestation?nonce=$(openssl rand -hex 32)" > attestati
 
 ### GET /attestation/manifest
 
-Returns the EIP-712 key manifest, signed by the enclave-derived identity key, that binds the app id, the ML-KEM public key, the refund signer's Baby Jubjub public key and the TLS certificate, with the `GetKey` signature chains.
+Returns the EIP-712 key manifest, signed by the enclave-derived identity key, that binds the app id, the refund signer's Baby Jubjub public key, the TLS certificate and the transaction signer address, with the `GetKey` signature chains.
 
 **Authentication:** None (public endpoint)
 
-The ML-KEM public key has no endpoint of its own: read it from `keys.mlkemPublicKey` in `GET /attestation`, after checking that `report_data` commits to it.
-
 **Documentation:**
 - [docs/KEY_DERIVATION.md](KEY_DERIVATION.md) - Key derivation and the manifest
-- [docs/MLKEM.md](MLKEM.md) - ML-KEM encryption guide
-
----
-
-## Available for Future Implementation
-
-The following endpoints have been removed from the API but their underlying utilities remain in the codebase:
-
-- **ML-KEM Encrypted Storage Endpoints** (`/secret/store`, `/secret/access`) - The `MlKemEncryptionService` is still available in `src/encryption/` for future implementation
-
-These can be re-enabled by creating new controllers that use the existing services.
+- [docs/MLKEM.md](MLKEM.md) - Why there is no application-layer encryption
 
 ---
 

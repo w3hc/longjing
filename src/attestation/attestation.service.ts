@@ -3,9 +3,9 @@
  *
  * Orchestrates cross-platform TEE attestation with report_data binding.
  * The first 32 bytes of report_data commit to every public key the service
- * uses (ML-KEM, identity, refund signer) and to the in-enclave TLS
- * certificate; the last 32 bytes carry the client's nonce. See
- * report-data.ts and docs/ATTESTATION.md#report_data.
+ * uses (identity, refund signer) and to the in-enclave TLS certificate; the
+ * last 32 bytes carry the client's nonce. See report-data.ts and
+ * docs/ATTESTATION.md#report_data.
  */
 
 import {
@@ -26,7 +26,6 @@ import { TdxPlatform } from './platforms/tdx.platform';
 import { SevSnpPlatform } from './platforms/sev-snp.platform';
 import { NitroPlatform } from './platforms/nitro.platform';
 import { MockPlatform } from './platforms/mock.platform';
-import { TeeKeyManagerService } from './tee-key-manager.service';
 import {
   buildReportData,
   encodeRefundSignerPublicKey,
@@ -45,7 +44,6 @@ export class AttestationService
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly keyManager: TeeKeyManagerService,
     private readonly keyDerivation: KeyDerivationService,
   ) {}
 
@@ -178,16 +176,11 @@ export class AttestationService
     inputs: ReportDataInputs;
     keys: BoundKeys;
   } {
-    const mlkemPublicKey = this.keyManager.getPublicKeyBytes();
-    if (!mlkemPublicKey) {
-      throw new Error('ML-KEM public key not available from TEE Key Manager');
-    }
     const identityPublicKey = this.keyDerivation.getIdentityPublicKey();
     const refundSigner = this.keyDerivation.getRefundSignerPublicKey();
     const tlsCertificate = getTlsLeafCertificate();
     return {
       inputs: {
-        mlkemPublicKey,
         identityPublicKey: identityPublicKey ?? undefined,
         refundSignerPublicKey: refundSigner
           ? encodeRefundSignerPublicKey(refundSigner)
@@ -195,7 +188,6 @@ export class AttestationService
         tlsCertificateDer: tlsCertificate ?? undefined,
       },
       keys: {
-        mlkemPublicKey: Buffer.from(mlkemPublicKey).toString('base64'),
         identityPublicKey: identityPublicKey
           ? '0x' + Buffer.from(identityPublicKey).toString('hex')
           : null,

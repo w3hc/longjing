@@ -823,7 +823,6 @@ Phase 1 is **100% backwards compatible**. No breaking changes to:
 - [ ] Full e2e tests with real API - **Future**
 
 ### Phase 3: w3pk Integration
-- [ ] ML-KEM encrypted context support
 - [ ] Private document injection
 - [ ] TEE key management
 

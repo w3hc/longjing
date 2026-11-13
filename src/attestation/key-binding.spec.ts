@@ -10,7 +10,6 @@ import { KeyBindingEvidence, verifyKeyBinding } from './key-binding';
 import { buildReportData, encodeRefundSignerPublicKey } from './report-data';
 
 const identity = new SigningKey('0x' + '42'.repeat(32));
-const ek = Buffer.alloc(1568, 0x01);
 const refundSigner = { x: '0x' + '03'.repeat(32), y: '0x' + '04'.repeat(32) };
 const certificate = Buffer.from([0x30, 0x82, 0x01, 0x0a]);
 const nonce = Buffer.alloc(32, 0x7f);
@@ -21,10 +20,10 @@ const sha256 = (bytes: Buffer) =>
 const signedManifest = (
   overrides: Partial<KeyManifest> = {},
   key = identity,
+  domain = KEY_MANIFEST_DOMAIN,
 ): SignedKeyManifest => {
   const manifest: KeyManifest = {
     appId: '0x1111111111111111111111111111111111111111',
-    mlkemPublicKeyHash: sha256(ek),
     refundSignerX: refundSigner.x,
     refundSignerY: refundSigner.y,
     tlsCertificateHash: sha256(certificate),
@@ -32,11 +31,7 @@ const signedManifest = (
     epoch: 1,
     ...overrides,
   };
-  const digest = TypedDataEncoder.hash(
-    KEY_MANIFEST_DOMAIN,
-    KEY_MANIFEST_TYPES,
-    manifest,
-  );
+  const digest = TypedDataEncoder.hash(domain, KEY_MANIFEST_TYPES, manifest);
   return { manifest, signature: key.sign(digest).serialized };
 };
 
@@ -51,7 +46,6 @@ const evidence = (
 ): KeyBindingEvidence => {
   const reportData = buildReportData(
     {
-      mlkemPublicKey: ek,
       identityPublicKey: Buffer.from(identity.publicKey.slice(2), 'hex'),
       refundSignerPublicKey: encodeRefundSignerPublicKey(refundSigner),
       tlsCertificateDer: certificate,
@@ -63,7 +57,6 @@ const evidence = (
     quote: tdxQuote(reportData).toString('base64'),
     reportData: reportData.toString('hex'),
     keys: {
-      mlkemPublicKey: ek.toString('base64'),
       identityPublicKey: identity.publicKey,
       refundSignerPublicKey: refundSigner,
       tlsCertificate: certificate.toString('base64'),
@@ -180,6 +173,18 @@ describe('verifyKeyBinding', () => {
       verifyKeyBinding(evidence(), {
         nonce,
         keyManifest: signedManifest({}, other),
+      }),
+    ).toEqual(['The key manifest is not signed by the identity key']);
+  });
+
+  it('rejects a manifest signed under the previous domain version', () => {
+    expect(
+      verifyKeyBinding(evidence(), {
+        nonce,
+        keyManifest: signedManifest({}, identity, {
+          ...KEY_MANIFEST_DOMAIN,
+          version: '1',
+        }),
       }),
     ).toEqual(['The key manifest is not signed by the identity key']);
   });

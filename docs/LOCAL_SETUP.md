@@ -48,17 +48,9 @@ SERVER_TX_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7b
 
 # NODE_ENV=production reads only ETHEREUM_RPC_URLS (comma-separated, one is picked at random):
 # ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,https://rpc.flashbots.net,https://ethereum-rpc.publicnode.com
-
-# Optional: ML-KEM-1024 Admin Keypair (DEVELOPMENT ONLY - for non-TEE environments)
-# In production, the key is derived inside the TEE
-# ADMIN_MLKEM_PUBLIC_KEY=<your-public-key>
-# ADMIN_MLKEM_PRIVATE_KEY=<your-private-key>
 ```
 
-**Note:**
-- **Production (TEE)**: the ML-KEM key is derived inside the TEE with `GetKey`, see [KEY_DERIVATION.md](./KEY_DERIVATION.md). The private key never leaves the enclave.
-- **Development (non-TEE)**: You can optionally provide pre-generated keys via environment variables for testing. Generate them with `pnpm ts-node scripts/generate-admin-keypair.ts`.
-- ML-KEM encryption utilities are available in `src/encryption/mlkem-encryption.service.ts` but not currently exposed via endpoints.
+**Note:** in production every key is derived inside the TEE with `GetKey`, see [KEY_DERIVATION.md](./KEY_DERIVATION.md). The private keys never leave the enclave.
 
 ### 2. Generate TLS Certificates
 
@@ -211,7 +203,7 @@ longjing/
 
 - Anvil only: reads `ANVIL_RPC_URL`, and refuses to start if its chain id is not 31337. Without an RPC, or with Anvil down, contract interaction is disabled.
 - Signs contract transactions with `SERVER_TX_PRIVATE_KEY` (Anvil account #0 in `.env.template`).
-- Without the dstack socket, falls back to `ADMIN_MLKEM_*`, `OPERATOR_PRIVATE_KEY` or the deterministic dev refund-signer key. Run the dstack simulator to derive keys instead, see [KEY_DERIVATION.md](./KEY_DERIVATION.md#development).
+- Without the dstack socket, falls back to `OPERATOR_PRIVATE_KEY` or the deterministic dev refund-signer key. Run the dstack simulator to derive keys instead, see [KEY_DERIVATION.md](./KEY_DERIVATION.md#development).
 - Mock TEE platform when no real one is detected, self-signed TLS from `./secrets`, CORS open to `*`, 100 requests per minute.
 
 Deploy the contract to Anvil with the same `NODE_ENV`:
