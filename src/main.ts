@@ -12,6 +12,7 @@ import { ProofVerifierService } from './longjing/proof-verifier.service';
 import { loadTlsMaterial } from './tls/tee-tls';
 import { assertNoKeyMaterialInEnv } from './keys/key-policy';
 import { isProd } from './config/profile';
+import { LISTEN_PORT } from './config/listen';
 
 async function bootstrap() {
   const prod = isProd();
@@ -104,7 +105,7 @@ async function bootstrap() {
   // Graceful shutdown handling
   app.enableShutdownHooks();
 
-  const port = 3000;
+  const port = LISTEN_PORT;
   await app.listen(port);
 
   // Log startup only in dev mode (production logger filters this out)

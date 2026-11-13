@@ -54,6 +54,10 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   MAX_CONCURRENT_PROOFS?: number;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  ONION_SERVICE?: string;
 }
 
 // The provider's key too: without it, the service would answer with mock
@@ -64,10 +68,13 @@ const PROD_REQUIRED = [
   CLAUDE_CONFIG.API_KEY_ENV,
 ] as const;
 
+// ONION_SERVICE only turns the onion service on locally: production always
+// runs it
 const PROD_REFUSED = [
   'ANVIL_RPC_URL',
   'SERVER_TX_PRIVATE_KEY',
   'DSTACK_SIMULATOR_ENDPOINT',
+  'ONION_SERVICE',
 ] as const;
 
 /**

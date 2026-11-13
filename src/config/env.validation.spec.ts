@@ -135,10 +135,21 @@ describe('Environment Validation', () => {
       ['ANVIL_RPC_URL', 'http://127.0.0.1:8545'],
       ['SERVER_TX_PRIVATE_KEY', '0x01'],
       ['DSTACK_SIMULATOR_ENDPOINT', '/tmp/dstack.sock'],
+      ['ONION_SERVICE', 'false'],
     ])('prod refuses %s', (name, value) => {
       expect(() => validateEnvironment({ ...PROD, [name]: value })).toThrow(
         `NODE_ENV=production refuses ${name}`,
       );
+    });
+
+    it('takes ONION_SERVICE=true or false locally, nothing else', () => {
+      expect(
+        validateEnvironment({ NODE_ENV: 'development', ONION_SERVICE: 'true' })
+          .ONION_SERVICE,
+      ).toBe('true');
+      expect(() =>
+        validateEnvironment({ NODE_ENV: 'development', ONION_SERVICE: 'yes' }),
+      ).toThrow('Environment validation failed');
     });
 
     it('prod refuses SERVER_TX_PRIVATE_KEY under the compose opt-out', () => {
