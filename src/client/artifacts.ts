@@ -4,10 +4,7 @@ import { bytesToHex } from '../common/bytes';
 
 /** A circuit file as bytes, a URL to fetch it from, or a function that reads it */
 export type ArtifactSource =
-  | Uint8Array
-  | string
-  | URL
-  | (() => Uint8Array | Promise<Uint8Array>);
+  Uint8Array | string | URL | (() => Uint8Array | Promise<Uint8Array>);
 
 export interface CircuitArtifacts {
   wasm: ArtifactSource;
