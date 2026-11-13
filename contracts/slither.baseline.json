@@ -3,7 +3,7 @@
     "check": "arbitrary-send-eth",
     "file": "contracts/src/LongjingCredits.sol",
     "location": "LongjingCredits._pay(address,uint256)",
-    "reason": "Every payee is fixed before the call: the recipient bound into the settlement proof through x (finalizeWithdrawal), msg.sender for the slash bounty, or serverAddress (withdrawOperatorBalance). Each note pays out at most D in total."
+    "reason": "Every payee is fixed before the call: the recipient bound into the settlement proof through x (finalizeWithdrawal), msg.sender for the slash bounty, or operatorPayout, set behind ADMIN_DELAY (withdrawOperatorBalance). Each note pays out at most D in total."
   },
   {
     "check": "timestamp",
