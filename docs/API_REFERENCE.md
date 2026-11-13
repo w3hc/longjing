@@ -44,6 +44,7 @@ https://your-domain.com  (production)
     - [Artifacts](#artifacts)
     - [Requests through a verified gateway](#requests-through-a-verified-gateway)
     - [Exit from the user's wallet](#exit-from-the-users-wallet)
+    - [Withdrawal page](#withdrawal-page)
     - [Limits in a browser](#limits-in-a-browser)
   - [Cost Calculation](#cost-calculation)
     - [Reference provider pricing: Claude (October 2026)](#reference-provider-pricing-claude-october-2026)
@@ -545,6 +546,8 @@ cast send 0xContract "finalizeWithdrawal(bytes32)" 0x<commitment>
 
 The payout is `D + R − n · C_MAX`, where `n` is the number of indices the note used, one more if a response was lost. A lower `n` is slashed during the window.
 
+Without Node, the withdrawal page does the same from a browser ([README.md](../README.md#withdraw-without-the-service)).
+
 ### 4. Slash a double-spend
 
 Two signals with the same nullifier reveal the secret key:
@@ -566,6 +569,7 @@ The same client runs in a browser, with no `fs`, Node `crypto`, `process` or `Bu
 |------|--------|
 | `longjing-client.js` | IIFE, defines the global `Longjing` |
 | `longjing-client.mjs` | ES module, the same exports |
+| `withdraw.html` | The withdrawal page, with `longjing-client.js` inlined |
 
 Each file is self-contained, about 930 KiB minified: snarkjs and the prover worker are inlined, so a page can inline the file in a `<script>` and work offline, from `file://`. Rebuild from the tag and compare with `sha256sum -c SHA256SUMS`.
 
@@ -641,7 +645,13 @@ await wallet.sendTransaction(Longjing.initiateWithdrawalTx(note, args));
 await wallet.sendTransaction(Longjing.finalizeWithdrawalTx(note, args.commitment));
 ```
 
-Neither step needs the gateway: the proof needs the chain, the note and the settlement files.
+Neither step needs the gateway: the proof needs the chain, the note and the settlement files. The client exports the `ethers` it bundles, so a page can read the chain and sign with `Longjing.ethers` without a second copy.
+
+### Withdrawal page
+
+`pnpm build:browser` also writes `build/browser/withdraw.html`, from [web/withdraw/](../web/withdraw/): `longjing-client.js`, the page's script and its stylesheet inlined in one file that works from `file://` and any static mirror. Its Content Security Policy allows only those two scripts, by hash, Web Workers from `blob:` URLs, WebAssembly, and requests over HTTP(S), which go to the RPC and the mirror the user enters. The first script hash in the policy is the sha256 of `longjing-client.js`, so the page carries the same client as the release. The source page runs unbuilt from disk after `pnpm build:browser`, for development.
+
+With the browser wallet option, the page reads and sends through the injected EIP-1193 provider. With an RPC URL, it signs with the pasted key in the page and sends only the signed transaction. The RPC must answer CORS requests from a page whose origin is `null`: Anvil does by default, and Geth needs `--http.corsdomain`.
 
 ### Limits in a browser
 
@@ -649,7 +659,7 @@ Neither step needs the gateway: the proof needs the chain, the note and the sett
 - **Connections.** `fetch` may reuse a connection across requests, and Tor Browser reuses a circuit per site for about ten minutes, so requests sent in that window can share both.
 - **What isn't verified.** As in Node, the client doesn't verify the quote's signature or compare the measurements with a release ([ATTESTATION.md](ATTESTATION.md#verification)).
 
-The e2e test, [test/browser/client.e2e.ts](../test/browser/client.e2e.ts) (`pnpm test:browser`, with Anvil running), runs a deposit, a request, a receive and a withdrawal in headless Chromium against a local gateway, and checks that the page reads no Node global and proves in Web Workers.
+The e2e test, [test/browser/client.e2e.ts](../test/browser/client.e2e.ts) (`pnpm test:browser`, with Anvil running), runs a deposit, a request, a receive and a withdrawal in headless Chromium against a local gateway, and checks that the page reads no Node global and proves in Web Workers. [test/browser/withdraw.e2e.ts](../test/browser/withdraw.e2e.ts) runs two exits from `withdraw.html` opened from disk.
 
 ---
 
