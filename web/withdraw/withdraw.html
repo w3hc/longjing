@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Longjing withdrawal</title>
+    <link rel="stylesheet" href="withdraw.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Withdraw from Longjing</h1>
+      <p>
+        This page takes a note back out of the Longjing contract with nothing
+        but the chain, an RPC, your note file and the circuit files. It needs no
+        server, no build and no other host, and it works when opened from disk.
+        Your secret key and accumulator opening stay in this page: the proof is
+        made here, and only the proof goes onchain.
+      </p>
+
+      <aside class="warning" aria-labelledby="privacy-title">
+        <h2 id="privacy-title">Before you start</h2>
+        <p>
+          Reading your note asks the RPC for <code>getNote(commitment)</code>,
+          which tells the RPC provider which note this IP address cares about. A
+          browser wallet reads through its own RPC provider, with the same
+          effect. Use a node of your own, or an RPC you reach through Tor, until
+          Ethereum has private reads.
+        </p>
+        <p>
+          The exit itself is public: <code>initiateWithdrawal</code> names the
+          commitment and the recipient, so anyone can link them to the deposit.
+          Pay to an address with no history if that matters to you.
+        </p>
+      </aside>
+
+      <section aria-labelledby="connect-title">
+        <h2 id="connect-title">1. Connect</h2>
+        <fieldset>
+          <legend>Send transactions with</legend>
+          <label
+            ><input
+              type="radio"
+              name="mode"
+              id="mode-rpc"
+              value="rpc"
+              checked
+            />
+            An RPC URL and a signer key</label
+          >
+          <label
+            ><input type="radio" name="mode" id="mode-wallet" value="wallet" />
+            A browser wallet</label
+          >
+        </fieldset>
+        <div id="rpc-fields">
+          <label for="rpc">RPC URL</label>
+          <input
+            id="rpc"
+            type="url"
+            placeholder="http://127.0.0.1:8545"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <p class="hint">
+            The RPC must allow requests from a page: a node of your own needs
+            CORS enabled, for instance <code>--http.corsdomain '*'</code> in
+            Geth.
+          </p>
+          <label for="signer">Signer private key</label>
+          <input
+            id="signer"
+            type="password"
+            placeholder="0x…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <p class="hint">
+            The account that pays the gas. It signs here, and only the signed
+            transaction is sent. It doesn't need to be the recipient.
+          </p>
+        </div>
+        <label for="contract">LongjingCredits address</label>
+        <input
+          id="contract"
+          placeholder="0x…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </section>
+
+      <section aria-labelledby="note-title">
+        <h2 id="note-title">2. Your note</h2>
+        <label for="note-file">Note file</label>
+        <input id="note-file" type="file" accept=".json,application/json" />
+        <label for="note">or paste it</label>
+        <textarea
+          id="note"
+          rows="6"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder='{ "secretKey": "…", "opening": { … }, … }'
+        ></textarea>
+        <button type="button" id="read-note">Read the note</button>
+        <output id="note-status" for="note contract"></output>
+      </section>
+
+      <section aria-labelledby="files-title">
+        <h2 id="files-title">3. Circuit files</h2>
+        <p>
+          The proof needs <code>settlement.wasm</code> and
+          <code>settlement.zkey</code>, from the
+          <code id="release"></code> release or any mirror of it. Each file is
+          checked against the sha256 pinned in this page before it is used.
+        </p>
+        <dl id="pins"></dl>
+        <label for="wasm-file">settlement.wasm</label>
+        <input id="wasm-file" type="file" accept=".wasm" />
+        <output id="wasm-status" for="wasm-file"></output>
+        <label for="zkey-file">settlement.zkey</label>
+        <input id="zkey-file" type="file" accept=".zkey" />
+        <output id="zkey-status" for="zkey-file"></output>
+        <label for="mirror">or load both from a mirror</label>
+        <input
+          id="mirror"
+          type="url"
+          placeholder="https://mirror.example/circuits-v2"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <p class="hint">
+          A folder holding <code>settlement.wasm</code> and
+          <code>settlement.zkey</code>, served with CORS. GitHub release
+          downloads are not: download them and pick the files instead.
+        </p>
+        <button type="button" id="load-mirror">Load from the mirror</button>
+      </section>
+
+      <section aria-labelledby="initiate-title">
+        <h2 id="initiate-title">4. Start the exit</h2>
+        <label for="recipient">Recipient address</label>
+        <input
+          id="recipient"
+          placeholder="0x…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <label for="claimed">Requests the note made, n</label>
+        <input id="claimed" type="number" min="0" step="1" />
+        <p class="hint">
+          Filled from the note. Add one if a request's response was lost, since
+          that request may have been served: an exit that claims fewer requests
+          than were served is slashed.
+        </p>
+        <output id="payout" for="claimed"></output>
+        <button type="button" id="initiate">Prove and initiate</button>
+        <output id="initiate-status"></output>
+      </section>
+
+      <section aria-labelledby="finalize-title">
+        <h2 id="finalize-title">5. Finish the exit</h2>
+        <p>
+          After the 3-day challenge window, anyone can call
+          <code>finalizeWithdrawal</code>, also while the contract is paused.
+          Come back with the commitment, or the note, and the contract address:
+          the exit is read from the contract.
+        </p>
+        <label for="commitment">Commitment</label>
+        <input
+          id="commitment"
+          placeholder="0x…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button type="button" id="check-exit">Check the exit</button>
+        <output id="exit-status" for="commitment"></output>
+        <button type="button" id="finalize" disabled>Finalize</button>
+        <output id="finalize-status"></output>
+      </section>
+    </main>
+    <script src="../../build/browser/longjing-client.js"></script>
+    <script src="withdraw.js"></script>
+  </body>
+</html>

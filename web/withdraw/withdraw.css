@@ -1,0 +1,166 @@
+:root {
+  color-scheme: light dark;
+  --fg: #1b1b1b;
+  --bg: #fdfdfb;
+  --muted: #5c5c5c;
+  --line: #c9c9c4;
+  --warn-bg: #fff4d6;
+  --warn-line: #b88a00;
+  --ok: #1d6b35;
+  --bad: #a3221b;
+  --accent: #2f5d50;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e8e8e4;
+    --bg: #161716;
+    --muted: #a8a8a2;
+    --line: #44463f;
+    --warn-bg: #3a3112;
+    --warn-line: #d9a90f;
+    --ok: #6cc98a;
+    --bad: #f08a80;
+    --accent: #8cc7b4;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    16px/1.5 system-ui,
+    sans-serif;
+}
+
+main {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+h1 {
+  font-size: 1.6rem;
+  margin: 0 0 0.75rem;
+}
+
+h2 {
+  font-size: 1.15rem;
+  margin: 0 0 0.5rem;
+}
+
+section {
+  border-top: 1px solid var(--line);
+  padding: 1.25rem 0;
+}
+
+.warning {
+  background: var(--warn-bg);
+  border-left: 4px solid var(--warn-line);
+  padding: 0.75rem 1rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.warning p {
+  margin: 0.5rem 0;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin: 0.9rem 0 0.25rem;
+}
+
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+legend {
+  font-weight: 600;
+}
+
+fieldset label {
+  font-weight: 400;
+  margin: 0.25rem 0;
+}
+
+input:not([type='radio']),
+textarea {
+  width: 100%;
+  font: inherit;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+textarea,
+code,
+output,
+dd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+}
+
+button {
+  font: inherit;
+  margin-top: 0.9rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 3px solid var(--warn-line);
+  outline-offset: 2px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0.25rem 0 0;
+}
+
+output {
+  display: block;
+  margin-top: 0.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+output.ok {
+  color: var(--ok);
+}
+
+output.bad {
+  color: var(--bad);
+}
+
+dl {
+  margin: 0.5rem 0;
+}
+
+dt {
+  font-weight: 600;
+}
+
+dd {
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
