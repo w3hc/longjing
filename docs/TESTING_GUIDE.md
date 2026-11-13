@@ -52,7 +52,7 @@ The table reads:
 | An eavesdropper's recording needs both the classical and the ML-KEM key exchange broken | not checked yet, the demo runs over plain HTTP | |
 | Protocol, pricing and refunds work with any provider | not checked yet | |
 | A depositor can withdraw without the server | verified | |
-| Every depositor can exit if the operator and every host disappear | not met, no withdrawal page yet | [#157](https://github.com/w3hc/longjing/issues/157), [#135](https://github.com/w3hc/longjing/issues/135) |
+| Every depositor can exit if the operator and every host disappear | not met, the withdrawal page is in no release yet, on single-party keys | [#135](https://github.com/w3hc/longjing/issues/135) |
 
 The demo exits non-zero only when a goal expected to be verified is not. Known gaps are reported, not hidden, and a gap that starts passing prints a note to update its expected status in [scripts/demo/demo.ts](../scripts/demo/demo.ts). A passing run says nothing about the goals it reports as not met or not checked yet.
 
