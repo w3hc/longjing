@@ -3,8 +3,8 @@
  *
  * - development, test: Anvil only (chain 31337), well-known dev keys, the
  *   dstack simulator and relaxed rate limits.
- * - production: never chain 31337, every key derived in the enclave, the RPC
- *   and contract address required, no placeholder accepted.
+ * - production: never chain 31337, every key derived in the enclave, the RPC,
+ *   contract address and provider API key required, no placeholder accepted.
  *
  * It is required: an unset or unknown NODE_ENV is a startup error, never a
  * fallback.
