@@ -27,6 +27,7 @@ The steps:
 7. The attacker deposits again, makes two requests, and exits claiming one. The operator finds the exit's nullifier in its database and slashes the note within the window
 8. Alice exits: the attacker can't redirect her proof to another recipient. With the server stopped, she initiates the withdrawal with her own proof, and it pays `D + R − 2 · C_max` after the window
 9. Alice's closed note can make no request, and no request body contained a secret key
+10. `serverAddress` calls `withdrawOperatorBalance`: the whole operator balance goes to `operatorPayout`, and the caller gets nothing
 
 The table reads:
 
@@ -43,6 +44,7 @@ The table reads:
 | Solvency is enforced: an exit pays D + R − n · C_max | verified | |
 | Anyone holding k slashes, and the caller gets the bounty, not the stake | verified | |
 | An exit that understates usage is slashed during the window | verified | |
+| The operator's balance goes only to its payout address, whoever withdraws it | verified | |
 | A closed note can't make requests | verified | |
 | The client sends nothing that contains the secret key | verified | |
 | The client verifies the attestation before sending anything | not checked yet | [#99](https://github.com/w3hc/longjing/issues/99) |
@@ -66,6 +68,7 @@ The demo skips the deployment and the local server, and pays the deposits from t
 - The requests reach the provider and cost what they cost.
 - The attacker's deposit goes to the operator, minus the bounty paid to the slasher: the `DEMO_SLASHER_PRIVATE_KEY` wallet, or the `DEMO_PRIVATE_KEY` wallet if that is unset.
 - Alice's exit is initiated but not finalized: call `finalizeWithdrawal` after the 3-day window.
+- The operator check calls `withdrawOperatorBalance` from the `DEMO_PRIVATE_KEY` wallet instead of `serverAddress`, which moves the operator's whole balance to `operatorPayout`.
 - The operator's database checks, and the understated exit, run only on Anvil, where the server runs in the demo's process.
 - The demo doesn't verify the attestation yet, so it can't tell that the gateway runs in an enclave with `NODE_ENV=production`.
 
