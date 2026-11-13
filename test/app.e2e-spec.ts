@@ -138,8 +138,6 @@ describe('Notes, requests and settlement (e2e)', () => {
       SERVER_TX_PRIVATE_KEY: SERVER_KEY,
       DATA_DIR: ':memory:',
       KMS_URL: 'http://localhost:3001',
-      ADMIN_MLKEM_PUBLIC_KEY: Buffer.alloc(1568).toString('base64'),
-      ADMIN_MLKEM_PRIVATE_KEY: Buffer.alloc(3168).toString('base64'),
     });
     // Mock responses, priced like any other
     delete process.env.ANTHROPIC_API_KEY;
