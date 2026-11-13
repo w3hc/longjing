@@ -24,7 +24,7 @@
   ];
   const errors = new ethers.Interface(ABI);
   const STATUS = [
-    'unknown',
+    'not deposited',
     'active',
     'exiting',
     'closed',
@@ -111,8 +111,15 @@
     return { signature: null, signedBy: null, pending: null, ...note };
   }
 
-  /** Fills the contract and RPC fields from the note when they are empty */
-  function prefill() {
+  /**
+   * Forgets what was read for the previous note, and fills the contract and
+   * RPC fields from the new one when they are empty
+   */
+  function noteChanged() {
+    onchain = null;
+    $('claimed').value = '';
+    show('note-status', '');
+    show('payout', '');
     try {
       const note = JSON.parse($('note').value);
       if (!$('contract').value && typeof note.contract === 'string') {
@@ -208,6 +215,8 @@
     ]);
     const status = STATUS[Number(found.status)] ?? 'unknown';
     $('commitment').value = commitment;
+    $('finalize').disabled = true;
+    show('exit-status', '');
     if (Number(found.status) === 0) {
       onchain = null;
       throw new Error(
@@ -225,33 +234,38 @@
         `Chain ${network.chainId}, status ${status}`,
         `Deposit D = ${eth(found.amount)}, refunds R = ${eth(note.opening.refunds)}`,
         `C_MAX = ${eth(cMax)}`,
-        `Requests made: ${note.opening.index}${note.pending ? ', and one whose response was lost' : ''}`,
+        `Requests made: ${note.opening.index}${note.pending ? ', and one whose response never came' : ''}`,
       ].join('\n'),
-      status === 'active',
+      status === 'active' ? true : status === 'exiting' ? undefined : false,
     );
     updatePayout();
+    if (status !== 'active') await checkExit();
   }
 
   function claimed() {
     const value = $('claimed').value.trim();
+    if (!onchain) throw new Error('Read the note first');
     if (!/^\d+$/.test(value)) throw new Error('n must be a whole number');
     return BigInt(value);
   }
 
+  const payoutFor = (n) =>
+    onchain.amount + BigInt(onchain.refunds) - n * onchain.cMax;
+
   function updatePayout() {
     if (!onchain) return;
     try {
-      const n = claimed();
-      const payout =
-        onchain.amount + BigInt(onchain.refunds) - n * onchain.cMax;
-      if (payout < 0n) {
+      if (payoutFor(claimed()) < 0n) {
         show(
           'payout',
           'n · C_MAX is more than D + R: nothing to withdraw',
           false,
         );
       } else {
-        show('payout', `Payout D + R − n · C_MAX = ${eth(payout)}`);
+        show(
+          'payout',
+          `Payout D + R − n · C_MAX = ${eth(payoutFor(claimed()))}`,
+        );
       }
     } catch (error) {
       show('payout', message(error), false);
@@ -279,7 +293,13 @@
     const note = parseNote();
     const connection = await connect();
     const recipient = address($('recipient').value, 'The recipient');
+    if (recipient === ethers.ZeroAddress) {
+      throw new Error('The recipient cannot be the zero address');
+    }
     const n = claimed();
+    if (payoutFor(n) < 0n) {
+      throw new Error('n · C_MAX is more than D + R: nothing to withdraw');
+    }
     if (!files.wasm || !files.zkey) {
       throw new Error('Load settlement.wasm and settlement.zkey first');
     }
@@ -392,9 +412,9 @@
     const [file] = event.target.files;
     if (!file) return;
     $('note').value = await file.text();
-    prefill();
+    noteChanged();
   });
-  $('note').addEventListener('input', prefill);
+  $('note').addEventListener('input', noteChanged);
   $('claimed').addEventListener('input', updatePayout);
 
   onClick('read-note', 'note-status', readNote);
