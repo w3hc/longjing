@@ -132,12 +132,13 @@ function finalizeWithdrawal(bytes32 commitment) external
 // Slash the note whose secret key is k: SLASH_BOUNTY to the caller, the rest to the operator
 function slash(uint256 secretKey) external
 
-// The operator's claims: an untouched note after NOTE_TTL, and its balance
+// The operator's claims: an untouched note after NOTE_TTL (serverAddress only),
+// and its balance, paid to operatorPayout whoever calls
 function claimExpired(bytes32 commitment) external
 function withdrawOperatorBalance() external
 ```
 
-Pausing blocks `deposit` and `claimExpired`, never an exit or a slash. Changes to the verifier, `serverAddress` and the refund key wait `ADMIN_DELAY` (7 days), longer than an exit takes, and every refund key ever accepted stays valid for withdrawals.
+Pausing blocks `deposit` and `claimExpired`, never an exit or a slash. Changes to the verifier, `serverAddress`, `operatorPayout` and the refund key wait `ADMIN_DELAY` (7 days), longer than an exit takes, and every refund key ever accepted stays valid for withdrawals.
 
 ## Backend Services
 
@@ -198,7 +199,7 @@ Privacy and funds rest on different assumptions. Hash functions are designed to 
 | Groth16, soundness | Request and settlement proofs | Pairings on BN254, plus an honest trusted setup (LJ-04, [#135](https://github.com/w3hc/longjing/issues/135)) | **Funds.** Anyone can forge a withdrawal of any note, other users' included |
 | Pedersen, binding | Refund accumulator | Discrete log on Baby Jubjub | **Funds.** A user opens the accumulator to a larger `R`, capped by `P ≤ D` at their own deposit |
 | EdDSA-Poseidon | The refund key signing accumulators | Discrete log on Baby Jubjub | **Funds.** A user forges accumulators, capped by `P ≤ D` at their own deposit |
-| ECDSA | `serverAddress`, the Safe's signers | Discrete log on secp256k1 | **Operator funds.** A recovered `serverAddress` key takes the operator balance. A recovered Safe can only queue admin changes, which wait `ADMIN_DELAY`, so users can exit first |
+| ECDSA | `serverAddress`, the Safe's signers | Discrete log on secp256k1 | **Operator funds, only at the payout.** A recovered `serverAddress` key can claim expired notes, which only moves them into the operator balance, and that balance goes to `operatorPayout` alone, a Safe or an address that has never signed. A recovered Safe takes what it holds, but can only queue admin changes, `operatorPayout` included, which wait `ADMIN_DELAY`, so users can exit first |
 | TLS key exchange | Confidentiality of each request and answer on the way to and from the enclave: prompt, proof, answer, accumulator | Hybrid: discrete log on P-384 or X25519 **and** Module-LWE (ML-KEM-1024 or ML-KEM-768). The certificate signature only has to hold at handshake time | **Privacy of recorded traffic, only if both halves break.** Someone who recorded a session reads its prompt and answer. A signature key broken later decrypts nothing already recorded |
 
 What follows:

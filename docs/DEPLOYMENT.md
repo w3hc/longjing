@@ -76,12 +76,15 @@ From the deployer of step 3, as its next transaction:
 ```bash
 cd contracts
 NODE_ENV=production PRIVATE_KEY=<deployer key> \
-SERVER_ADDRESS=<txSignerAddress> SERVER_PUBKEY_X=<refundSigner.x> SERVER_PUBKEY_Y=<refundSigner.y> \
+SERVER_ADDRESS=<txSignerAddress> OPERATOR_PAYOUT=<Safe or cold address> \
+SERVER_PUBKEY_X=<refundSigner.x> SERVER_PUBKEY_Y=<refundSigner.y> \
 forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits \
   --rpc-url $RPC_URL --broadcast --verify
 ```
 
 Check that it landed at `ZK_CONTRACT_ADDRESS` ([contracts/README.md](../contracts/README.md#testnet-and-mainnet)). `C_MAX` and `SLASH_BOUNTY` are constants of the script and immutable in the contract.
+
+`OPERATOR_PAYOUT` receives the operator balance: what closed notes owe the operator, slash remainders and expired notes. Use the Safe or an address that has never signed a transaction, never `txSignerAddress`, which signs every transaction and so exposes its public key. The script refuses a payout equal to `SERVER_ADDRESS`. Anyone can call `withdrawOperatorBalance`, and it always pays `operatorPayout`, which changes only behind `ADMIN_DELAY`.
 
 Within 30 s, the enclave connects and checks that `serverPublicKey` is the key its refund signer signs with. If it isn't, it logs an error and stays at 503, since every request proof would fail against that key: redeploy with the manifest's values. A `serverAddress` other than `txSignerAddress` is only logged as a warning.
 
@@ -107,11 +110,12 @@ pnpm verify:attestation https://<gateway>/attestation \
   --app <DstackApp> --from-block <app creation block> --credits <LongjingCredits>
 cast call <LongjingCredits> "serverPublicKey()(bytes32,bytes32)" --rpc-url $RPC_URL
 cast call <LongjingCredits> "serverAddress()(address)" --rpc-url $RPC_URL
+cast call <LongjingCredits> "operatorPayout()(address)" --rpc-url $RPC_URL
 curl https://<gateway>/health/ready
 ```
 
 - `verify:attestation` passes, including both ownership checks ([GOVERNANCE.md](./GOVERNANCE.md#verifying)).
-- `serverPublicKey` is `(refundSigner.x, refundSigner.y)` and `serverAddress` is `txSignerAddress`.
+- `serverPublicKey` is `(refundSigner.x, refundSigner.y)`, `serverAddress` is `txSignerAddress`, and `operatorPayout` is the Safe or cold address you chose.
 - `GET /health/ready` answers 200.
 
 `pnpm demo` against the deployment exercises a deposit, requests, a slash and an exit from a funded wallet ([TESTING_GUIDE.md](./TESTING_GUIDE.md#against-a-deployment)). It spends real ETH and real provider calls.

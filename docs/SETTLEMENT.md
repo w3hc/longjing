@@ -208,7 +208,7 @@ Front-running a `slash` call only moves the bounty, so no commit-reveal scheme i
 ## Expiry and operator revenue
 
 - `claimExpired(c)`: the operator takes D from a note that is still `Active` after `NOTE_TTL`. As today, the TTL is pushed back by time spent paused. A note that is `Exiting` can't be claimed, so an exit started before expiry always completes.
-- `operatorBalance` collects `D − P` from finalized exits, slash remainders and expired notes. `serverAddress` withdraws it.
+- `operatorBalance` collects `D − P` from finalized exits, slash remainders and expired notes. `withdrawOperatorBalance` pays it to `operatorPayout`, a Safe or cold address fixed at deployment, never to `serverAddress`, the hot key that signs the operator's transactions. Since the payee is fixed, anyone can call it.
 - The operator gets paid when a note closes, not per request. ethereum/zkapi makes the same trade, with one net settlement at close.
 
 ## The policy stake
@@ -286,7 +286,7 @@ The two designs end up close in mechanics: one signed commitment per note and se
 - **Exit.** `initiateWithdrawal`, then `finalizeWithdrawal` after `W`. It needs the chain, any RPC, `k`, the accumulator and the withdrawal page: no server signature, API call or admin action. The proposed `W` is 3 days.
 - **State.** `c` and D are onchain. The accumulator and its opening are held by the user. Losing them costs the refunds, not the deposit: the user exits from genesis with a conservative `n`.
 - **Artifacts.** The page needs `settlement.wasm` and `settlement.zkey`, pinned by hash in `circuits/artifacts.json`, and no Merkle path.
-- **Admin.** `C_MAX` and `SLASH_BOUNTY` are immutable. Changes to the verifiers, `serverAddress` and the refund key wait behind `ADMIN_DELAY` (7 days), which is longer than `W` plus the time to submit. A rotated refund key stays accepted for withdrawals, so older accumulators still verify. Pausing blocks deposits and requests, never `initiateWithdrawal`, `finalizeWithdrawal` or `slash`.
+- **Admin.** `C_MAX` and `SLASH_BOUNTY` are immutable. Changes to the verifiers, `serverAddress`, `operatorPayout` and the refund key wait behind `ADMIN_DELAY` (7 days), which is longer than `W` plus the time to submit. A rotated refund key stays accepted for withdrawals, so older accumulators still verify. Pausing blocks deposits and requests, never `initiateWithdrawal`, `finalizeWithdrawal` or `slash`.
 - **Expiry.** `NOTE_TTL` stays at 365 days, far longer than `W`, and an exit already started can't be claimed.
 - **Slashing.** `slash(k)` is open to anyone holding `k`.
 - **Rerun.** Unchanged.

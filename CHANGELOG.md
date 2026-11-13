@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The options for the phase 2 trusted setup ceremony in `docs/TRUSTED_SETUP_CEREMONY.md`, with a recommendation ([#135](https://github.com/w3hc/longjing/issues/135)).
 - A TLS row in the cryptographic assumptions table of `docs/ZK.md`: a recording of the traffic stays confidential unless both the classical and the ML-KEM half of the key exchange break, and the certificate signature only has to hold at handshake time ([#183](https://github.com/w3hc/longjing/issues/183)).
 - `pnpm demo` lists the goal "An eavesdropper's recording needs both the classical and the ML-KEM key exchange broken" as not checked yet, since the demo runs over plain HTTP ([#183](https://github.com/w3hc/longjing/issues/183)).
+- `LongjingCredits.operatorPayout`, set at deployment and changed only through the `ADMIN_DELAY` proposal, execution and cancellation flow (`Target.OperatorPayout`, `OperatorPayoutUpdated`). The deploy script takes `OPERATOR_PAYOUT` in production and refuses Anvil's dev payout and a payout equal to `SERVER_ADDRESS` ([#178](https://github.com/w3hc/longjing/issues/178)).
+- `pnpm demo` verifies the goal "The operator's balance goes only to its payout address, whoever withdraws it": `serverAddress` calls `withdrawOperatorBalance`, the payout address gets the whole balance and the caller nothing ([#178](https://github.com/w3hc/longjing/issues/178)).
 
 ### Changed
 
@@ -30,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In production, `SecretsService` loads from the KMS whenever `KMS_URL` is set, instead of skipping it when `ADMIN_MLKEM_PUBLIC_KEY` was also set ([#185](https://github.com/w3hc/longjing/issues/185)).
 - `docs/MLKEM.md` now explains that ML-KEM is used only in the TLS key exchange, and why Longjing has no application-layer encryption ([#185](https://github.com/w3hc/longjing/issues/185)).
 - With `NODE_ENV=production`, the server refuses to start without the upstream provider's API key (`ANTHROPIC_API_KEY` for the reference Claude provider) instead of answering with mock responses. Development and test still answer with mock responses without it ([#188](https://github.com/w3hc/longjing/issues/188)).
+- **Breaking:** the `LongjingCredits` constructor takes `_operatorPayout` after `_serverAddress` ([#178](https://github.com/w3hc/longjing/issues/178)).
 
 ### Removed
 
@@ -44,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - The enclave's TLS sets its key exchange groups explicitly, without OpenSSL's `DEFAULT` list (CVE-2026-2673): `SecP384r1MLKEM1024`, then `X25519MLKEM768`, then `X25519`, each in its own tuple so the server's order wins. Browsers and default OpenSSL and curl clients get `X25519MLKEM768`, and a client that offers none of the three is refused. A test fails if a client offering a hybrid group negotiates a classical one ([#183](https://github.com/w3hc/longjing/issues/183)).
+- `withdrawOperatorBalance` pays `operatorPayout`, meant to be the Safe or an address that has never signed, instead of `serverAddress`, the hot key that signs every transaction of the enclave and so exposes its public key. Anyone can call it, since the payee is fixed. A recovered `serverAddress` key can still claim expired notes into the operator balance, but can no longer receive it ([#178](https://github.com/w3hc/longjing/issues/178)).
 - The NestJS upgrade brings patched `body-parser`, `multer` and `qs`, which `pnpm audit --prod` flagged as high and moderate. The low `elliptic` advisory under `circomlibjs` has no patched version and remains (LJ-18) ([#186](https://github.com/w3hc/longjing/issues/186)).
 
 ## [0.5.0] - 2026-10-07

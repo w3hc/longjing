@@ -9,7 +9,7 @@ The LongjingCredits contract implements:
 - **Merkle tree** anonymity set using Poseidon hashing, with the last 30 roots
 - **Settlement**: a ZK withdrawal of `D + R − n · C_MAX` after a 3-day challenge window
 - **Slashing** by revealed secret key, for a fixed bounty
-- **Timelocked admin**: verifier, server address and refund key changes wait 7 days
+- **Timelocked admin**: verifier, server address, operator payout and refund key changes wait 7 days
 
 ## Contracts
 
@@ -21,7 +21,8 @@ Main contract implementing the RLN-based usage-credits protocol.
 - `initiateWithdrawal(bytes32 commitment, address recipient, EdDSAPublicKey refundKey, uint256[8] proof, uint256 nullifier, uint256 signalY, uint256 payout)` - Start an exit with a settlement proof
 - `finalizeWithdrawal(bytes32 commitment)` - Pay an exit after the challenge window; anyone can call it
 - `slash(uint256 secretKey)` - Slash the note of a revealed key, for `SLASH_BOUNTY`
-- `claimExpired(bytes32 commitment)` / `withdrawOperatorBalance()` - The operator's revenue
+- `claimExpired(bytes32 commitment)` - The operator claims a note untouched for `NOTE_TTL`; `serverAddress` only
+- `withdrawOperatorBalance()` - Pays the operator balance to `operatorPayout`; anyone can call it
 - `isKnownRoot(bytes32 root)`, `getNote`, `getLeaves`, `getMerkleProof` - Reads for clients and the server
 
 The settlement proof's public signals are `[nullifier, signalY, payout, commitment, deposit, C_MAX, refundKeyX, refundKeyY, recipient, x]`, in the order snarkjs emits them; the contract fills in everything but the outputs. `pnpm check:verifiers` checks that `SettlementVerifier.sol` embeds the circuit's current verification key.
@@ -104,7 +105,7 @@ The circuit uses `circomlib/Poseidon`, and the contract uses `poseidon-solidity`
 # Terminal 1: Start local node
 anvil
 
-# Terminal 2: Deploy contract with Anvil account #0 and the dev refund-signer key
+# Terminal 2: Deploy contract with Anvil account #0 as server, #3 as operator payout and the dev refund-signer key
 NODE_ENV=development forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits --rpc-url http://127.0.0.1:8545 --broadcast
 ```
 
@@ -117,6 +118,8 @@ NODE_ENV=development forge script script/DeployLongjingCredits.s.sol:DeployLongj
 export NODE_ENV=production
 export PRIVATE_KEY=0x...
 export SERVER_ADDRESS=0x...
+# The Safe or a cold address that has never signed, not SERVER_ADDRESS
+export OPERATOR_PAYOUT=0x...
 # The enclave's refund signer, refundSigner.x / .y from GET /attestation/manifest
 export SERVER_PUBKEY_X=0x...
 export SERVER_PUBKEY_Y=0x...
@@ -134,7 +137,8 @@ forge script script/DeployLongjingCredits.s.sol:DeployLongjingCredits \
 
 ```solidity
 constructor(
-    address _serverAddress,      // Operator: claims expired notes and operator revenue
+    address _serverAddress,      // Operator's hot key: claims expired notes
+    address _operatorPayout,     // Receives the operator balance: the Safe or a cold address
     bytes32 _serverPubKeyX,      // Refund key, X coordinate
     bytes32 _serverPubKeyY,      // Refund key, Y coordinate
     uint256 _cMax,               // C_MAX, the most one request costs and the smallest deposit (e.g. 0.001 ether)
@@ -180,7 +184,7 @@ Measured with `forge test -vvvv`:
 
 ### Known Limitations
 1. **Merkle tree storage cost** - Stores all nodes on-chain for correct proof generation (gas intensive for large trees)
-2. **Admin privileges** - the contract owner can change the settlement verifier, the server address and the refund key, only after a 7-day `ADMIN_DELAY`, longer than an exit takes. `C_MAX` and `SLASH_BOUNTY` are immutable
+2. **Admin privileges** - the contract owner can change the settlement verifier, the server address, the operator payout and the refund key, only after a 7-day `ADMIN_DELAY`, longer than an exit takes. `C_MAX` and `SLASH_BOUNTY` are immutable
 
 ### Security Model
 - **One stake** - the whole deposit D; each note pays out at most D in total
