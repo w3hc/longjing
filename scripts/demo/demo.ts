@@ -831,6 +831,11 @@ async function main() {
         'it pays out after the window',
         (await provider.getBalance(args.recipient)) === BigInt(args.payout),
       );
+      check(
+        goals.withdrawal,
+        'another wallet sent both transactions: the recipient never signed',
+        (await provider.getTransactionCount(args.recipient)) === 0,
+      );
     });
     await verify(goals.solvency, async () => {
       const args = required(exit, 'withdrawal proof');
