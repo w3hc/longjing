@@ -21,7 +21,9 @@ describe('AttestationController', () => {
       identityPublicKey: null,
       refundSignerPublicKey: null,
       tlsCertificate: null,
+      onionPublicKey: null,
     },
+    onionAddress: null,
   };
 
   beforeEach(async () => {

@@ -19,14 +19,15 @@ import { parseNonce } from './report-data';
  * Attestation controller.
  * Provides cryptographic proof of the code running inside the TEE.
  * report_data commits to every public key the service uses (identity,
- * refund signer) and to the in-enclave TLS certificate, followed by the
- * client's nonce. See docs/ATTESTATION.md#report_data.
+ * refund signer, onion service) and to the in-enclave TLS certificate,
+ * followed by the client's nonce. See docs/ATTESTATION.md#report_data.
  *
  * Clients should:
  * 1. Fetch GET /attestation?nonce=<32 random bytes, hex>
  * 2. Rebuild report_data from the returned keys and their nonce, and check
  *    it equals the quote's (see verifyKeyBinding in key-binding.ts)
- * 3. Check the returned TLS certificate is the one their TLS session saw
+ * 3. Check the returned TLS certificate is the one their TLS session saw,
+ *    and a .onion host is the bound onion service
  * 4. Verify the quote signature with the TEE platform's verification service
  * 5. Replay RTMR0–3 from the event log and compare the measurements and the
  *    compose hash against the published values
@@ -126,6 +127,12 @@ export class AttestationController {
         keys: {
           type: 'object',
           description: 'The public keys report_data commits to',
+        },
+        onionAddress: {
+          type: 'string',
+          nullable: true,
+          description:
+            'The onion service address, derived from keys.onionPublicKey',
         },
         eventLog: {
           type: 'string',
