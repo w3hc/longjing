@@ -158,7 +158,7 @@ export class AttestationController {
     description: 'Failed to generate attestation quote',
   })
   async getAttestation(@Query('nonce') nonce?: string) {
-    let parsedNonce: Buffer | undefined;
+    let parsedNonce: Uint8Array | undefined;
     try {
       parsedNonce = parseNonce(nonce);
     } catch (error) {

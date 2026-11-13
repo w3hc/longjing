@@ -1,15 +1,20 @@
-import { createHash } from 'crypto';
+import { sha256 } from '@noble/hashes/sha2';
 import { computeAddress, getAddress, verifyTypedData } from 'ethers';
 import {
   KEY_MANIFEST_DOMAIN,
   KEY_MANIFEST_TYPES,
   SignedKeyManifest,
-} from '../keys/key-derivation.service';
+} from '../keys/key-manifest';
 import { BoundKeys } from './attestation.types';
-import { tdxQuoteReportData } from './platforms/phala.platform';
 import { buildReportData, encodeRefundSignerPublicKey } from './report-data';
-import { verifyEventLog } from './tdx-quote';
-import { onionAddress } from '../tor/onion-key';
+import { tdxQuoteReportData, verifyEventLog } from './tdx-quote';
+import { onionAddress } from '../tor/onion-address';
+import {
+  base64ToBytes,
+  bytesToHex,
+  equalBytes,
+  hexToBytes,
+} from '../common/bytes';
 
 /** The fields of `GET /attestation` that bind the keys. */
 export interface KeyBindingEvidence {
@@ -40,36 +45,43 @@ export interface KeyBindingEvidence {
 export function verifyKeyBinding(
   evidence: KeyBindingEvidence,
   options: {
-    nonce?: Buffer;
-    servedCertificate?: Buffer;
+    nonce?: Uint8Array;
+    servedCertificate?: Uint8Array;
     keyManifest?: SignedKeyManifest;
     host?: string;
   } = {},
 ): string[] {
   const failures: string[] = [];
   const { keys } = evidence;
-  const identity = keys.identityPublicKey
-    ? Buffer.from(strip0x(keys.identityPublicKey), 'hex')
-    : undefined;
-  const tlsCertificate = keys.tlsCertificate
-    ? Buffer.from(keys.tlsCertificate, 'base64')
-    : undefined;
-  const onion = keys.onionPublicKey
-    ? Buffer.from(strip0x(keys.onionPublicKey), 'hex')
-    : undefined;
-
-  const expected = buildReportData(
-    {
-      identityPublicKey: identity,
-      refundSignerPublicKey: keys.refundSignerPublicKey
-        ? encodeRefundSignerPublicKey(keys.refundSignerPublicKey)
-        : undefined,
-      tlsCertificateDer: tlsCertificate,
-      onionPublicKey: onion,
-    },
-    options.nonce,
-  );
-  if (!Buffer.from(strip0x(evidence.reportData), 'hex').equals(expected)) {
+  let identity: Uint8Array | undefined;
+  let tlsCertificate: Uint8Array | undefined;
+  let onion: Uint8Array | undefined;
+  let expected: Uint8Array;
+  try {
+    identity = keys.identityPublicKey
+      ? hexToBytes(keys.identityPublicKey)
+      : undefined;
+    tlsCertificate = keys.tlsCertificate
+      ? base64ToBytes(keys.tlsCertificate)
+      : undefined;
+    onion = keys.onionPublicKey ? hexToBytes(keys.onionPublicKey) : undefined;
+    expected = buildReportData(
+      {
+        identityPublicKey: identity,
+        refundSignerPublicKey: keys.refundSignerPublicKey
+          ? encodeRefundSignerPublicKey(keys.refundSignerPublicKey)
+          : undefined,
+        tlsCertificateDer: tlsCertificate,
+        onionPublicKey: onion,
+      },
+      options.nonce,
+    );
+  } catch (error) {
+    return [
+      `The attestation's keys are malformed: ${(error as Error).message}`,
+    ];
+  }
+  if (!equalBytes(parseHex(evidence.reportData), expected)) {
     failures.push('reportData does not commit to the returned keys and nonce');
   }
 
@@ -78,7 +90,7 @@ export function verifyKeyBinding(
       failures.push(
         'The attestation binds no TLS certificate: TLS terminates outside the enclave',
       );
-    } else if (!options.servedCertificate.equals(tlsCertificate)) {
+    } else if (!equalBytes(options.servedCertificate, tlsCertificate)) {
       failures.push(
         'The TLS session certificate is not the one bound by the attestation',
       );
@@ -88,16 +100,16 @@ export function verifyKeyBinding(
   failures.push(...verifyOnion(evidence.onionAddress, onion, options.host));
 
   if (evidence.platform === 'phala' || evidence.platform === 'intel-tdx') {
-    const quote = Buffer.from(evidence.quote, 'base64');
     try {
-      if (!tdxQuoteReportData(quote).equals(expected)) {
+      const quote = base64ToBytes(evidence.quote);
+      if (!equalBytes(tdxQuoteReportData(quote), expected)) {
         failures.push('The quote report_data does not match');
+      }
+      if (evidence.eventLog !== undefined) {
+        failures.push(...verifyEventLog(quote, evidence.eventLog));
       }
     } catch (error) {
       failures.push((error as Error).message);
-    }
-    if (evidence.eventLog !== undefined) {
-      failures.push(...verifyEventLog(quote, evidence.eventLog));
     }
   }
 
@@ -118,7 +130,7 @@ export function verifyKeyBinding(
 
 function verifyOnion(
   address: string | null | undefined,
-  publicKey: Buffer | undefined,
+  publicKey: Uint8Array | undefined,
   host: string | undefined,
 ): string[] {
   if (publicKey && publicKey.length !== 32) {
@@ -139,9 +151,9 @@ function verifyOnion(
 function verifyManifest(
   { manifest, signature }: SignedKeyManifest,
   keys: BoundKeys,
-  identity: Buffer | undefined,
-  tlsCertificate: Buffer | undefined,
-  onion: Buffer | undefined,
+  identity: Uint8Array | undefined,
+  tlsCertificate: Uint8Array | undefined,
+  onion: Uint8Array | undefined,
 ): string[] {
   const failures: string[] = [];
   const refundSigner = keys.refundSignerPublicKey;
@@ -160,7 +172,7 @@ function verifyManifest(
   }
   if (
     !onion ||
-    manifest.onionPublicKey?.toLowerCase() !== `0x${onion.toString('hex')}`
+    manifest.onionPublicKey?.toLowerCase() !== `0x${bytesToHex(onion)}`
   ) {
     failures.push('The key manifest commits to a different onion service');
   }
@@ -175,9 +187,7 @@ function verifyManifest(
       manifest,
       signature,
     );
-    if (
-      getAddress(signer) !== computeAddress(`0x${identity.toString('hex')}`)
-    ) {
+    if (getAddress(signer) !== computeAddress(`0x${bytesToHex(identity)}`)) {
       failures.push('The key manifest is not signed by the identity key');
     }
   } catch {
@@ -186,10 +196,14 @@ function verifyManifest(
   return failures;
 }
 
-function sha256Hex(bytes: Buffer): string {
-  return `0x${createHash('sha256').update(bytes).digest('hex')}`;
+function sha256Hex(bytes: Uint8Array): string {
+  return `0x${bytesToHex(sha256(bytes))}`;
 }
 
-function strip0x(value: string): string {
-  return value.startsWith('0x') ? value.slice(2) : value;
+function parseHex(value: string): Uint8Array {
+  try {
+    return hexToBytes(value);
+  } catch {
+    return new Uint8Array(0);
+  }
 }

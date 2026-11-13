@@ -22,7 +22,7 @@ function attest(nonce: Buffer, tlsCertificate?: Buffer): BoundAttestation {
   return {
     platform: 'mock',
     quote: '',
-    reportData: reportData.toString('hex'),
+    reportData: Buffer.from(reportData).toString('hex'),
     measurement: '',
     timestamp: new Date().toISOString(),
     nonce: '0x' + nonce.toString('hex'),

@@ -1,6 +1,9 @@
 import { createHash } from 'crypto';
 import { onionAddress, onionKeyFromSeed, onionPublicKey } from './onion-key';
 
+const hex = (bytes: Uint8Array | null) =>
+  bytes && Buffer.from(bytes).toString('hex');
+
 // RFC 8032 section 7.1, test 1
 const SEED = Buffer.from(
   '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60',
@@ -46,10 +49,8 @@ describe('onionAddress', () => {
 
 describe('onionPublicKey', () => {
   it('decodes an address, with or without .onion', () => {
-    expect(onionPublicKey(ADDRESS)?.toString('hex')).toBe(PUBLIC_KEY);
-    expect(onionPublicKey(`${ADDRESS}.onion`)?.toString('hex')).toBe(
-      PUBLIC_KEY,
-    );
+    expect(hex(onionPublicKey(ADDRESS))).toBe(PUBLIC_KEY);
+    expect(hex(onionPublicKey(`${ADDRESS}.onion`))).toBe(PUBLIC_KEY);
   });
 
   it('refuses a bad checksum, length or alphabet', () => {

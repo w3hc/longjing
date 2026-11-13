@@ -22,9 +22,9 @@ const expectedReportData = (nonce?: Buffer) =>
     nonce,
   );
 
-const tdxQuote = (reportData: Buffer) => {
+const tdxQuote = (reportData: Uint8Array) => {
   const quote = Buffer.alloc(1024);
-  reportData.copy(quote, 568);
+  quote.set(reportData, 568);
   return quote;
 };
 
