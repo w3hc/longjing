@@ -24,8 +24,8 @@
  *
  * What it verifies:
  *   1. Platform detection (not 'mock')
- *   2. report_data commits to the returned ML-KEM, identity and refund
- *      signer keys, the TLS certificate and a fresh random nonce
+ *   2. report_data commits to the returned identity and refund signer
+ *      keys, the TLS certificate and a fresh random nonce
  *   3. The served TLS certificate is the bound one — proves TLS terminates
  *      inside the attested enclave
  *   4. The event log replays to the quote's RTMR0–3

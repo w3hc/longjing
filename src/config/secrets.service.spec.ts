@@ -82,7 +82,6 @@ describe('SecretsService', () => {
         timestamp: '2026-03-17T00:00:00.000Z',
         nonce: null,
         keys: {
-          mlkemPublicKey: '',
           identityPublicKey: null,
           refundSignerPublicKey: null,
           tlsCertificate: null,
@@ -169,7 +168,6 @@ describe('SecretsService', () => {
         timestamp: '2026-03-17T00:00:00.000Z',
         nonce: null,
         keys: {
-          mlkemPublicKey: '',
           identityPublicKey: null,
           refundSignerPublicKey: null,
           tlsCertificate: null,

@@ -4,17 +4,14 @@ import { AttestationQuote } from './attestation.types';
 import { PhalaPlatform, tdxQuoteReportData } from './platforms/phala.platform';
 import { MockPlatform } from './platforms/mock.platform';
 import { buildReportData, encodeRefundSignerPublicKey } from './report-data';
-import { TeeKeyManagerService } from './tee-key-manager.service';
 import { KeyDerivationService } from '../keys/key-derivation.service';
 
-const MLKEM_PUBLIC_KEY = Buffer.alloc(1568, 7);
 const IDENTITY_PUBLIC_KEY = new Uint8Array([4, ...new Uint8Array(64).fill(2)]);
 const REFUND_SIGNER = { x: '0x' + '03'.repeat(32), y: '0x' + '04'.repeat(32) };
 
 const expectedReportData = (nonce?: Buffer) =>
   buildReportData(
     {
-      mlkemPublicKey: MLKEM_PUBLIC_KEY,
       identityPublicKey: IDENTITY_PUBLIC_KEY,
       refundSignerPublicKey: encodeRefundSignerPublicKey(REFUND_SIGNER),
     },
@@ -41,9 +38,6 @@ describe('AttestationService', () => {
   const createService = (teePlatform?: string) =>
     new AttestationService(
       { get: () => teePlatform } as unknown as ConfigService,
-      {
-        getPublicKeyBytes: () => MLKEM_PUBLIC_KEY,
-      } as unknown as TeeKeyManagerService,
       {
         getIdentityPublicKey: () => IDENTITY_PUBLIC_KEY,
         getRefundSignerPublicKey: () => REFUND_SIGNER,
@@ -193,7 +187,6 @@ describe('AttestationService', () => {
       expect(generateQuote).toHaveBeenCalledWith(expectedReportData(nonce));
       expect(attestation.nonce).toBe('0x' + '7f'.repeat(32));
       expect(attestation.keys).toEqual({
-        mlkemPublicKey: MLKEM_PUBLIC_KEY.toString('base64'),
         identityPublicKey:
           '0x' + Buffer.from(IDENTITY_PUBLIC_KEY).toString('hex'),
         refundSignerPublicKey: REFUND_SIGNER,

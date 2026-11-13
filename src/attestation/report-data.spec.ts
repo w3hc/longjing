@@ -5,39 +5,37 @@ import {
 } from './report-data';
 
 // Vectors computed independently in Python with hashlib and struct.pack('>I')
-const EK = new Uint8Array(1568).fill(0x01);
 const IDENTITY = new Uint8Array([0x04, ...new Uint8Array(64).fill(0x02)]);
 const REFUND_SIGNER = { x: '0x05', y: '0x' + '03'.repeat(32) };
 const CERT = Buffer.from('cert');
 
 describe('buildReportData', () => {
-  it('commits to the ML-KEM key alone, with empty terms and a zero nonce', () => {
-    const reportData = buildReportData({ mlkemPublicKey: EK });
+  it('commits to empty terms with a zero nonce', () => {
+    const reportData = buildReportData({});
 
     expect(reportData).toHaveLength(64);
     expect(reportData.subarray(0, 32).toString('hex')).toBe(
-      'd4df96ff643aac9d41a4b779808045fad242a3246702b7dfa697a2dca9163769',
+      'fd2d3683f797923d007b6c6d1e421106efcfecfad43c9409d4dbfc24a57ef210',
     );
     expect(reportData.subarray(32).equals(Buffer.alloc(32))).toBe(true);
   });
 
   it('commits to every key and the certificate hash', () => {
     const reportData = buildReportData({
-      mlkemPublicKey: EK,
       identityPublicKey: IDENTITY,
       refundSignerPublicKey: encodeRefundSignerPublicKey(REFUND_SIGNER),
       tlsCertificateDer: CERT,
     });
 
     expect(reportData.subarray(0, 32).toString('hex')).toBe(
-      '99493ed50cae56e7b02e675dcc074a3349098238d034cad1830bc2ac7b2c685c',
+      'a56de41403c09631b02e292e166116d9ce633d226eb4afc5dca2b6d864942231',
     );
   });
 
   it('places the nonce in the second half', () => {
     const nonce = Buffer.alloc(32, 0x7f);
 
-    const reportData = buildReportData({ mlkemPublicKey: EK }, nonce);
+    const reportData = buildReportData({}, nonce);
 
     expect(reportData.subarray(32).equals(nonce)).toBe(true);
   });
@@ -45,7 +43,6 @@ describe('buildReportData', () => {
   it('changes the commitment when the refund signer changes', () => {
     const commitment = (y: string) =>
       buildReportData({
-        mlkemPublicKey: EK,
         refundSignerPublicKey: encodeRefundSignerPublicKey({ x: '0x05', y }),
       }).subarray(0, 32);
 
@@ -53,9 +50,9 @@ describe('buildReportData', () => {
   });
 
   it('rejects a nonce that is not 32 bytes', () => {
-    expect(() =>
-      buildReportData({ mlkemPublicKey: EK }, Buffer.alloc(16)),
-    ).toThrow('Nonce must be 32 bytes');
+    expect(() => buildReportData({}, Buffer.alloc(16))).toThrow(
+      'Nonce must be 32 bytes',
+    );
   });
 });
 

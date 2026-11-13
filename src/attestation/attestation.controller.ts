@@ -18,9 +18,9 @@ import { parseNonce } from './report-data';
 /**
  * Attestation controller.
  * Provides cryptographic proof of the code running inside the TEE.
- * report_data commits to every public key the service uses (ML-KEM,
- * identity, refund signer) and to the in-enclave TLS certificate, followed
- * by the client's nonce. See docs/ATTESTATION.md#report_data.
+ * report_data commits to every public key the service uses (identity,
+ * refund signer) and to the in-enclave TLS certificate, followed by the
+ * client's nonce. See docs/ATTESTATION.md#report_data.
  *
  * Clients should:
  * 1. Fetch GET /attestation?nonce=<32 random bytes, hex>
@@ -42,9 +42,9 @@ export class AttestationController {
 
   /**
    * Returns the EIP-712 key manifest signed by the enclave's identity key,
-   * which binds the ML-KEM, refund signer and TLS keys and the transaction
-   * signer address to the app id, with
-   * the GetKey signature chains that tie the keys to the dstack KMS root.
+   * which binds the refund signer and TLS keys and the transaction signer
+   * address to the app id, with the GetKey signature chains that tie the
+   * keys to the dstack KMS root.
    * See docs/KEY_DERIVATION.md.
    */
   @Get('manifest')
@@ -70,9 +70,6 @@ export class AttestationController {
       ...signed,
       domain: KEY_MANIFEST_DOMAIN,
       types: KEY_MANIFEST_TYPES,
-      mlkemPublicKey: Buffer.from(
-        this.keyDerivation.getMlKemPublicKey()!,
-      ).toString('base64'),
       identity: {
         address: this.keyDerivation.getIdentityAddress(),
         publicKey: hex(this.keyDerivation.getIdentityPublicKey()!),
