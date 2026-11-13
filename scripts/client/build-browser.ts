@@ -27,18 +27,18 @@ const BUILTINS = new Set(
   builtinModules.flatMap((name) => [name, `node:${name}`]),
 );
 
-const common: BuildOptions = {
+const common = {
   bundle: true,
   platform: 'browser',
   target: ['es2022'],
   minify: true,
   legalComments: 'inline',
-  metafile: true,
-  write: false,
+  metafile: true as const,
+  write: false as const,
   logLevel: 'warning',
   absWorkingDir: ROOT,
   define: { 'process.env.NODE_ENV': '"production"' },
-};
+} satisfies BuildOptions;
 
 /** Refuses a bundle that imports a Node built-in, even an empty shim */
 function assertNoNodeBuiltins(metafile: Metafile, what: string): void {
