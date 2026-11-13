@@ -30,7 +30,7 @@
         <p>
           The exit itself is public: <code>initiateWithdrawal</code> names the
           commitment and the recipient, so anyone can link them to the deposit.
-          Pay to an address with no history if that matters to you.
+          That is why the page pays to a new address by default.
         </p>
       </aside>
 
@@ -138,13 +138,65 @@
 
       <section aria-labelledby="initiate-title">
         <h2 id="initiate-title">4. Start the exit</h2>
-        <label for="recipient">Recipient address</label>
-        <input
-          id="recipient"
-          placeholder="0x…"
-          autocomplete="off"
-          spellcheck="false"
-        />
+        <p>
+          The payout goes to a new address by default. An address that has sent
+          or received funds links this exit to that history. And an address that
+          has sent a transaction has published its public key: if ECDSA weakens
+          faster than expected, what it holds is exposed, while an address that
+          never sent one keeps its key behind a hash. The recipient never signs
+          here: the proof names it, and the account from step 1 pays the gas.
+        </p>
+        <fieldset>
+          <legend>Pay to</legend>
+          <label
+            ><input
+              type="radio"
+              name="pay-to"
+              id="pay-fresh"
+              value="fresh"
+              checked
+            />
+            A new address, made in this page</label
+          >
+          <label
+            ><input type="radio" name="pay-to" id="pay-own" value="own" /> An
+            address of my own</label
+          >
+        </fieldset>
+        <div id="fresh-fields">
+          <label for="fresh-address">New address</label>
+          <input id="fresh-address" readonly spellcheck="false" />
+          <label for="fresh-key">Its private key</label>
+          <input
+            id="fresh-key"
+            readonly
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <p class="hint">
+            Drawn from your browser's Web Crypto randomness, and never sent
+            anywhere. This page keeps nothing: without this key, the payout is
+            lost. Import it into any wallet to spend the payout.
+          </p>
+          <button type="button" id="save-key">Save the key to a file</button>
+          <label class="check"
+            ><input type="checkbox" id="key-saved" /> I saved this key</label
+          >
+        </div>
+        <div id="own-fields" hidden>
+          <label for="recipient">Recipient address</label>
+          <input
+            id="recipient"
+            placeholder="0x…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <p class="hint">
+            Checked through the RPC or wallet from step 1 for past transactions
+            and funds.
+          </p>
+        </div>
+        <output id="recipient-status" for="recipient"></output>
         <label for="claimed">Requests the note made, n</label>
         <input id="claimed" type="number" min="0" step="1" />
         <p class="hint">

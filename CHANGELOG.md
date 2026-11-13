@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-14
+
 ### Added
 
 - A "Cryptographic assumptions" section in `docs/ZK.md`: each primitive, the assumption it rests on, and whether a break costs privacy or funds. Onchain, a break of curves or pairings costs no privacy, since nothing encrypted is posted onchain, the accumulator is perfectly hiding and the proofs are perfectly zero-knowledge, but a Groth16 break would let anyone forge a withdrawal ([#176](https://github.com/w3hc/longjing/issues/176)).
@@ -33,10 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test/browser/withdraw.e2e.ts` runs two exits from the page opened from `file://`, one with an RPC and a signer key, one through an injected wallet with files from a mirror, and checks that the page's only origin is the RPC (or the mirror) and that no request carries the secret key, the accumulator's blinding or the signer key ([#157](https://github.com/w3hc/longjing/issues/157)).
 - The browser client exports `ethers`, which it already bundled whole ([#157](https://github.com/w3hc/longjing/issues/157)).
 - A "Withdraw without the service" section in the README ([#157](https://github.com/w3hc/longjing/issues/157)).
+- The withdrawal page pays to a new address by default, drawn from Web Crypto randomness in the page. It shows the address and its private key, saves them to a file on request, never sends the key over the network, and enables "Prove and initiate" only once the user ticks "I saved this key". An address entered by hand is still accepted: the page reads its nonce and balance through the RPC or wallet already configured and warns when either is not zero, since paying to it links the exit to its history, and an address that has sent a transaction has published its public key ([#179](https://github.com/w3hc/longjing/issues/179)).
+- `test/browser/withdraw.e2e.ts` pays one exit to the page's new address and one to an address entered by hand, checks the warning for an address that has sent a transaction, and checks that another account sends both transactions while the recipient never signs, and that no request carries the new address's key ([#179](https://github.com/w3hc/longjing/issues/179)).
+- `pnpm demo` checks, under "A depositor can withdraw without the server", that the recipient's nonce is still 0 after the payout: the demo wallet sends both transactions ([#179](https://github.com/w3hc/longjing/issues/179)).
 
 ### Changed
 
 - The image pins tor 0.4.9.17, since Alpine replaced 0.4.9.15 and the pinned build failed ([#157](https://github.com/w3hc/longjing/issues/157)).
+- The README's Status section says v0.6.0 is a testnet release that attaches the withdrawal page, and `pnpm demo` gives the single-party circuit keys as the only reason the goal "Every depositor can exit if the operator and every host disappear" is not met ([#179](https://github.com/w3hc/longjing/issues/179)).
 - The README's Status section says the withdrawal page exists, on single-party keys, and is attached from the next release on. `docs/DEPLOYMENT.md` steps 1 and 10 name the page, and `pnpm demo` says the goal "Every depositor can exit if the operator and every host disappear" is not met because the page is in no release yet and its keys come from a single-party setup ([#157](https://github.com/w3hc/longjing/issues/157)).
 - The README is shorter: status, design, threat model, a comparison with ethereum/zkapi, usage, deployment and documentation. Its threat model adds request timing and size, and enclave key derivation is no longer claimed for the provider's API key ([#176](https://github.com/w3hc/longjing/issues/176)).
 - `docs/MLKEM.md` no longer calls ML-KEM plainly "post-quantum secure": it names the lattice assumption it rests on and recommends a hybrid X25519 + ML-KEM KEM for any endpoint that uses it ([#176](https://github.com/w3hc/longjing/issues/176)).

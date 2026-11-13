@@ -26,7 +26,7 @@ The steps:
 6. The operator tries to link Alice's two requests to each other and to her deposit, from the request bodies and, on Anvil, from its own nullifier database. The observer checks that the contract logged nothing while they were served
 7. The attacker deposits and sends two requests at the same index. The server refuses the second; a wallet that is not `serverAddress` recovers the key from the two signals and calls `slash(k)`
 8. The attacker deposits again, makes two requests, and exits claiming one. The operator finds the exit's nullifier in its database and slashes the note within the window
-9. Alice exits: the attacker can't redirect her proof to another recipient. With the server stopped, she initiates the withdrawal with her own proof, and it pays `D + R − 2 · C_max` after the window
+9. Alice exits: the attacker can't redirect her proof to another recipient. With the server stopped, she initiates the withdrawal with her own proof, and it pays `D + R − 2 · C_max` after the window to a new address that never signs: the demo wallet sends both transactions
 10. Alice's closed note can make no request, and no request body contained a secret key
 11. `serverAddress` calls `withdrawOperatorBalance`: the whole operator balance goes to `operatorPayout`, and the caller gets nothing
 
@@ -52,7 +52,7 @@ The table reads:
 | An eavesdropper's recording needs both the classical and the ML-KEM key exchange broken | not checked yet, the demo runs over plain HTTP | |
 | Protocol, pricing and refunds work with any provider | not checked yet | |
 | A depositor can withdraw without the server | verified | |
-| Every depositor can exit if the operator and every host disappear | not met, the withdrawal page is in no release yet, on single-party keys | [#135](https://github.com/w3hc/longjing/issues/135) |
+| Every depositor can exit if the operator and every host disappear | not met, the withdrawal page proves with single-party keys | [#135](https://github.com/w3hc/longjing/issues/135) |
 
 The demo exits non-zero only when a goal expected to be verified is not. Known gaps are reported, not hidden, and a gap that starts passing prints a note to update its expected status in [scripts/demo/demo.ts](../scripts/demo/demo.ts). A passing run says nothing about the goals it reports as not met or not checked yet.
 
@@ -188,9 +188,10 @@ pnpm test:browser
 
 `test/browser/withdraw.e2e.ts` opens `build/browser/withdraw.html` from `file://`, as a user would, and runs two exits. Each is initiated from the page, the challenge window passes with `evm_increaseTime` from the test, and a fresh page given only the contract and the commitment finalizes it:
 
-- A note that made one request through the local gateway, with an RPC URL and a signer key and the circuit files picked from disk. A `settlement.wasm` that is another circuit is refused first. The recipient gets `D + R − C_MAX`
-- A never-used note through an injected EIP-1193 wallet, with the circuit files from a mirror. A mirror holding the wrong `settlement.wasm` is refused first. The recipient gets `D`
-- Every request of the page and its workers is recorded: the only origin is the RPC (or, with the wallet, the mirror), and no URL or body carries the secret key, the accumulator's blinding or the signer key. With the wallet, its calls don't carry the secret key either
+- A note that made one request through the local gateway, with an RPC URL and a signer key and the circuit files picked from disk, paid to the new address the page makes by default. "Prove and initiate" stays disabled until the key is saved and "I saved this key" is ticked, and the saved file holds the address and its key. A `settlement.wasm` that is another circuit is refused first. The recipient gets `D + R − C_MAX`
+- A never-used note through an injected EIP-1193 wallet, with the circuit files from a mirror, paid to an address the user enters. The page warns about an address that has sent a transaction, reading its nonce through the wallet, and not about one that never did. A mirror holding the wrong `settlement.wasm` is refused first. The recipient gets `D`
+- In both, another account sends `initiateWithdrawal` and `finalizeWithdrawal`, and the recipient's nonce is still 0 after it is paid: it never signed
+- Every request of the page and its workers is recorded: the only origin is the RPC (or, with the wallet, the mirror), and no URL or body carries the secret key, the accumulator's blinding, the signer key or the new address's key. With the wallet, its calls don't carry the secret key or the new address's key either
 - The page logs no error, so its Content Security Policy blocks nothing it needs
 
 ## Contract Tests

@@ -197,7 +197,7 @@ const goals = {
     'Every depositor can exit if the operator and every host disappear',
     'not met',
     [135],
-    'the withdrawal page is in no release yet, on single-party keys',
+    'the withdrawal page proves with single-party keys',
   ),
 };
 
@@ -830,6 +830,11 @@ async function main() {
         goals.withdrawal,
         'it pays out after the window',
         (await provider.getBalance(args.recipient)) === BigInt(args.payout),
+      );
+      check(
+        goals.withdrawal,
+        'another wallet sent both transactions: the recipient never signed',
+        (await provider.getTransactionCount(args.recipient)) === 0,
       );
     });
     await verify(goals.solvency, async () => {

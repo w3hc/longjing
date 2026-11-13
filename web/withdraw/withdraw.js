@@ -6,6 +6,8 @@
  * after the challenge window. The only network requests go to the RPC (or
  * through the browser wallet), and to the mirror if the user loads the
  * circuit files from one. Nothing is stored: the contract holds the exit.
+ * By default the payout goes to a new address whose key the user saves
+ * before proving: ethers draws it from crypto.getRandomValues.
  */
 (() => {
   const L = window.Longjing;
@@ -44,6 +46,9 @@
   const rpcProviders = new Map();
   let walletProvider = null;
   let onchain = null;
+  const fresh = ethers.Wallet.createRandom();
+  // The own recipient whose history the user has already been warned about
+  let warned = null;
 
   function show(id, text, ok) {
     const out = $(id);
@@ -75,7 +80,8 @@
       } catch (error) {
         show(out, message(error), false);
       } finally {
-        if (id !== 'finalize') $(id).disabled = false;
+        if (id === 'initiate') updateInitiate();
+        else if (id !== 'finalize') $(id).disabled = false;
       }
     });
   }
@@ -272,6 +278,90 @@
     }
   }
 
+  const payToFresh = () => $('pay-fresh').checked;
+
+  function updateInitiate() {
+    $('initiate').disabled = payToFresh() && !$('key-saved').checked;
+  }
+
+  function saveKey() {
+    const file = new Blob(
+      [
+        JSON.stringify(
+          { address: fresh.address, privateKey: fresh.privateKey },
+          null,
+          2,
+        ) + '\n',
+      ],
+      { type: 'application/json' },
+    );
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(file);
+    link.download = `longjing-recipient-${fresh.address}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+  }
+
+  /**
+   * Reads the recipient's nonce and balance, and warns when either is not
+   * zero. Returns whether it warned.
+   */
+  async function checkRecipient(provider, recipient) {
+    const [nonce, balance] = await Promise.all([
+      provider.getTransactionCount(recipient, 'latest'),
+      provider.getBalance(recipient, 'latest'),
+    ]);
+    if (nonce === 0 && balance === 0n) {
+      show(
+        'recipient-status',
+        `${recipient} has never sent a transaction and holds nothing`,
+        true,
+      );
+      return false;
+    }
+    const past = [];
+    if (nonce > 0) {
+      past.push(
+        `its nonce is ${nonce}: it has sent transactions, so its public key is published and the payout would be exposed if ECDSA weakens`,
+      );
+    }
+    if (balance > 0n) {
+      past.push(`it holds ${eth(balance)}, so it has received funds`);
+    }
+    warned = recipient;
+    show(
+      'recipient-status',
+      [
+        `${recipient} has a history, which this exit would be linked to:`,
+        ...past.map((line) => `- ${line}`),
+        'Pay to a new address instead, or press "Prove and initiate" to pay to it anyway.',
+      ].join('\n'),
+      false,
+    );
+    return true;
+  }
+
+  async function recipientChanged() {
+    warned = null;
+    show('recipient-status', '');
+    const value = $('recipient').value;
+    if (!value.trim()) return;
+    try {
+      const recipient = address(value, 'The recipient');
+      const { provider } = await connect();
+      if ($('recipient').value !== value || payToFresh()) return;
+      await checkRecipient(provider, recipient);
+    } catch (error) {
+      if ($('recipient').value === value) {
+        show(
+          'recipient-status',
+          `Couldn't check the recipient: ${message(error)}`,
+          false,
+        );
+      }
+    }
+  }
+
   async function useFile(kind, source) {
     files[kind] = null;
     show(`${kind}-status`, 'Checking…');
@@ -292,7 +382,13 @@
   async function initiate() {
     const note = parseNote();
     const connection = await connect();
-    const recipient = address($('recipient').value, 'The recipient');
+    const own = !payToFresh();
+    if (!own && !$('key-saved').checked) {
+      throw new Error("Save the new address's key first");
+    }
+    const recipient = own
+      ? address($('recipient').value, 'The recipient')
+      : fresh.address;
     if (recipient === ethers.ZeroAddress) {
       throw new Error('The recipient cannot be the zero address');
     }
@@ -302,6 +398,15 @@
     }
     if (!files.wasm || !files.zkey) {
       throw new Error('Load settlement.wasm and settlement.zkey first');
+    }
+    if (
+      own &&
+      warned !== recipient &&
+      (await checkRecipient(connection.provider, recipient))
+    ) {
+      throw new Error(
+        'The recipient has a history: see the warning above. Press again to pay to it anyway.',
+      );
     }
     const notNeeded = () => {
       throw new Error('An exit needs no request circuit');
@@ -325,7 +430,7 @@
     $('commitment').value = args.commitment;
     show(
       'initiate-status',
-      `Initiated in ${hash}: ${eth(args.payout)} to ${args.recipient} once the challenge window ends. To finalize later, keep the commitment ${args.commitment}.`,
+      `Initiated in ${hash}: ${eth(args.payout)} to ${args.recipient} once the challenge window ends. To finalize later, keep the commitment ${args.commitment}.${own ? '' : ' Keep the key of the new address: it is the only way to spend the payout.'}`,
       true,
     );
     await checkExit();
@@ -402,6 +507,23 @@
       }
     });
   }
+
+  $('fresh-address').value = fresh.address;
+  $('fresh-key').value = fresh.privateKey;
+  for (const id of ['pay-fresh', 'pay-own']) {
+    $(id).addEventListener('change', () => {
+      $('own-fields').hidden = payToFresh();
+      $('fresh-fields').hidden = !payToFresh();
+      warned = null;
+      show('recipient-status', '');
+      updateInitiate();
+      if (!payToFresh()) void recipientChanged();
+    });
+  }
+  $('key-saved').addEventListener('change', updateInitiate);
+  $('save-key').addEventListener('click', saveKey);
+  $('recipient').addEventListener('change', () => void recipientChanged());
+  updateInitiate();
 
   for (const id of ['mode-rpc', 'mode-wallet']) {
     $(id).addEventListener('change', () => {

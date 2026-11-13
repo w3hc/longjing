@@ -14,11 +14,11 @@ Longjing is a template: the protocol, pricing and refund logic don't depend on t
 
 ## Status
 
-v0.5.0 is a testnet release. Do not deposit funds you can't afford to lose.
+v0.6.0 is a testnet release. Do not deposit funds you can't afford to lose.
 
 - **Keys:** the circuit keys come from a single-party trusted setup, so whoever ran it could forge proofs. They are for testnets only until a public ceremony replaces them ([#135](https://github.com/w3hc/longjing/issues/135)).
 - **Audit:** the code has had internal reviews only, no external audit.
-- **Exit:** a standalone page, `withdraw.html`, withdraws a note with only the chain, an RPC, the note file and the settlement circuit files ([Withdraw without the service](#withdraw-without-the-service)). It proves with the single-party `circuits-v2` keys, and no release carries it yet: the next release attaches it. Until then, build it with `pnpm build:browser`, or exit with `pnpm prove withdrawal`.
+- **Exit:** a standalone page, `withdraw.html`, withdraws a note with only the chain, an RPC, the note file and the settlement circuit files ([Withdraw without the service](#withdraw-without-the-service)). It proves with the single-party `circuits-v2` keys. Releases attach it from v0.6.0 on, and `pnpm build:browser` builds it from a checkout; `pnpm prove withdrawal` remains the other exit.
 - **Network:** the gateway serves the API at an onion service inside the enclave, whose address the attestation binds, and the reference client verifies the attestation before it sends anything ([ONION_SERVICE.md](docs/ONION_SERVICE.md)). A client that reaches it through Tor, with a circuit per request, hides its network identity ([INTEGRATION_GUIDELINES.md](docs/INTEGRATION_GUIDELINES.md)). No deployment serves it yet ([#191](https://github.com/w3hc/longjing/issues/191)), and request timing and size are not protected ([#189](https://github.com/w3hc/longjing/issues/189)).
 
 ## Design
@@ -92,12 +92,14 @@ If the gateway and its operator are gone, you exit with the chain alone. You nee
 - your note file, the JSON that `pnpm prove note` or a page wrote: it holds the secret key and the accumulator opening;
 - the `LongjingCredits` address;
 - an RPC URL and the key of an account that pays the gas, or a browser wallet;
-- `withdraw.html`, attached to each release from the next one on, or `build/browser/withdraw.html` after `pnpm build:browser`; check a downloaded copy against the release's `SHA256SUMS`;
+- `withdraw.html`, attached to each release from v0.6.0 on, or `build/browser/withdraw.html` after `pnpm build:browser`; check a downloaded copy against the release's `SHA256SUMS`;
 - `settlement.wasm` and `settlement.zkey` from the [`circuits-v2`](https://github.com/w3hc/longjing/releases/tag/circuits-v2) release or any mirror. The page checks them against the sha256 it pins, which match [`circuits/artifacts.json`](circuits/artifacts.json), and refuses any other file.
 
-Open `withdraw.html` from disk: it needs no build, no server and no other host. Load the note and read it, pick the two circuit files, enter the recipient and press "Prove and initiate". The page proves the exit in your browser and sends `initiateWithdrawal`, which pays `D + R − n · C_max` once the 3-day challenge window ends. Then open the page again, with the commitment (or the note) and the contract address, and press "Finalize": anyone can send `finalizeWithdrawal`, also while the contract is paused. The page keeps nothing in browser storage: the contract holds the exit.
+Open `withdraw.html` from disk: it needs no build, no server and no other host. Load the note and read it, pick the two circuit files, save the key of the new address the page made for the payout, and press "Prove and initiate". The page proves the exit in your browser and sends `initiateWithdrawal`, which pays `D + R − n · C_max` once the 3-day challenge window ends. Then open the page again, with the commitment (or the note) and the contract address, and press "Finalize": anyone can send `finalizeWithdrawal`, also while the contract is paused. The page keeps nothing in browser storage: the contract holds the exit.
 
 `n` is the number of requests the note made, filled from the note. Add one if a request's response was lost, since an exit that claims fewer requests than were served is slashed during the window.
+
+The payout goes to a new address by default, since `initiateWithdrawal` publishes the recipient next to the note's commitment, and an address that has already sent or received funds links the exit to that history. An address that has never sent a transaction also keeps its public key behind a hash, so the payout isn't exposed if ECDSA weakens. The recipient never signs: the proof binds it, and the account that pays the gas sends both transactions. You can enter an address of your own instead, and the page warns when it has sent a transaction or holds funds.
 
 Reading your note asks the RPC for `getNote(commitment)`, which tells the RPC provider which note your IP address cares about. Use a node of your own, with CORS enabled for the page, or an RPC reached through Tor. The exit itself is public: `initiateWithdrawal` names the commitment and the recipient.
 
