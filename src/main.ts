@@ -101,7 +101,7 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .setTitle('Longjing')
     .setDescription('API documentation for Longjing')
-    .setVersion('0.5.0')
+    .setVersion('0.6.0')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('', app, document);

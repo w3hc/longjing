@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-14
+
 ### Added
 
 - A "Cryptographic assumptions" section in `docs/ZK.md`: each primitive, the assumption it rests on, and whether a break costs privacy or funds. Onchain, a break of curves or pairings costs no privacy, since nothing encrypted is posted onchain, the accumulator is perfectly hiding and the proofs are perfectly zero-knowledge, but a Groth16 break would let anyone forge a withdrawal ([#176](https://github.com/w3hc/longjing/issues/176)).
@@ -40,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The image pins tor 0.4.9.17, since Alpine replaced 0.4.9.15 and the pinned build failed ([#157](https://github.com/w3hc/longjing/issues/157)).
+- The README's Status section says v0.6.0 is a testnet release that attaches the withdrawal page, and `pnpm demo` gives the single-party circuit keys as the only reason the goal "Every depositor can exit if the operator and every host disappear" is not met ([#179](https://github.com/w3hc/longjing/issues/179)).
 - The README's Status section says the withdrawal page exists, on single-party keys, and is attached from the next release on. `docs/DEPLOYMENT.md` steps 1 and 10 name the page, and `pnpm demo` says the goal "Every depositor can exit if the operator and every host disappear" is not met because the page is in no release yet and its keys come from a single-party setup ([#157](https://github.com/w3hc/longjing/issues/157)).
 - The README is shorter: status, design, threat model, a comparison with ethereum/zkapi, usage, deployment and documentation. Its threat model adds request timing and size, and enclave key derivation is no longer claimed for the provider's API key ([#176](https://github.com/w3hc/longjing/issues/176)).
 - `docs/MLKEM.md` no longer calls ML-KEM plainly "post-quantum secure": it names the lattice assumption it rests on and recommends a hybrid X25519 + ML-KEM KEM for any endpoint that uses it ([#176](https://github.com/w3hc/longjing/issues/176)).

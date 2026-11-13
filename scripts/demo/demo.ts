@@ -197,7 +197,7 @@ const goals = {
     'Every depositor can exit if the operator and every host disappear',
     'not met',
     [135],
-    'the withdrawal page is in no release yet, on single-party keys',
+    'the withdrawal page proves with single-party keys',
   ),
 };
 
