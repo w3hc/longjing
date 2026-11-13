@@ -46,6 +46,7 @@ The table reads:
 | A closed note can't make requests | verified | |
 | The client sends nothing that contains the secret key | verified | |
 | The client verifies the attestation before sending anything | not checked yet | [#99](https://github.com/w3hc/longjing/issues/99) |
+| An eavesdropper's recording needs both the classical and the ML-KEM key exchange broken | not checked yet, the demo runs over plain HTTP | |
 | Protocol, pricing and refunds work with any provider | not checked yet | |
 | A depositor can withdraw without the server | verified | |
 | Every depositor can exit if the operator and every host disappear | not met, no withdrawal page yet | [#157](https://github.com/w3hc/longjing/issues/157), [#135](https://github.com/w3hc/longjing/issues/135) |

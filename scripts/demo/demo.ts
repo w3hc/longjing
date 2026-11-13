@@ -164,6 +164,12 @@ const goals = {
     'not checked yet',
     [99],
   ),
+  tlsKeyExchange: goal(
+    "An eavesdropper's recording needs both the classical and the ML-KEM key exchange broken",
+    'not checked yet',
+    undefined,
+    'the demo runs over plain HTTP',
+  ),
   provider: goal(
     'Protocol, pricing and refunds work with any provider',
     'not checked yet',
