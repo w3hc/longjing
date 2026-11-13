@@ -39,9 +39,6 @@ importers:
       '@phala/dstack-sdk':
         specifier: ^0.5.8
         version: 0.5.8(@noble/curves@1.9.7)(@noble/hashes@1.8.0)(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6))(viem@2.47.5(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6))
-      '@zk-kit/eddsa-poseidon':
-        specifier: 1.1.0
-        version: 1.1.0
       better-sqlite3:
         specifier: 13.1.1
         version: 13.1.1
@@ -109,6 +106,9 @@ importers:
       '@types/supertest':
         specifier: ^7.2.1
         version: 7.2.1
+      '@zk-kit/eddsa-poseidon':
+        specifier: 1.1.0
+        version: 1.1.0
       circomlib:
         specifier: ^2.0.5
         version: 2.0.5
