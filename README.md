@@ -18,7 +18,7 @@ v0.5.0 is a testnet release. Do not deposit funds you can't afford to lose.
 
 - **Keys:** the circuit keys come from a single-party trusted setup, so whoever ran it could forge proofs. They are for testnets only until a public ceremony replaces them ([#135](https://github.com/w3hc/longjing/issues/135)).
 - **Audit:** the code has had internal reviews only, no external audit.
-- **Exit:** withdrawing needs the `pnpm prove` client, or a page built on the browser client ([API_REFERENCE.md](docs/API_REFERENCE.md#browser-client)). The standalone withdrawal page is not built yet ([#157](https://github.com/w3hc/longjing/issues/157)).
+- **Exit:** a standalone page, `withdraw.html`, withdraws a note with only the chain, an RPC, the note file and the settlement circuit files ([Withdraw without the service](#withdraw-without-the-service)). It proves with the single-party `circuits-v2` keys, and no release carries it yet: the next release attaches it. Until then, build it with `pnpm build:browser`, or exit with `pnpm prove withdrawal`.
 - **Network:** the gateway serves the API at an onion service inside the enclave, whose address the attestation binds, and the reference client verifies the attestation before it sends anything ([ONION_SERVICE.md](docs/ONION_SERVICE.md)). A client that reaches it through Tor, with a circuit per request, hides its network identity ([INTEGRATION_GUIDELINES.md](docs/INTEGRATION_GUIDELINES.md)). No deployment serves it yet ([#191](https://github.com/w3hc/longjing/issues/191)), and request timing and size are not protected ([#189](https://github.com/w3hc/longjing/issues/189)).
 
 ## Design
@@ -84,6 +84,22 @@ Server runs at `https://localhost:3000`, with the Swagger UI at its root. Outsid
 ## Deploy
 
 In production, Longjing runs on [dstack](https://github.com/Dstack-TEE/dstack) and derives every key inside the enclave. The trusted setup, contract, enclave and governance are deployed in a fixed order, described in [DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Withdraw without the service
+
+If the gateway and its operator are gone, you exit with the chain alone. You need:
+
+- your note file, the JSON that `pnpm prove note` or a page wrote: it holds the secret key and the accumulator opening;
+- the `LongjingCredits` address;
+- an RPC URL and the key of an account that pays the gas, or a browser wallet;
+- `withdraw.html`, attached to each release from the next one on, or `build/browser/withdraw.html` after `pnpm build:browser`; check a downloaded copy against the release's `SHA256SUMS`;
+- `settlement.wasm` and `settlement.zkey` from the [`circuits-v2`](https://github.com/w3hc/longjing/releases/tag/circuits-v2) release or any mirror. The page checks them against the sha256 it pins, which match [`circuits/artifacts.json`](circuits/artifacts.json), and refuses any other file.
+
+Open `withdraw.html` from disk: it needs no build, no server and no other host. Load the note and read it, pick the two circuit files, enter the recipient and press "Prove and initiate". The page proves the exit in your browser and sends `initiateWithdrawal`, which pays `D + R − n · C_max` once the 3-day challenge window ends. Then open the page again, with the commitment (or the note) and the contract address, and press "Finalize": anyone can send `finalizeWithdrawal`, also while the contract is paused. The page keeps nothing in browser storage: the contract holds the exit.
+
+`n` is the number of requests the note made, filled from the note. Add one if a request's response was lost, since an exit that claims fewer requests than were served is slashed during the window.
+
+Reading your note asks the RPC for `getNote(commitment)`, which tells the RPC provider which note your IP address cares about. Use a node of your own, with CORS enabled for the page, or an RPC reached through Tor. The exit itself is public: `initiateWithdrawal` names the commitment and the recipient.
 
 ## Threat model
 

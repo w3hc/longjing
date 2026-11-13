@@ -196,8 +196,8 @@ const goals = {
   walkaway: goal(
     'Every depositor can exit if the operator and every host disappear',
     'not met',
-    [157, 135],
-    'no withdrawal page yet',
+    [135],
+    'the withdrawal page is in no release yet, on single-party keys',
   ),
 };
 

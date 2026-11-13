@@ -6,8 +6,8 @@
   "license": "LGPL-3.0",
   "scripts": {
     "build": "nest build",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"web/**/*.{html,css,js}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"web/**/*.{html,css,js}\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",

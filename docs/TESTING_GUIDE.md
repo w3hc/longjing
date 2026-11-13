@@ -52,7 +52,7 @@ The table reads:
 | An eavesdropper's recording needs both the classical and the ML-KEM key exchange broken | not checked yet, the demo runs over plain HTTP | |
 | Protocol, pricing and refunds work with any provider | not checked yet | |
 | A depositor can withdraw without the server | verified | |
-| Every depositor can exit if the operator and every host disappear | not met, no withdrawal page yet | [#157](https://github.com/w3hc/longjing/issues/157), [#135](https://github.com/w3hc/longjing/issues/135) |
+| Every depositor can exit if the operator and every host disappear | not met, the withdrawal page is in no release yet, on single-party keys | [#135](https://github.com/w3hc/longjing/issues/135) |
 
 The demo exits non-zero only when a goal expected to be verified is not. Known gaps are reported, not hidden, and a gap that starts passing prints a note to update its expected status in [scripts/demo/demo.ts](../scripts/demo/demo.ts). A passing run says nothing about the goals it reports as not met or not checked yet.
 
@@ -169,7 +169,7 @@ The contract, the server and the client of `pnpm prove`, on Anvil. The contract 
 **Carol: an exit that understates usage**
 - Two requests served, an exit claiming one: the server's watcher slashes the note within the window, and finalizing reverts
 
-### Browser Client Test (`test/browser/client.e2e.ts`)
+### Browser Tests (`test/browser/`)
 
 ```bash
 anvil   # in another terminal
@@ -185,6 +185,13 @@ pnpm test:browser
 - A request is proved in a Web Worker, sent through the verified gateway, and its response received
 - The page proves the withdrawal, sends `initiateWithdrawal`, then `finalizeWithdrawal` after the window, and the recipient gets `D + R − C_MAX`
 - No request body holds the secret key, two Web Workers proved, and the page never read `process`, `require`, `Buffer` or `global`
+
+`test/browser/withdraw.e2e.ts` opens `build/browser/withdraw.html` from `file://`, as a user would, and runs two exits. Each is initiated from the page, the challenge window passes with `evm_increaseTime` from the test, and a fresh page given only the contract and the commitment finalizes it:
+
+- A note that made one request through the local gateway, with an RPC URL and a signer key and the circuit files picked from disk. A `settlement.wasm` that is another circuit is refused first. The recipient gets `D + R − C_MAX`
+- A never-used note through an injected EIP-1193 wallet, with the circuit files from a mirror. A mirror holding the wrong `settlement.wasm` is refused first. The recipient gets `D`
+- Every request of the page and its workers is recorded: the only origin is the RPC (or, with the wallet, the mirror), and no URL or body carries the secret key, the accumulator's blinding or the signer key. With the wallet, its calls don't carry the secret key either
+- The page logs no error, so its Content Security Policy blocks nothing it needs
 
 ## Contract Tests
 
@@ -245,7 +252,7 @@ GitHub Actions workflow (`.github/workflows/test.yml`) runs:
 4. Contract tests (Foundry)
 5. Anvil startup
 6. E2E tests
-7. The browser client test, in headless Chromium
+7. The browser client and withdrawal page tests, in headless Chromium
 
 All tests must pass before merging PRs.
 

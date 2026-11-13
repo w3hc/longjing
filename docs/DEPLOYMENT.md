@@ -33,7 +33,7 @@ pnpm check:verifiers   # SettlementVerifier.sol embeds the pinned verification k
 
 The artifacts come from the [`circuits-v2`](https://github.com/w3hc/longjing/releases/tag/circuits-v2) release, and [`circuits/artifacts.json`](../circuits/artifacts.json) pins their hashes. After a ceremony, `artifacts.json` points at the release holding its keys, `SettlementVerifier.sol` is regenerated from them, and `pnpm check:verifiers` must pass against both. The image checks the same hashes at build time ([DOCKER.md](./DOCKER.md#checking-a-digest)).
 
-A depositor exits with `settlement_js/settlement.wasm` and `settlement.zkey` alone, without the server. Publish both next to the deployment, for example as a mirror of the release, with their sha256 from `artifacts.json`, so that a user can exit from any mirror or a local copy and check what they load. There is no standalone withdrawal page yet ([#157](https://github.com/w3hc/longjing/issues/157)): until there is, the exit is `pnpm prove withdrawal`, from a checkout of this repository ([API_REFERENCE.md](./API_REFERENCE.md#3-withdraw-without-the-server)).
+A depositor exits with the withdrawal page, `withdraw.html`, and `settlement_js/settlement.wasm` and `settlement.zkey`, without the server ([README.md](../README.md#withdraw-without-the-service)). The page pins the sha256 of both files, taken from `artifacts.json` when it is built, so a new `artifacts.json` means a new page. Publish the two files next to the deployment, for example as a mirror of the release, with their sha256, so that a user can exit from any mirror or a local copy and check what they load. A mirror the page loads from by URL must serve them with CORS; otherwise users download them and pick the files. Each release attaches `withdraw.html`, built by `pnpm build:browser`, with its sha256 and the settlement hashes it pins. `pnpm prove withdrawal`, from a checkout of this repository, remains the other exit ([API_REFERENCE.md](./API_REFERENCE.md#3-withdraw-without-the-server)).
 
 ### 2. Pin the image
 
@@ -126,5 +126,6 @@ Publish what a user needs to check the deployment and to exit without it:
 
 - the gateway URL, the `DstackApp` and `LongjingCredits` addresses, and the app's creation block
 - the release, its image digest and the compose hash
+- the withdrawal page, `withdraw.html` from the release, with its sha256 from the release's `SHA256SUMS`, and how to open it from disk
 - the mirrors of `settlement_js/settlement.wasm` and `settlement.zkey`, with their sha256
 - the trusted setup transcript, so anyone can check the keys came from it

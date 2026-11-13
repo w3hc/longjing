@@ -36,7 +36,7 @@ FROM ${NODE_IMAGE}
 # tor user the package adds, since tor runs as node, and with it the build date in /etc/shadow;
 # --no-logfile keeps the build time out of /var/log/apk.log
 RUN apk add --no-cache --no-scripts --no-logfile \
-  tor=0.4.9.15-r0 \
+  tor=0.4.9.17-r0 \
   libcap2=2.78-r0 \
   libevent=2.1.13-r0 \
   libseccomp=2.6.1-r0 \
