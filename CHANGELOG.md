@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Claude provider no longer sends `temperature`, `topP` or `topK` upstream, since API version `2026-10-21` rejects them. Requests still accept them and sample at the model's defaults ([#186](https://github.com/w3hc/longjing/issues/186)).
 - The Docker images run Node 24.22.3 with OpenSSL 3.5.9, re-pinned by digest, and CI checks that the pinned image bundles OpenSSL 3.5.6 or later. Running the server outside Docker needs Node 24.16 or later ([#183](https://github.com/w3hc/longjing/issues/183)).
 - `pnpm verify:attestation` offers `SecP384r1MLKEM1024` to the gateway and warns when the TLS key exchange it gets is classical only ([#183](https://github.com/w3hc/longjing/issues/183)).
+- `report_data` no longer commits to an ML-KEM key: its label is now `longjing-report-v2`, followed by the identity key, the refund signer key and the TLS certificate hash, each length-prefixed. A client built for `longjing-report-v1` fails verification instead of accepting it ([#185](https://github.com/w3hc/longjing/issues/185)).
+- The EIP-712 key manifest drops `mlkemPublicKeyHash` and its domain version is now `2` ([#185](https://github.com/w3hc/longjing/issues/185)).
+- In production, `SecretsService` loads from the KMS whenever `KMS_URL` is set, instead of skipping it when `ADMIN_MLKEM_PUBLIC_KEY` was also set ([#185](https://github.com/w3hc/longjing/issues/185)).
+- `docs/MLKEM.md` now explains that ML-KEM is used only in the TLS key exchange, and why Longjing has no application-layer encryption ([#185](https://github.com/w3hc/longjing/issues/185)).
+
+### Removed
+
+- The unused ML-KEM-1024 key: it is no longer derived in the enclave, returned by `GET /attestation` or `GET /attestation/manifest`, or committed to in `report_data`. Nothing on the server decrypted to it. The refund signer, identity and transaction signer keys are derived exactly as before ([#185](https://github.com/w3hc/longjing/issues/185)).
+- `MlKemEncryptionService` and its multi-recipient format, which wrapped the AES key by XOR with the raw ML-KEM shared secret, `TeeKeyManagerService`, the `ADMIN_MLKEM_PUBLIC_KEY` / `ADMIN_MLKEM_PRIVATE_KEY` development fallback, `scripts/testing/generate-admin-keypair.ts` and the `mlkem` dependency. The only public-key encryption left is TLS, whose keys are ephemeral. Sealed requests for relays are tracked in [#184](https://github.com/w3hc/longjing/issues/184) ([#185](https://github.com/w3hc/longjing/issues/185)).
 
 ### Fixed
 
