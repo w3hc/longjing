@@ -6,6 +6,7 @@ import { X509Certificate, createHash } from 'crypto';
 
 import { loadTlsMaterial } from './tee-tls';
 import { getTlsLeafCertificate, clearTlsLeafCertificate } from './tls-context';
+import { TLS_SERVER_GROUPS } from './tls-groups';
 
 jest.mock('fs');
 jest.mock('@phala/dstack-sdk', () => ({
@@ -102,6 +103,7 @@ describe('loadTlsMaterial', () => {
 
       expect(material.source).toBe('dstack');
       expect(material.httpsOptions?.key).toBe(FIXTURE_KEY);
+      expect(material.httpsOptions?.ecdhCurve).toBe(TLS_SERVER_GROUPS);
       expect(getTlsKey).toHaveBeenCalledWith(
         expect.objectContaining({ usageServerAuth: true }),
       );
