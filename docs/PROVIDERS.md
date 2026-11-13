@@ -113,12 +113,13 @@ The Claude provider is the reference implementation demonstrating all provider f
   - Input and output tokens: the model's rates
   - Cache write: 1.25× the input rate
   - Cache read: 0.1× the input rate
+- **Sampling**: `temperature`, `topP` and `topK` are accepted in a request but not sent upstream, since API version `2026-10-21` (`@anthropic-ai/sdk` 1.x) rejects them ([migration guide](https://platform.claude.com/docs/en/api/migration-2026-10-21#sampling-parameters-are-removed)). Every request samples at the model's defaults, so a lowered `temperature` no longer has an effect on models that accepted one, such as `claude-sonnet-4-6`.
 - **Rate Limits**:
   - 50 requests/minute
   - 1000 requests/day
   - 5 concurrent requests
 - **Location**: `src/providers/claude/`
-- **Tests**: 16 tests, all passing
+- **Tests**: 21 tests, all passing
 
 **Getting Started:**
 See [QUICK_START.md](./QUICK_START.md) for a step-by-step guide to adding new providers.
