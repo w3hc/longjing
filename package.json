@@ -23,6 +23,7 @@
     "verify:attestation": "ts-node scripts/testing/verify-attestation.ts",
     "prove": "ts-node -T scripts/client/prove.ts",
     "build:browser": "ts-node -T scripts/client/build-browser.ts",
+    "test:browser": "pnpm build:browser && playwright test",
     "demo": "ts-node -T scripts/demo/demo.ts",
     "governance:propose-release": "ts-node scripts/governance/propose-release.ts",
     "circuits:fetch": "ts-node scripts/setup/fetch-circuits.ts",
