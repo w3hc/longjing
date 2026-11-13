@@ -25,7 +25,7 @@ Adding a new provider involves:
 
 ## Prerequisites
 
-- Node.js 24+ installed
+- Node.js 24.16+ installed, which bundles OpenSSL 3.5.6 or later for the TLS key exchange
 - Familiarity with NestJS and TypeScript
 - API credentials for the service you're integrating
 - Understanding of the provider's pricing model

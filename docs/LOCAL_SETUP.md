@@ -4,7 +4,7 @@ This guide covers running Longjing locally on your machine without Docker, ideal
 
 ## Prerequisites
 
-- Node.js 24+ installed
+- Node.js 24.16+ installed, which bundles OpenSSL 3.5.6 or later for the TLS key exchange
 - pnpm 10.23+ installed
 - OpenSSL (for generating TLS certificates)
 

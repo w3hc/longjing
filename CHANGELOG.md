@@ -9,9 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A "Cryptographic assumptions" section in `docs/ZK.md`: each primitive, the assumption it rests on, and whether a break costs privacy or funds. A break of curves or pairings costs no privacy, since nothing encrypted is posted onchain, the accumulator is perfectly hiding and the proofs are perfectly zero-knowledge, but a Groth16 break would let anyone forge a withdrawal ([#176](https://github.com/w3hc/longjing/issues/176)).
+- A "Cryptographic assumptions" section in `docs/ZK.md`: each primitive, the assumption it rests on, and whether a break costs privacy or funds. Onchain, a break of curves or pairings costs no privacy, since nothing encrypted is posted onchain, the accumulator is perfectly hiding and the proofs are perfectly zero-knowledge, but a Groth16 break would let anyone forge a withdrawal ([#176](https://github.com/w3hc/longjing/issues/176)).
 - A Status section in the README: v0.5.0 is a testnet release with single-party circuit keys, no external audit, no withdrawal page yet and no protection of request timing and size ([#176](https://github.com/w3hc/longjing/issues/176)).
 - The options for the phase 2 trusted setup ceremony in `docs/TRUSTED_SETUP_CEREMONY.md`, with a recommendation ([#135](https://github.com/w3hc/longjing/issues/135)).
+- A TLS row in the cryptographic assumptions table of `docs/ZK.md`: a recording of the traffic stays confidential unless both the classical and the ML-KEM half of the key exchange break, and the certificate signature only has to hold at handshake time ([#183](https://github.com/w3hc/longjing/issues/183)).
+- `pnpm demo` lists the goal "An eavesdropper's recording needs both the classical and the ML-KEM key exchange broken" as not checked yet, since the demo runs over plain HTTP ([#183](https://github.com/w3hc/longjing/issues/183)).
 
 ### Changed
 
@@ -21,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The docs present Longjing as a template for any upstream API, with Claude as the reference provider, and say that `POST /longjing/request` still calls Claude directly ([#176](https://github.com/w3hc/longjing/issues/176)).
 - Every dependency is on its latest version: NestJS 12.5, `@anthropic-ai/sdk` 1.8, `better-sqlite3` 13.1, and the lint, format and test tooling. TypeScript stays on 6.0, since TypeScript 7.0 ships without the compiler API that `nest build`, `ts-jest`, `ts-node` and `typescript-eslint` load ([#186](https://github.com/w3hc/longjing/issues/186)).
 - The Claude provider no longer sends `temperature`, `topP` or `topK` upstream, since API version `2026-10-21` rejects them. Requests still accept them and sample at the model's defaults ([#186](https://github.com/w3hc/longjing/issues/186)).
+- The Docker images run Node 24.22.3 with OpenSSL 3.5.9, re-pinned by digest, and CI checks that the pinned image bundles OpenSSL 3.5.6 or later. Running the server outside Docker needs Node 24.16 or later ([#183](https://github.com/w3hc/longjing/issues/183)).
+- `pnpm verify:attestation` offers `SecP384r1MLKEM1024` to the gateway and warns when the TLS key exchange it gets is classical only ([#183](https://github.com/w3hc/longjing/issues/183)).
 
 ### Fixed
 
@@ -28,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- The enclave's TLS sets its key exchange groups explicitly, without OpenSSL's `DEFAULT` list (CVE-2026-2673): `SecP384r1MLKEM1024`, then `X25519MLKEM768`, then `X25519`, each in its own tuple so the server's order wins. Browsers and default OpenSSL and curl clients get `X25519MLKEM768`, and a client that offers none of the three is refused. A test fails if a client offering a hybrid group negotiates a classical one ([#183](https://github.com/w3hc/longjing/issues/183)).
 - The NestJS upgrade brings patched `body-parser`, `multer` and `qs`, which `pnpm audit --prod` flagged as high and moderate. The low `elliptic` advisory under `circomlibjs` has no patched version and remains (LJ-18) ([#186](https://github.com/w3hc/longjing/issues/186)).
 
 ## [0.5.0] - 2026-10-07

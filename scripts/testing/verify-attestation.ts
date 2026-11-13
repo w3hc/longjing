@@ -47,6 +47,8 @@
 
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import * as http from 'http';
+import * as https from 'https';
 import * as tls from 'tls';
 import { JsonRpcProvider, getAddress } from 'ethers';
 import {
@@ -62,6 +64,7 @@ import {
 import { BoundAttestation } from '../../src/attestation/attestation.types';
 import { verifyKeyBinding } from '../../src/attestation/key-binding';
 import { SignedKeyManifest } from '../../src/keys/key-derivation.service';
+import { TLS_CLIENT_GROUPS } from '../../src/tls/tls-groups';
 
 type AttestationQuote = BoundAttestation & { instructions?: string };
 
@@ -139,18 +142,44 @@ function info(message: string) {
 }
 
 /**
+ * GET JSON from the gateway, offering the hybrid post-quantum key exchange
+ * groups over HTTPS
+ */
+function getJson<T>(url: string): Promise<T> {
+  const request = url.startsWith('https:')
+    ? (callback: (res: http.IncomingMessage) => void) =>
+        https.get(url, { ecdhCurve: TLS_CLIENT_GROUPS }, callback)
+    : (callback: (res: http.IncomingMessage) => void) =>
+        http.get(url, callback);
+
+  return new Promise((resolve, reject) => {
+    request((res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => (body += chunk));
+      res.on('end', () => {
+        const status = res.statusCode ?? 0;
+        if (status < 200 || status >= 300) {
+          reject(new Error(`HTTP ${status}: ${res.statusMessage}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(body) as T);
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+/**
  * Fetch attestation from URL or read from file
  */
 async function fetchAttestation(source: string): Promise<AttestationQuote> {
   if (source.startsWith('http://') || source.startsWith('https://')) {
     log(`Fetching attestation from: ${source}`, 'blue');
-    const response = await fetch(source);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    return await response.json();
+    return await getJson<AttestationQuote>(source);
   } else {
     log(`Reading attestation from file: ${source}`, 'blue');
     const content = fs.readFileSync(source, 'utf-8');
@@ -168,11 +197,7 @@ async function fetchKeyManifest(
   log(`Fetching key manifest from: ${url}`, 'blue');
 
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    return (await response.json()) as SignedKeyManifest;
+    return await getJson<SignedKeyManifest>(url);
   } catch (error) {
     warning(`Could not fetch key manifest: ${error instanceof Error ? error.message : String(error)}`);
     return undefined;
@@ -202,8 +227,16 @@ function fetchServedTlsCertificate(baseUrl: string): Promise<Buffer | null> {
         servername: host,
         // Trust is established via attestation binding, not a CA chain
         rejectUnauthorized: false,
+        ecdhCurve: TLS_CLIENT_GROUPS,
       },
       () => {
+        const group = (socket.getEphemeralKeyInfo() as { name?: string } | null)
+          ?.name;
+        if (group?.includes('MLKEM')) {
+          success(`TLS key exchange: ${group} (hybrid post-quantum)`);
+        } else {
+          warning(`TLS key exchange: ${group ?? 'unknown'} (classical only)`);
+        }
         const cert = socket.getPeerCertificate(true);
         socket.end();
         resolve(cert && cert.raw ? Buffer.from(cert.raw) : null);

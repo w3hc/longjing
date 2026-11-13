@@ -114,6 +114,17 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Check the base image bundles OpenSSL 3.5.6 or later
+        run: |
+          image=$(sed -n 's/^ARG NODE_IMAGE=//p' Dockerfile)
+          docker run --rm "$image" node -e '
+            const v = process.versions.openssl;
+            const [major, minor, patch] = v.split(".").map((n) => parseInt(n, 10));
+            console.log(`${process.version}, OpenSSL ${v}`);
+            const ok = major > 3 || (major === 3 && (minor > 5 || (minor === 5 && patch >= 6)));
+            process.exit(ok ? 0 : 1);
+          '
+
       - name: Build twice and compare digests
         run: |
           export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)

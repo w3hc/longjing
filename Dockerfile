@@ -1,5 +1,5 @@
-# node:24-alpine, pinned by digest so the same Dockerfile always builds on the same base
-ARG NODE_IMAGE=node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
+# node:24-alpine (Node 24.22.3, OpenSSL 3.5.9), pinned by digest so the same Dockerfile always builds on the same base
+ARG NODE_IMAGE=node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
 
 FROM ${NODE_IMAGE} AS base
 
