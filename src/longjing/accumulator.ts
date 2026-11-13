@@ -1,4 +1,10 @@
-import { createHash } from 'crypto';
+import { sha256 } from '@noble/hashes/sha2';
+import {
+  bytesToHex,
+  concatBytes,
+  uint32BE,
+  utf8ToBytes,
+} from '../common/bytes';
 
 /**
  * Baby Jubjub arithmetic for the refund accumulator of docs/SETTLEMENT.md:
@@ -105,11 +111,9 @@ export const inSubgroup = (p: Point): boolean =>
  */
 export function hashToCurve(seed: string): Point {
   for (let counter = 0; ; counter++) {
-    const tag = Buffer.alloc(4);
-    tag.writeUInt32BE(counter);
-    const digest = createHash('sha256')
-      .update(Buffer.concat([Buffer.from(seed), tag]))
-      .digest('hex');
+    const digest = bytesToHex(
+      sha256(concatBytes(utf8ToBytes(seed), uint32BE(counter))),
+    );
     const x = mod(BigInt(`0x${digest}`));
     const y = sqrt((1n - A * x * x) * inv(1n - D * x * x));
     if (y === undefined) continue;

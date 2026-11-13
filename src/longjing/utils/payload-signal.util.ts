@@ -10,8 +10,9 @@
  * request. The server recomputes x, then forgets the payload and ρ: without ρ,
  * a stored x can't confirm a guessed prompt (docs/SETTLEMENT.md).
  */
-import { createHash } from 'crypto';
-import { buildPoseidon } from 'circomlibjs';
+import { sha256 } from '@noble/hashes/sha2';
+import { poseidon2 } from 'poseidon-lite/poseidon2';
+import { bytesToHex, utf8ToBytes } from '../../common/bytes';
 
 export const BN254_SCALAR_FIELD = BigInt(
   '21888242871839275222246405745257275088548364400416034343698204186575808495617',
@@ -30,26 +31,16 @@ export function parseFieldElement(value: string): bigint {
 
 /** SHA-256 of the UTF-8 payload, reduced into the field */
 export function payloadDigest(payload: string): bigint {
-  const digest = createHash('sha256').update(payload, 'utf8').digest('hex');
+  const digest = bytesToHex(sha256(utf8ToBytes(payload)));
   return BigInt('0x' + digest) % BN254_SCALAR_FIELD;
 }
 
-let poseidon: Promise<(inputs: bigint[]) => bigint> | undefined;
-
-function poseidonHash(): Promise<(inputs: bigint[]) => bigint> {
-  poseidon ??= buildPoseidon().then(
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    (p: any) => (inputs: bigint[]) => p.F.toObject(p(inputs)),
-  );
-  return poseidon;
-}
-
 /** x = Poseidon(SHA-256(payload) mod p, ρ) */
-export async function payloadSignalX(
+export function payloadSignalX(
   payload: string,
   nonce: bigint,
 ): Promise<bigint> {
-  return (await poseidonHash())([payloadDigest(payload), nonce]);
+  return Promise.resolve(poseidon2([payloadDigest(payload), nonce]));
 }
 
 /** Whether x commits to this payload and nonce, both given as received */
