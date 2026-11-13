@@ -15,6 +15,7 @@ contract LongjingCreditsTest is Test {
     string internal fixtures;
 
     address public server;
+    address public payout;
     address public user1;
     address public user2;
 
@@ -29,6 +30,7 @@ contract LongjingCreditsTest is Test {
 
     function setUp() public {
         server = makeAddr("server");
+        payout = makeAddr("payout");
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
 
@@ -38,7 +40,7 @@ contract LongjingCreditsTest is Test {
         address at = vm.parseJsonAddress(fixtures, ".contract");
         deployCodeTo(
             "LongjingCredits.sol:LongjingCredits",
-            abi.encode(server, _refundKey().x, _refundKey().y, C_MAX, SLASH_BOUNTY),
+            abi.encode(server, payout, _refundKey().x, _refundKey().y, C_MAX, SLASH_BOUNTY),
             at
         );
         longjing = LongjingCredits(at);
@@ -318,7 +320,7 @@ contract LongjingCreditsTest is Test {
     function test_Slash_PaysAtMostD() public {
         uint256 k = 42;
         bytes32 c = bytes32(PoseidonHasher.hash(k));
-        LongjingCredits small = new LongjingCredits(server, _refundKey().x, _refundKey().y, C_MAX, 1 ether);
+        LongjingCredits small = new LongjingCredits(server, payout, _refundKey().x, _refundKey().y, C_MAX, 1 ether);
         vm.prank(user1);
         small.deposit{value: C_MAX}(c);
 
@@ -363,10 +365,9 @@ contract LongjingCreditsTest is Test {
 
         vm.warp(block.timestamp + longjing.CHALLENGE_WINDOW());
         longjing.finalizeWithdrawal(honest.commitment);
-        vm.prank(server);
         longjing.withdrawOperatorBalance();
 
-        assertEq(_recipient().balance + SLASH_BOUNTY + server.balance, 2 * DEPOSIT);
+        assertEq(_recipient().balance + SLASH_BOUNTY + payout.balance, 2 * DEPOSIT);
         assertEq(address(longjing).balance, 0);
     }
 
@@ -455,21 +456,115 @@ contract LongjingCreditsTest is Test {
 
     // ============ Operator balance ============
 
-    function test_WithdrawOperatorBalance_PaysServer() public {
-        _deposit(commitment1, DEPOSIT);
-        vm.warp(longjing.noteExpiry(commitment1));
-        vm.startPrank(server);
-        longjing.claimExpired(commitment1);
-        longjing.withdrawOperatorBalance();
-        vm.stopPrank();
+    function test_Constructor_RevertsOnZeroOperatorPayout() public {
+        vm.expectRevert(LongjingCredits.ZeroAddress.selector);
+        new LongjingCredits(server, address(0), _refundKey().x, _refundKey().y, C_MAX, SLASH_BOUNTY);
+    }
 
-        assertEq(server.balance, DEPOSIT);
+    function test_WithdrawOperatorBalance_PaysThePayoutNotTheServer() public {
+        _claimExpired(commitment1);
+
+        vm.expectEmit(true, false, false, true);
+        emit LongjingCredits.OperatorBalanceWithdrawn(payout, DEPOSIT);
+        vm.prank(server);
+        longjing.withdrawOperatorBalance();
+
+        assertEq(payout.balance, DEPOSIT);
+        assertEq(server.balance, 0);
+        assertEq(longjing.operatorBalance(), 0);
+        assertEq(address(longjing).balance, 0);
+    }
+
+    function test_WithdrawOperatorBalance_AnyonePaysThePayout() public {
+        _claimExpired(commitment1);
+        uint256 before = user2.balance;
+
+        vm.prank(user2);
+        longjing.withdrawOperatorBalance();
+
+        assertEq(payout.balance, DEPOSIT);
+        assertEq(user2.balance, before);
         assertEq(longjing.operatorBalance(), 0);
     }
 
-    function test_WithdrawOperatorBalance_OnlyServer() public {
-        vm.expectRevert(LongjingCredits.Unauthorized.selector);
+    function test_WithdrawOperatorBalance_WorksWhilePaused() public {
+        _claimExpired(commitment1);
+        longjing.pause();
         longjing.withdrawOperatorBalance();
+        assertEq(payout.balance, DEPOSIT);
+    }
+
+    /// A contract payout such as a Safe gets more than the 2300 gas of transfer
+    function test_WithdrawOperatorBalance_PaysAContractPayout() public {
+        GasHungryPayout safe = new GasHungryPayout();
+        longjing.proposeChange(LongjingCredits.Target.OperatorPayout, address(safe));
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY());
+        longjing.executeChange(LongjingCredits.Target.OperatorPayout);
+        _claimExpired(commitment1);
+
+        longjing.withdrawOperatorBalance();
+
+        assertEq(address(safe).balance, DEPOSIT);
+        assertEq(safe.received(), DEPOSIT);
+    }
+
+    function test_WithdrawOperatorBalance_RevertsWhenThePayoutRefusesAndKeepsTheBalance() public {
+        RefusingPayout refusing = new RefusingPayout();
+        longjing.proposeChange(LongjingCredits.Target.OperatorPayout, address(refusing));
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY());
+        longjing.executeChange(LongjingCredits.Target.OperatorPayout);
+        _claimExpired(commitment1);
+
+        vm.expectRevert(LongjingCredits.TransferFailed.selector);
+        longjing.withdrawOperatorBalance();
+        assertEq(longjing.operatorBalance(), DEPOSIT);
+    }
+
+    function test_OperatorPayout_ChangesBehindTheTimelock() public {
+        address cold = makeAddr("cold");
+        vm.expectEmit(true, false, false, true);
+        emit LongjingCredits.ChangeProposed(
+            LongjingCredits.Target.OperatorPayout, cold, block.timestamp + longjing.ADMIN_DELAY()
+        );
+        longjing.proposeChange(LongjingCredits.Target.OperatorPayout, cold);
+
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY() - 1);
+        vm.expectRevert(LongjingCredits.TimelockNotExpired.selector);
+        longjing.executeChange(LongjingCredits.Target.OperatorPayout);
+        assertEq(longjing.operatorPayout(), payout);
+
+        vm.warp(block.timestamp + 1);
+        vm.expectEmit(true, true, false, false);
+        emit LongjingCredits.OperatorPayoutUpdated(payout, cold);
+        longjing.executeChange(LongjingCredits.Target.OperatorPayout);
+        assertEq(longjing.operatorPayout(), cold);
+        assertEq(longjing.serverAddress(), server);
+
+        _claimExpired(commitment1);
+        longjing.withdrawOperatorBalance();
+        assertEq(cold.balance, DEPOSIT);
+        assertEq(payout.balance, 0);
+    }
+
+    function test_OperatorPayout_ChangeCanBeCancelled() public {
+        longjing.proposeChange(LongjingCredits.Target.OperatorPayout, user2);
+        vm.expectEmit(true, false, false, true);
+        emit LongjingCredits.ChangeCancelled(LongjingCredits.Target.OperatorPayout, user2);
+        longjing.cancelChange(LongjingCredits.Target.OperatorPayout);
+
+        vm.warp(block.timestamp + longjing.ADMIN_DELAY());
+        vm.expectRevert(LongjingCredits.NoPendingChange.selector);
+        longjing.executeChange(LongjingCredits.Target.OperatorPayout);
+        assertEq(longjing.operatorPayout(), payout);
+    }
+
+    function test_OperatorPayout_ChangeOnlyOwnerAndNonZero() public {
+        vm.prank(server);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, server));
+        longjing.proposeChange(LongjingCredits.Target.OperatorPayout, server);
+
+        vm.expectRevert(LongjingCredits.ZeroAddress.selector);
+        longjing.proposeChange(LongjingCredits.Target.OperatorPayout, address(0));
     }
 
     // ============ Timelock ============
@@ -597,6 +692,13 @@ contract LongjingCreditsTest is Test {
         return mulmod(numerator, inverse, p);
     }
 
+    function _claimExpired(bytes32 _commitment) internal {
+        _deposit(_commitment, DEPOSIT);
+        vm.warp(longjing.noteExpiry(_commitment));
+        vm.prank(server);
+        longjing.claimExpired(_commitment);
+    }
+
     function _recipient() internal view returns (address) {
         return vm.parseJsonAddress(fixtures, ".recipient");
     }
@@ -623,3 +725,14 @@ contract LongjingCreditsTest is Test {
         }
     }
 }
+
+/// Spends more than the 2300 gas transfer forwards, as a Safe's receive does
+contract GasHungryPayout {
+    uint256 public received;
+
+    receive() external payable {
+        received += msg.value;
+    }
+}
+
+contract RefusingPayout {}

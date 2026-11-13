@@ -2,7 +2,7 @@
 
 Longjing's keys are derived from the dstack KMS, which releases them only to builds whose compose hash is allowed on Longjing's `DstackApp` contract ([KEY_DERIVATION.md](./KEY_DERIVATION.md#summary)). Whoever can call `addComposeHash` can therefore ship a build that prints the keys. This document sets who that is and how slowly they can act, so that every addition is public for a full delay before it can boot.
 
-The same applies to `LongjingCredits`: its owner can replace the settlement verifier, `serverAddress` and the refund key. A timelock behind the Safe owns it too, so every such change is public for the timelock delay before it is even queued.
+The same applies to `LongjingCredits`: its owner can replace the settlement verifier, `serverAddress`, `operatorPayout` and the refund key. A timelock behind the Safe owns it too, so every such change is public for the timelock delay before it is even queued.
 
 - [Roles](#roles)
 - [Contracts](#contracts)

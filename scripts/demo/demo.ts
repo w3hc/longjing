@@ -35,6 +35,8 @@
  *    withdrawal herself, and it pays D + R − n · C_MAX after the window
  * 9. Alice's closed note can make no request, and no request body contained
  *    a secret key
+ * 10. serverAddress (on Anvil) or the demo wallet withdraws the operator's
+ *     balance, which goes to operatorPayout, not the caller
  *
  * On Anvil, the server answers with mock responses: ANTHROPIC_API_KEY is
  * ignored, and the challenge window passes with evm_increaseTime. Against a
@@ -73,7 +75,8 @@ const anvilKey = (index: number) =>
     undefined,
     `m/44'/60'/0'/0/${index}`,
   ).privateKey;
-// Anvil account #1 pays; #0 deploys; #2 is a wallet of the operator's that is not serverAddress
+// Anvil account #1 pays; #0 deploys and is serverAddress; #2 is a wallet of the operator's that is not serverAddress
+const SERVER_KEY = anvilKey(0);
 const ALICE_KEY = anvilKey(1);
 const SLASHER_KEY = anvilKey(2);
 const CHALLENGE_WINDOW = 3 * 24 * 60 * 60;
@@ -89,6 +92,9 @@ const ABI = [
   ...NOTE_ABI,
   'function SLASH_BOUNTY() view returns (uint256)',
   'function serverAddress() view returns (address)',
+  'function operatorPayout() view returns (address)',
+  'function operatorBalance() view returns (uint256)',
+  'function withdrawOperatorBalance()',
   'function getLeaves() view returns (bytes32[])',
   'function leaves(uint256) view returns (bytes32)',
   'event Deposited(bytes32 indexed commitment, uint256 amount, uint256 leafIndex)',
@@ -152,6 +158,10 @@ const goals = {
   ),
   understatedExit: goal(
     'An exit that understates usage is slashed during the window',
+    'verified',
+  ),
+  operatorPayout: goal(
+    "The operator's balance goes only to its payout address, whoever withdraws it",
     'verified',
   ),
   closedNote: goal("A closed note can't make requests", 'verified'),
@@ -826,6 +836,63 @@ async function main() {
         `none of the ${sent.length} request bodies contains a secret key`,
         sent.length > 0 && leaked.length === 0,
         `${leaked.length} do`,
+      );
+    });
+
+    step(
+      onAnvil
+        ? "10. serverAddress withdraws the operator's balance"
+        : "10. The demo wallet withdraws the operator's balance",
+    );
+    await verify(goals.operatorPayout, async () => {
+      const caller = onAnvil ? new ethers.Wallet(SERVER_KEY, provider) : alice;
+      const payout = (await contract.operatorPayout()) as string;
+      const balance = (await contract.operatorBalance()) as bigint;
+      if (onAnvil) {
+        check(
+          goals.operatorPayout,
+          'the caller is serverAddress',
+          caller.address === (await contract.serverAddress()),
+        );
+      }
+      check(
+        goals.operatorPayout,
+        'the caller is not the payout address',
+        caller.address !== payout,
+      );
+      check(
+        goals.operatorPayout,
+        'the slashes left a balance to withdraw',
+        balance > 0n,
+      );
+      const payoutBefore = await provider.getBalance(payout);
+      const callerBefore = await provider.getBalance(caller.address);
+      const receipt = (await (
+        await (
+          contract.connect(caller) as ethers.Contract
+        ).withdrawOperatorBalance()
+      ).wait()) as ethers.TransactionReceipt;
+      const received = (await provider.getBalance(payout)) - payoutBefore;
+      const callerGain =
+        (await provider.getBalance(caller.address)) -
+        callerBefore +
+        receipt.gasUsed * receipt.gasPrice;
+      check(
+        goals.operatorPayout,
+        'the payout address gets the whole balance',
+        received === balance,
+        `${received} wei of ${balance}`,
+      );
+      check(
+        goals.operatorPayout,
+        'the caller gets nothing',
+        callerGain === 0n,
+        `${callerGain} wei`,
+      );
+      check(
+        goals.operatorPayout,
+        'the operator balance is empty',
+        ((await contract.operatorBalance()) as bigint) === 0n,
       );
     });
   } finally {

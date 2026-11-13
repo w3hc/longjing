@@ -35,8 +35,9 @@ contract DeployGovernanceTest is Test {
 
     function test_handsTheCreditsOverToTheTimelock() public {
         DeployGovernance script = new DeployGovernance();
-        LongjingCredits credits =
-            new LongjingCredits(makeAddr("server"), bytes32(uint256(1)), bytes32(uint256(2)), 0.001 ether, 0);
+        LongjingCredits credits = new LongjingCredits(
+            makeAddr("server"), makeAddr("payout"), bytes32(uint256(1)), bytes32(uint256(2)), 0.001 ether, 0
+        );
         // The script broadcasts as the deployer, which it stands in for here
         credits.transferOwnership(address(script));
 
@@ -66,8 +67,9 @@ contract DeployGovernanceTest is Test {
 
     function test_refusesAHandoverByAnotherAccount() public {
         DeployGovernance script = new DeployGovernance();
-        LongjingCredits credits =
-            new LongjingCredits(makeAddr("server"), bytes32(uint256(1)), bytes32(uint256(2)), 0.001 ether, 0);
+        LongjingCredits credits = new LongjingCredits(
+            makeAddr("server"), makeAddr("payout"), bytes32(uint256(1)), bytes32(uint256(2)), 0.001 ether, 0
+        );
         TimelockController timelock = script.deployTimelock(safe, 7 days);
 
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(script)));

@@ -21,7 +21,7 @@ Longjing derives its keys at boot from the [dstack](https://github.com/Dstack-TE
 | --- | --- | --- | --- |
 | Refund signer | `longjing/refund-signer/babyjub/v1` | `ed25519` (used as a 32-byte seed) | Signing refund accumulators (EdDSA on Baby Jubjub), checked by the circuits against `LongjingCredits.serverPublicKey` |
 | Identity key | `longjing/identity/v1` | `secp256k1` | Signing the [key manifest](#key-manifest) |
-| Transaction signer | `longjing/tx-signer/v1` | `secp256k1` | Signing contract transactions (slashing, operator withdrawals) as `LongjingCredits.serverAddress` |
+| Transaction signer | `longjing/tx-signer/v1` | `secp256k1` | Signing contract transactions (slashing, expiry claims) as `LongjingCredits.serverAddress` |
 | TLS key | `GetTlsKey` | — | In-enclave TLS termination |
 
 `GetKey` is deterministic in `(app_id, domain, algorithm)`: every instance of the app, on every restart, gets the same keys, so nothing needs to be persisted or backed up. The KMS releases the app's root key only to a CVM whose boot measurements match the app's on-chain policy (allowed compose hash, allowed OS image), so only code the app owner has registered on chain can derive them. Under [GOVERNANCE.md](./GOVERNANCE.md), a Safe and a 7-day timelock own the app, so every new build is public for that delay before it can boot.
@@ -73,7 +73,7 @@ v1 guarantees the 32 bytes are a valid secp256k1 scalar, so they are used direct
 tx_signer = GetKey("longjing/tx-signer/v1", "secp256k1").key
 ```
 
-Used directly as the private key, like the identity key. It is the operator's hot wallet: it signs every contract transaction in production, so its address needs ETH for gas and must be the contract's `serverAddress`. Keeping it apart from the identity key means the key that pays gas never signs the manifest.
+Used directly as the private key, like the identity key. It is the operator's hot wallet: it signs every contract transaction in production, so its address needs ETH for gas and must be the contract's `serverAddress`. It never receives the operator balance, which goes to `operatorPayout`. Keeping it apart from the identity key means the key that pays gas never signs the manifest.
 
 ### TLS key
 
@@ -140,7 +140,7 @@ The derived refund signer is a new key, and `LongjingCredits.serverPublicKey` is
 
 1. Deploy the new image on dstack.
 2. Read `refundSigner.x` and `refundSigner.y` from `GET /attestation/manifest`.
-3. Deploy `LongjingCredits` with them and `SERVER_ADDRESS` set to the manifest's `txSignerAddress` (`NODE_ENV=production SERVER_PUBKEY_X=… SERVER_PUBKEY_Y=… SERVER_ADDRESS=…`, see [contracts/README.md](../contracts/README.md#deployment)), and point `ZK_CONTRACT_ADDRESS` at it. Fund `txSignerAddress` for gas.
+3. Deploy `LongjingCredits` with them and `SERVER_ADDRESS` set to the manifest's `txSignerAddress` (`NODE_ENV=production SERVER_PUBKEY_X=… SERVER_PUBKEY_Y=… SERVER_ADDRESS=… OPERATOR_PAYOUT=…`, see [contracts/README.md](../contracts/README.md#deployment)), and point `ZK_CONTRACT_ADDRESS` at it. Fund `txSignerAddress` for gas.
 
 An existing contract whose `serverAddress` is another key moves to `txSignerAddress` through the timelocked `serverAddress` change.
 

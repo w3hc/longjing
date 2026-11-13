@@ -20,8 +20,8 @@ export interface CreditsGovernance {
 }
 
 /**
- * Reads who can change LongjingCredits' verifiers, serverAddress and refund
- * key, and how fast (docs/GOVERNANCE.md).
+ * Reads who can change LongjingCredits' verifiers, serverAddress,
+ * operatorPayout and refund key, and how fast (docs/GOVERNANCE.md).
  * @param reader A provider on the chain LongjingCredits is deployed on
  * @param credits The LongjingCredits address
  */
@@ -59,7 +59,7 @@ export function checkCreditsGovernance(
 
   if (!timelock) {
     failures.push(
-      `LongjingCredits is owned by ${governance.owner}, not a timelock: a single account can queue verifier, serverAddress and refund key changes`,
+      `LongjingCredits is owned by ${governance.owner}, not a timelock: a single account can queue verifier, serverAddress, operatorPayout and refund key changes`,
     );
   } else {
     if (timelock.minDelay < minDelay) {

@@ -42,7 +42,8 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     enum Target {
         SettlementVerifier,
         ServerAddress,
-        RefundKey
+        RefundKey,
+        OperatorPayout
     }
 
     struct PendingChange {
@@ -122,8 +123,11 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     bytes32[ROOT_HISTORY_SIZE] public roots;
     uint256 public currentRootIndex;
 
-    /// @notice Operator's address, which claims expired notes and operator revenue
+    /// @notice Operator's hot address, which claims expired notes. The operator balance goes to operatorPayout.
     address public serverAddress;
+
+    /// @notice Where the operator balance is paid, meant to be the Safe or a cold address
+    address public operatorPayout;
 
     /// @notice Refund signer key the server signs accumulators with
     EdDSAPublicKey public serverPublicKey;
@@ -162,6 +166,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     event NoteExpiredClaimed(bytes32 indexed commitment, uint256 amount);
     event OperatorBalanceWithdrawn(address indexed to, uint256 amount);
     event ServerAddressUpdated(address indexed oldAddress, address indexed newAddress);
+    event OperatorPayoutUpdated(address indexed oldAddress, address indexed newAddress);
     event RefundKeyProposed(bytes32 x, bytes32 y, uint256 eta);
     event RefundKeyUpdated(bytes32 x, bytes32 y);
     event ChangeProposed(Target indexed target, address value, uint256 eta);
@@ -194,13 +199,15 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
 
     constructor(
         address _serverAddress,
+        address _operatorPayout,
         bytes32 _serverPubKeyX,
         bytes32 _serverPubKeyY,
         uint256 _cMax,
         uint256 _slashBounty
     ) Ownable(msg.sender) {
-        if (_serverAddress == address(0)) revert ZeroAddress();
+        if (_serverAddress == address(0) || _operatorPayout == address(0)) revert ZeroAddress();
         serverAddress = _serverAddress;
+        operatorPayout = _operatorPayout;
         serverPublicKey = EdDSAPublicKey({x: _serverPubKeyX, y: _serverPubKeyY});
         acceptedRefundKeys[_refundKeyId(_serverPubKeyX, _serverPubKeyY)] = true;
         C_MAX = _cMax;
@@ -362,14 +369,15 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-     * @notice Pay the operator what closed notes owe it
+     * @notice Pay operatorPayout what closed notes owe the operator
+     * @dev Anyone can call it: the payee is operatorPayout, whoever calls
      */
     function withdrawOperatorBalance() external nonReentrant {
-        if (msg.sender != serverAddress) revert Unauthorized();
         uint256 amount = operatorBalance;
         operatorBalance = 0;
-        _pay(serverAddress, amount);
-        emit OperatorBalanceWithdrawn(serverAddress, amount);
+        address payee = operatorPayout;
+        _pay(payee, amount);
+        emit OperatorBalanceWithdrawn(payee, amount);
     }
 
     // ============ Views ============
@@ -438,7 +446,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     // ============ Admin ============
 
     /**
-     * @notice Queue a verifier or server address change, executable after ADMIN_DELAY
+     * @notice Queue a verifier, server address or operator payout change, executable after ADMIN_DELAY
      * @dev Overwrites any change already pending for the same target and restarts the delay
      */
     function proposeChange(Target _target, address _value) external onlyOwner {
@@ -473,9 +481,12 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
             serverPublicKey = EdDSAPublicKey({x: change.keyX, y: change.keyY});
             acceptedRefundKeys[_refundKeyId(change.keyX, change.keyY)] = true;
             emit RefundKeyUpdated(change.keyX, change.keyY);
-        } else {
+        } else if (_target == Target.ServerAddress) {
             emit ServerAddressUpdated(serverAddress, change.value);
             serverAddress = change.value;
+        } else {
+            emit OperatorPayoutUpdated(operatorPayout, change.value);
+            operatorPayout = change.value;
         }
 
         emit ChangeExecuted(_target, change.value);
