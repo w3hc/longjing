@@ -17,7 +17,7 @@ import { PricingRepository } from '../pricing/pricing.repository';
 import { PricingOracleService } from '../pricing/pricing-oracle.service';
 import { CostEstimationService } from './cost-estimation.service';
 import { ComputeLimiterService } from './compute-limiter.service';
-import { ClaudeProvider } from '../providers/claude';
+import { ClaudeProvider, CLAUDE_CONFIG } from '../providers/claude';
 import { KeysModule } from '../keys/keys.module';
 import { AttestationModule } from '../attestation/attestation.module';
 
@@ -54,7 +54,7 @@ export class LongjingModule implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     // Initialize Claude provider
-    const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
+    const apiKey = this.configService.get<string>(CLAUDE_CONFIG.API_KEY_ENV);
     await this.claudeProvider.initialize({
       apiKey,
       timeout: 120000,

@@ -10,6 +10,7 @@ import {
   validateSync,
 } from 'class-validator';
 import { assertNoKeyMaterialInEnv } from '../keys/key-policy';
+import { CLAUDE_CONFIG } from '../providers/claude/claude.config';
 import { findPlaceholders, isProd, NODE_ENVS } from './profile';
 import type { NodeEnv } from './profile';
 
@@ -55,7 +56,13 @@ export class EnvironmentVariables {
   MAX_CONCURRENT_PROOFS?: number;
 }
 
-const PROD_REQUIRED = ['ETHEREUM_RPC_URLS', 'ZK_CONTRACT_ADDRESS'] as const;
+// The provider's key too: without it, the service would answer with mock
+// responses
+const PROD_REQUIRED = [
+  'ETHEREUM_RPC_URLS',
+  'ZK_CONTRACT_ADDRESS',
+  CLAUDE_CONFIG.API_KEY_ENV,
+] as const;
 
 const PROD_REFUSED = [
   'ANVIL_RPC_URL',

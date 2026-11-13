@@ -5,6 +5,7 @@ const PROD = {
   NODE_ENV: 'production',
   ETHEREUM_RPC_URLS: 'https://eth.drpc.org,https://rpc.flashbots.net',
   ZK_CONTRACT_ADDRESS: '0x1111111111111111111111111111111111111111',
+  ANTHROPIC_API_KEY: 'sk-ant-test',
 };
 
 describe('Environment Validation', () => {
@@ -108,12 +109,25 @@ describe('Environment Validation', () => {
       expect(result.NODE_ENV).toBe('development');
     });
 
-    it.each(['ETHEREUM_RPC_URLS', 'ZK_CONTRACT_ADDRESS'])(
+    it.each(['ETHEREUM_RPC_URLS', 'ZK_CONTRACT_ADDRESS', 'ANTHROPIC_API_KEY'])(
       'prod requires %s',
       (name) => {
         expect(() =>
           validateEnvironment({ ...PROD, [name]: undefined }),
         ).toThrow(`NODE_ENV=production requires ${name}`);
+      },
+    );
+
+    it('prod refuses an empty ANTHROPIC_API_KEY', () => {
+      expect(() =>
+        validateEnvironment({ ...PROD, ANTHROPIC_API_KEY: '' }),
+      ).toThrow('NODE_ENV=production requires ANTHROPIC_API_KEY');
+    });
+
+    it.each(['development', 'test'])(
+      'NODE_ENV=%s starts without ANTHROPIC_API_KEY',
+      (NODE_ENV) => {
+        expect(validateEnvironment({ NODE_ENV }).NODE_ENV).toBe(NODE_ENV);
       },
     );
 
@@ -156,7 +170,7 @@ describe('Environment Validation', () => {
             '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
         }),
       ).toThrow(
-        /requires ETHEREUM_RPC_URLS, ZK_CONTRACT_ADDRESS\n.*refuses SERVER_TX_PRIVATE_KEY\n.*placeholder values in SERVER_TX_PRIVATE_KEY/,
+        /requires ETHEREUM_RPC_URLS, ZK_CONTRACT_ADDRESS, ANTHROPIC_API_KEY\n.*refuses SERVER_TX_PRIVATE_KEY\n.*placeholder values in SERVER_TX_PRIVATE_KEY/,
       );
     });
   });
