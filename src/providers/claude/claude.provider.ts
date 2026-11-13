@@ -156,10 +156,7 @@ export class ClaudeProvider extends BaseProvider implements ApiProvider {
       messages,
       model = DEFAULT_CLAUDE_MODEL,
       maxTokens = 8192,
-      temperature = 1.0,
       system,
-      topP,
-      topK,
       stopSequences,
       metadata,
       stream = false,
@@ -176,15 +173,9 @@ export class ClaudeProvider extends BaseProvider implements ApiProvider {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         max_tokens: maxTokens,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        temperature,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         system,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         messages,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        top_p: topP,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        top_k: topK,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         stop_sequences: stopSequences,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
