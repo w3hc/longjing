@@ -18,6 +18,9 @@
  *   pnpm verify:attestation <url> --app <DstackApp> [--from-block <n>]
  *     [--rpc <url>] [--min-delay <seconds>]
  *
+ * Through Tor, e.g. to the gateway's .onion address:
+ *   pnpm verify:attestation https://<address>.onion/attestation --socks 127.0.0.1:9050
+ *
  * Check who can change LongjingCredits' verifiers, serverAddress and
  * operatorPayout:
  *   pnpm verify:attestation <url> --credits <LongjingCredits>
@@ -25,10 +28,11 @@
  *
  * What it verifies:
  *   1. Platform detection (not 'mock')
- *   2. report_data commits to the returned identity and refund signer
- *      keys, the TLS certificate and a fresh random nonce
+ *   2. report_data commits to the returned identity, refund signer and
+ *      onion service keys, the TLS certificate and a fresh random nonce
  *   3. The served TLS certificate is the bound one — proves TLS terminates
- *      inside the attested enclave
+ *      inside the attested enclave — and a .onion host is the bound onion
+ *      service
  *   4. The event log replays to the quote's RTMR0–3
  *   5. The key manifest signs the same keys, and names the transaction
  *      signer that LongjingCredits.serverAddress should be
@@ -48,9 +52,6 @@
 
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import * as http from 'http';
-import * as https from 'https';
-import * as tls from 'tls';
 import { JsonRpcProvider, getAddress } from 'ethers';
 import {
   DEFAULT_MIN_DELAY_SECONDS,
@@ -65,7 +66,8 @@ import {
 import { BoundAttestation } from '../../src/attestation/attestation.types';
 import { verifyKeyBinding } from '../../src/attestation/key-binding';
 import { SignedKeyManifest } from '../../src/keys/key-derivation.service';
-import { TLS_CLIENT_GROUPS } from '../../src/tls/tls-groups';
+import { GatewayResponse, GatewayTransport } from '../client/gateway';
+import { SocksProxy, nodeTransport } from '../client/transport';
 
 type AttestationQuote = BoundAttestation & { instructions?: string };
 
@@ -143,62 +145,67 @@ function info(message: string) {
 }
 
 /**
- * GET JSON from the gateway, offering the hybrid post-quantum key exchange
- * groups over HTTPS
+ * GET JSON from the gateway, over a fresh connection per request that offers
+ * the hybrid post-quantum key exchange groups, through Tor with --socks
  */
-function getJson<T>(url: string): Promise<T> {
-  const request = url.startsWith('https:')
-    ? (callback: (res: http.IncomingMessage) => void) =>
-        https.get(url, { ecdhCurve: TLS_CLIENT_GROUPS }, callback)
-    : (callback: (res: http.IncomingMessage) => void) =>
-        http.get(url, callback);
-
-  return new Promise((resolve, reject) => {
-    request((res) => {
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk: string) => (body += chunk));
-      res.on('end', () => {
-        const status = res.statusCode ?? 0;
-        if (status < 200 || status >= 300) {
-          reject(new Error(`HTTP ${status}: ${res.statusMessage}`));
-          return;
-        }
-        try {
-          resolve(JSON.parse(body) as T);
-        } catch (error) {
-          reject(error);
-        }
-      });
-    }).on('error', reject);
+async function getJson<T>(
+  transport: GatewayTransport,
+  path: string,
+  pinnedCertificate?: Uint8Array,
+): Promise<{ json: T; response: GatewayResponse }> {
+  const response = await transport.request({
+    method: 'GET',
+    path,
+    pinnedCertificate,
   });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`HTTP ${response.status} for ${path}`);
+  }
+  return { json: JSON.parse(response.body) as T, response };
 }
 
 /**
- * Fetch attestation from URL or read from file
+ * Fetch attestation from the gateway, with the certificate of the TLS
+ * session that returned it, or read it from a file
  */
-async function fetchAttestation(source: string): Promise<AttestationQuote> {
+async function fetchAttestation(
+  source: string,
+  socks?: SocksProxy,
+): Promise<{ attestation: AttestationQuote; response?: GatewayResponse }> {
   if (source.startsWith('http://') || source.startsWith('https://')) {
-    log(`Fetching attestation from: ${source}`, 'blue');
-    return await getJson<AttestationQuote>(source);
+    log(`Fetching attestation from: ${source}${socks ? ` through Tor at ${socks.host}:${socks.port}` : ''}`, 'blue');
+    const url = new URL(source);
+    const { json, response } = await getJson<AttestationQuote>(
+      nodeTransport(url.origin, socks),
+      url.pathname + url.search,
+    );
+    return { attestation: json, response };
   } else {
     log(`Reading attestation from file: ${source}`, 'blue');
     const content = fs.readFileSync(source, 'utf-8');
-    return JSON.parse(content);
+    return { attestation: JSON.parse(content) };
   }
 }
 
 /**
- * Fetch the key manifest signed by the enclave identity key
+ * Fetch the key manifest signed by the enclave identity key, from the server
+ * whose certificate returned the attestation
  */
 async function fetchKeyManifest(
   baseUrl: string,
+  socks: SocksProxy | undefined,
+  certificate: Uint8Array | null,
 ): Promise<SignedKeyManifest | undefined> {
-  const url = new URL('/attestation/manifest', baseUrl).toString();
-  log(`Fetching key manifest from: ${url}`, 'blue');
+  log(`Fetching key manifest from: ${new URL('/attestation/manifest', baseUrl).toString()}`, 'blue');
 
   try {
-    return await getJson<SignedKeyManifest>(url);
+    return (
+      await getJson<SignedKeyManifest>(
+        nodeTransport(baseUrl, socks),
+        '/attestation/manifest',
+        certificate ?? undefined,
+      )
+    ).json;
   } catch (error) {
     warning(`Could not fetch key manifest: ${error instanceof Error ? error.message : String(error)}`);
     return undefined;
@@ -206,52 +213,18 @@ async function fetchKeyManifest(
 }
 
 /**
- * Fetch the DER-encoded TLS leaf certificate the server actually presents.
- * Certificate validity is NOT checked here — the certificate is instead
- * pinned against the certificate the attestation binds.
+ * Report the key exchange of the TLS session that returned the attestation
  */
-function fetchServedTlsCertificate(baseUrl: string): Promise<Buffer | null> {
-  const url = new URL(baseUrl);
-  if (url.protocol !== 'https:') {
-    return Promise.resolve(null);
+function reportKeyExchange(response: GatewayResponse | undefined) {
+  if (!response?.certificate) {
+    return;
   }
-
-  const host = url.hostname;
-  const port = url.port ? parseInt(url.port, 10) : 443;
-  log(`Fetching served TLS certificate from: ${host}:${port}`, 'blue');
-
-  return new Promise((resolve) => {
-    const socket = tls.connect(
-      {
-        host,
-        port,
-        servername: host,
-        // Trust is established via attestation binding, not a CA chain
-        rejectUnauthorized: false,
-        ecdhCurve: TLS_CLIENT_GROUPS,
-      },
-      () => {
-        const group = (socket.getEphemeralKeyInfo() as { name?: string } | null)
-          ?.name;
-        if (group?.includes('MLKEM')) {
-          success(`TLS key exchange: ${group} (hybrid post-quantum)`);
-        } else {
-          warning(`TLS key exchange: ${group ?? 'unknown'} (classical only)`);
-        }
-        const cert = socket.getPeerCertificate(true);
-        socket.end();
-        resolve(cert && cert.raw ? Buffer.from(cert.raw) : null);
-      },
-    );
-    socket.setTimeout(10000, () => {
-      socket.destroy();
-      resolve(null);
-    });
-    socket.on('error', (err) => {
-      warning(`Could not fetch TLS certificate: ${err.message}`);
-      resolve(null);
-    });
-  });
+  const group = response.keyExchange;
+  if (group?.includes('MLKEM')) {
+    success(`TLS key exchange: ${group} (hybrid post-quantum)`);
+  } else {
+    warning(`TLS key exchange: ${group ?? 'unknown'} (classical only)`);
+  }
 }
 
 /**
@@ -264,6 +237,7 @@ function verifyBinding(
   nonce: Buffer | undefined,
   servedCertificate: Buffer | undefined,
   keyManifest: SignedKeyManifest | undefined,
+  host: string | undefined,
 ): boolean {
   log(`\n🔑 Key Binding Verification:`, 'blue');
   info(`  Nonce: ${nonce ? '0x' + nonce.toString('hex') : 'none'}`);
@@ -272,6 +246,7 @@ function verifyBinding(
     nonce,
     servedCertificate,
     keyManifest,
+    host,
   });
   if (failures.length > 0) {
     failures.forEach((failure) => error(failure));
@@ -283,6 +258,14 @@ function verifyBinding(
     warning('No TLS certificate is bound: TLS terminates OUTSIDE the TEE');
   } else if (servedCertificate) {
     success('TLS terminates inside the attested enclave');
+  }
+  if (attestation.onionAddress) {
+    success(`Onion service bound: ${attestation.onionAddress}`);
+    if (host?.toLowerCase().endsWith('.onion')) {
+      success('Reached at the bound onion service');
+    }
+  } else {
+    warning('No onion service key is bound');
   }
   if (attestation.eventLog !== undefined) {
     success('The event log replays to RTMR0–3');
@@ -556,6 +539,7 @@ async function verifyAttestation(
   source: string,
   governanceOptions?: GovernanceOptions,
   creditsOptions?: CreditsOptions,
+  socks?: SocksProxy,
 ) {
   log('\n🔍 Longjing TEE Attestation Verifier', 'cyan');
   log('═══════════════════════════════════\n', 'cyan');
@@ -565,13 +549,16 @@ async function verifyAttestation(
     const isUrl = source.startsWith('http://') || source.startsWith('https://');
     const nonce = crypto.randomBytes(32);
     let baseUrl: string | undefined;
+    let host: string | undefined;
     if (isUrl) {
       const url = new URL(source);
       baseUrl = url.origin;
+      host = url.hostname;
       url.searchParams.set('nonce', nonce.toString('hex'));
       source = url.toString();
     }
-    const attestation = await fetchAttestation(source);
+    const { attestation, response } = await fetchAttestation(source, socks);
+    reportKeyExchange(response);
 
     // 2. Check platform
     log(`\n🖥️  Platform Check:`, 'blue');
@@ -588,9 +575,11 @@ async function verifyAttestation(
 
     // 3. Verify report_data binds the keys, the nonce, the TLS certificate
     // and the event log
-    const keyManifest = isUrl ? await fetchKeyManifest(baseUrl!) : undefined;
-    const servedCertificate = isUrl
-      ? ((await fetchServedTlsCertificate(baseUrl!)) ?? undefined)
+    const keyManifest = isUrl
+      ? await fetchKeyManifest(baseUrl!, socks, response?.certificate ?? null)
+      : undefined;
+    const servedCertificate = response?.certificate
+      ? Buffer.from(response.certificate)
       : undefined;
     if (!isUrl) {
       warning('Local file mode: the nonce in the file cannot prove freshness');
@@ -604,6 +593,7 @@ async function verifyAttestation(
           : undefined,
       servedCertificate,
       keyManifest,
+      host,
     );
     if (!bindingValid) {
       error('\n❌ CRITICAL: key binding verification FAILED');
@@ -952,6 +942,13 @@ const rpc = flag('--rpc') ?? process.env.BASE_RPC_URL ?? 'https://mainnet.base.o
 const fromBlock = flag('--from-block');
 const minDelay = flag('--min-delay');
 const credits = flag('--credits');
+const socksFlag = flag('--socks');
+const socks: SocksProxy | undefined = socksFlag
+  ? {
+      host: socksFlag.slice(0, socksFlag.lastIndexOf(':')),
+      port: Number(socksFlag.slice(socksFlag.lastIndexOf(':') + 1)),
+    }
+  : undefined;
 const creditsRpc =
   flag('--credits-rpc') ??
   process.env.ETHEREUM_RPC_URLS?.split(',')[0] ??
@@ -977,11 +974,11 @@ if (args.length === 0) {
   const defaultUrl = 'http://localhost:3000/attestation';
   log(`No URL provided, using default: ${defaultUrl}`, 'yellow');
   log(
-    'Usage: pnpm verify:attestation [url-or-file] [--app <DstackApp>] [--from-block <n>] [--rpc <url>] [--credits <LongjingCredits>] [--credits-rpc <url>] [--min-delay <seconds>]\n',
+    'Usage: pnpm verify:attestation [url-or-file] [--socks <host:port>] [--app <DstackApp>] [--from-block <n>] [--rpc <url>] [--credits <LongjingCredits>] [--credits-rpc <url>] [--min-delay <seconds>]\n',
     'cyan',
   );
-  verifyAttestation(defaultUrl, governanceOptions, creditsOptions);
+  verifyAttestation(defaultUrl, governanceOptions, creditsOptions, socks);
 } else {
   const source = args[0];
-  verifyAttestation(source, governanceOptions, creditsOptions);
+  verifyAttestation(source, governanceOptions, creditsOptions, socks);
 }
