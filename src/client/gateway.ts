@@ -4,13 +4,15 @@
  * nonce or a bound key doesn't match. The only way to get a `post` is
  * through `openGateway`.
  *
- * The transport is the only Node-specific part: see transport.ts for Node,
- * and docs/INTEGRATION_GUIDELINES.md for a browser.
+ * The transport is the only environment-specific part: scripts/client/
+ * transport.ts for Node, fetchTransport for a browser
+ * (docs/INTEGRATION_GUIDELINES.md).
  */
 
-import { BoundAttestation } from '../../src/attestation/attestation.types';
-import { verifyKeyBinding } from '../../src/attestation/key-binding';
-import type { SignedKeyManifest } from '../../src/keys/key-derivation.service';
+import { BoundAttestation } from '../attestation/attestation.types';
+import { verifyKeyBinding } from '../attestation/key-binding';
+import type { SignedKeyManifest } from '../keys/key-manifest';
+import { base64ToBytes, bytesToHex } from '../common/bytes';
 
 export interface GatewayRequest {
   method: 'GET' | 'POST';
@@ -34,6 +36,11 @@ export interface GatewayTransport {
   readonly host: string;
   /** Whether the transport is TLS */
   readonly secure: boolean;
+  /**
+   * False when the transport can't see the session's TLS certificate, as in
+   * a browser: the attested .onion address then binds the session
+   */
+  readonly certificateVisible?: boolean;
   request(request: GatewayRequest): Promise<GatewayResponse>;
 }
 
@@ -50,6 +57,8 @@ export interface CheckOptions {
   servedCertificate?: Uint8Array | null;
   keyManifest?: SignedKeyManifest;
   host?: string;
+  /** False when the client can't see the TLS certificate, as in a browser */
+  certificateVisible?: boolean;
   /**
    * Accepts the mock platform, plain HTTP and a missing key manifest: a
    * local gateway with NODE_ENV=development, never a deployment
@@ -82,7 +91,13 @@ export function checkAttestation(
         `The gateway attests with ${attestation.platform}, not a dstack TDX quote`,
       );
     }
-    if (!options.servedCertificate) {
+    if (options.certificateVisible === false) {
+      if (!isOnion(options.host)) {
+        failures.push(
+          "A browser can't pin the TLS certificate: reach the gateway at its attested .onion address",
+        );
+      }
+    } else if (!options.servedCertificate) {
       failures.push('The gateway was not reached over TLS');
     }
     if (attestation.eventLog === undefined) {
@@ -94,10 +109,8 @@ export function checkAttestation(
   }
   failures.push(
     ...verifyKeyBinding(attestation, {
-      nonce: Buffer.from(options.nonce),
-      servedCertificate: options.servedCertificate
-        ? Buffer.from(options.servedCertificate)
-        : undefined,
+      nonce: options.nonce,
+      servedCertificate: options.servedCertificate ?? undefined,
       keyManifest: options.keyManifest,
       host: options.host,
     }),
@@ -115,7 +128,7 @@ export async function openGateway(
   options: { development?: boolean } = {},
 ): Promise<Gateway> {
   const nonce = globalThis.crypto.getRandomValues(new Uint8Array(32));
-  const nonceHex = Buffer.from(nonce).toString('hex');
+  const nonceHex = bytesToHex(nonce);
 
   const response = await transport.request({
     method: 'GET',
@@ -146,6 +159,7 @@ export async function openGateway(
     servedCertificate: response.certificate,
     keyManifest,
     host: transport.host,
+    certificateVisible: transport.certificateVisible,
     development: options.development,
   });
   if (failures.length > 0) {
@@ -153,7 +167,7 @@ export async function openGateway(
   }
 
   const pinned = attestation.keys.tlsCertificate
-    ? Buffer.from(attestation.keys.tlsCertificate, 'base64')
+    ? base64ToBytes(attestation.keys.tlsCertificate)
     : undefined;
   return {
     attestation,
@@ -164,9 +178,48 @@ export async function openGateway(
         body: JSON.stringify(body),
         pinnedCertificate: pinned,
       });
-      return { status: res.status, json: parse(res.body) };
+      return { status: res.status, json: parse<unknown>(res.body) };
     },
   };
+}
+
+/**
+ * A browser transport over fetch: no cookies, no referrer, no cache. It
+ * can't see or pin the TLS certificate, so outside development the gateway
+ * must be its attested .onion address, in Tor Browser
+ * (docs/INTEGRATION_GUIDELINES.md#verifying-in-the-browser).
+ * @param baseUrl The gateway's origin, https://<address>.onion
+ */
+export function fetchTransport(baseUrl: string): GatewayTransport {
+  const url = new URL(baseUrl);
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error(`Unsupported gateway URL ${baseUrl}`);
+  }
+  return {
+    host: url.hostname,
+    secure: url.protocol === 'https:',
+    certificateVisible: false,
+    async request({ method, path, body }) {
+      const response = await fetch(new URL(path, url), {
+        method,
+        body,
+        headers: body ? { 'content-type': 'application/json' } : undefined,
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        cache: 'no-store',
+        redirect: 'error',
+      });
+      return {
+        status: response.status,
+        body: await response.text(),
+        certificate: null,
+      };
+    },
+  };
+}
+
+function isOnion(host: string | undefined): boolean {
+  return !!host?.toLowerCase().replace(/\.$/, '').endsWith('.onion');
 }
 
 function parse<T>(text: string): T | undefined {

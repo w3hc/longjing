@@ -1,11 +1,12 @@
-import { BoundAttestation } from '../../src/attestation/attestation.types';
-import { buildReportData } from '../../src/attestation/report-data';
-import { onionAddress } from '../../src/tor/onion-key';
+import { BoundAttestation } from '../attestation/attestation.types';
+import { buildReportData } from '../attestation/report-data';
+import { onionAddress } from '../tor/onion-address';
 import {
   AttestationRefused,
   GatewayRequest,
   GatewayResponse,
   GatewayTransport,
+  fetchTransport,
   openGateway,
 } from './gateway';
 
@@ -44,6 +45,7 @@ class FakeTransport implements GatewayTransport {
     readonly host = '127.0.0.1',
     readonly secure = false,
     readonly certificate: Buffer | null = null,
+    readonly certificateVisible = true,
   ) {}
 
   request(request: GatewayRequest): Promise<GatewayResponse> {
@@ -153,5 +155,64 @@ describe('openGateway', () => {
       'The TLS session certificate is not the one bound by the attestation',
     );
     expect(transport.posts()).toHaveLength(0);
+  });
+});
+
+describe('a browser client', () => {
+  const failures = async (transport: FakeTransport) =>
+    (
+      (await openGateway(transport).catch(
+        (e: unknown) => e,
+      )) as AttestationRefused
+    ).failures;
+
+  it("needs the attested .onion host, since it can't pin the certificate", async () => {
+    const clearnet = await failures(
+      new FakeTransport('gateway.example', true, null, false),
+    );
+    const onion = await failures(new FakeTransport(ONION, true, null, false));
+
+    expect(clearnet).toContain(
+      "A browser can't pin the TLS certificate: reach the gateway at its attested .onion address",
+    );
+    expect(clearnet).not.toContain('The gateway was not reached over TLS');
+    expect(onion.join()).not.toMatch(/pin the TLS certificate|over TLS/);
+  });
+
+  it('sends without cookies, referrer or cache through fetch', async () => {
+    const fetch = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{"ok":true}', { status: 201 }));
+    try {
+      const transport = fetchTransport(`https://${ONION}`);
+      const res = await transport.request({
+        method: 'POST',
+        path: '/longjing/request',
+        body: '{}',
+      });
+
+      expect(transport).toMatchObject({
+        host: ONION,
+        secure: true,
+        certificateVisible: false,
+      });
+      expect(res).toEqual({
+        status: 201,
+        body: '{"ok":true}',
+        certificate: null,
+      });
+      expect(fetch).toHaveBeenCalledWith(
+        new URL(`https://${ONION}/longjing/request`),
+        expect.objectContaining({
+          method: 'POST',
+          body: '{}',
+          credentials: 'omit',
+          referrerPolicy: 'no-referrer',
+          cache: 'no-store',
+        }),
+      );
+    } finally {
+      fetch.mockRestore();
+    }
   });
 });

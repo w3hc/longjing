@@ -17,7 +17,7 @@ import type {
   GatewayRequest,
   GatewayResponse,
   GatewayTransport,
-} from './gateway';
+} from '../../src/client/gateway';
 
 export interface SocksProxy {
   host: string;

@@ -74,7 +74,7 @@ import {
   GatewayRequest,
   GatewayTransport,
   openGateway,
-} from '../client/gateway';
+} from '../../src/client/gateway';
 import { nodeTransport } from '../client/transport';
 import type { BoundAttestation } from '../../src/attestation/attestation.types';
 
