@@ -142,6 +142,18 @@ describe('Environment Validation', () => {
       );
     });
 
+    it('takes CORS_ORIGINS as exact origins in production, never a wildcard', () => {
+      expect(() =>
+        validateEnvironment({
+          ...PROD,
+          CORS_ORIGINS: 'https://longjing.w3hc.org',
+        }),
+      ).not.toThrow();
+      expect(() => validateEnvironment({ ...PROD, CORS_ORIGINS: '*' })).toThrow(
+        'CORS_ORIGINS takes exact origins',
+      );
+    });
+
     it('takes ONION_SERVICE=true or false locally, nothing else', () => {
       expect(
         validateEnvironment({ NODE_ENV: 'development', ONION_SERVICE: 'true' })

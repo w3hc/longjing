@@ -10,6 +10,7 @@ import {
   validateSync,
 } from 'class-validator';
 import { assertNoKeyMaterialInEnv } from '../keys/key-policy';
+import { parseCorsOrigins } from './cors';
 import { CLAUDE_CONFIG } from '../providers/claude/claude.config';
 import { findPlaceholders, isProd, NODE_ENVS } from './profile';
 import type { NodeEnv } from './profile';
@@ -114,6 +115,12 @@ function profileErrors(config: Record<string, unknown>): string[] {
  */
 export function validateEnvironment(config: Record<string, unknown>) {
   const problems = profileErrors(config);
+  try {
+    // Optional in every mode: empty disables browser access in production
+    parseCorsOrigins(config.CORS_ORIGINS);
+  } catch (error) {
+    problems.push((error as Error).message);
+  }
   if (problems.length > 0) {
     throw new Error(`Environment validation failed:\n${problems.join('\n')}`);
   }

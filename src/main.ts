@@ -13,6 +13,7 @@ import { loadTlsMaterial } from './tls/tee-tls';
 import { assertNoKeyMaterialInEnv } from './keys/key-policy';
 import { isProd } from './config/profile';
 import { LISTEN_PORT } from './config/listen';
+import { corsOrigin } from './config/cors';
 
 async function bootstrap() {
   const prod = isProd();
@@ -76,9 +77,12 @@ async function bootstrap() {
     }),
   );
 
-  // CORS configuration - restrict to trusted origins in production
+  // Browser pages may call the API only from the origins in CORS_ORIGINS in
+  // production. No credentials: the API uses no cookies.
   app.enableCors({
-    origin: prod ? false : '*', // Disable CORS in production by default
+    origin: corsOrigin(),
+    methods: ['GET', 'POST'],
+    credentials: false,
   });
 
   // Global validation pipe - validates all incoming requests

@@ -25,5 +25,10 @@ services:
       # secret that transits env (docs/KEY_DERIVATION.md). Set it as an
       # encrypted secret: NODE_ENV=production refuses to start without it.
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Browser origins allowed to call the API, comma-separated exact origins.
+      # Empty disables browser access; a wildcard is refused.
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      # The onion service always runs in production, with tor from the image
+      # and a key derived in the enclave (docs/ONION_SERVICE.md)
       # No TEE_PLATFORM: production attests only through dstack
     restart: unless-stopped
