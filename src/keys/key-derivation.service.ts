@@ -26,13 +26,14 @@ export const ONION_SERVICE_DOMAIN = 'longjing/onion-service/v1';
 const HKDF_SALT = 'longjing';
 const REFUND_SIGNER_INFO = lengthPrefixed('longjing-refund-signer-babyjub-v1');
 
-export const KEY_MANIFEST_DOMAIN = { name: 'Longjing', version: '2' };
+export const KEY_MANIFEST_DOMAIN = { name: 'Longjing', version: '3' };
 export const KEY_MANIFEST_TYPES = {
   KeyManifest: [
     { name: 'appId', type: 'address' },
     { name: 'refundSignerX', type: 'bytes32' },
     { name: 'refundSignerY', type: 'bytes32' },
     { name: 'tlsCertificateHash', type: 'bytes32' },
+    { name: 'onionPublicKey', type: 'bytes32' },
     { name: 'txSignerAddress', type: 'address' },
     { name: 'epoch', type: 'uint64' },
   ],
@@ -44,6 +45,8 @@ export interface KeyManifest {
   refundSignerY: string;
   /** SHA-256 of the served TLS leaf certificate (DER), or zero if none. */
   tlsCertificateHash: string;
+  /** ed25519 public key of the onion service. */
+  onionPublicKey: string;
   /** Signs every contract transaction in production; needs gas. */
   txSignerAddress: string;
   epoch: number;
@@ -259,7 +262,12 @@ export class KeyDerivationService implements OnModuleInit {
     tlsCertificateHash: string,
     epoch = 1,
   ): SignedKeyManifest {
-    if (!this.identity || !this.txSigner || !this.refundSignerPublicKey) {
+    if (
+      !this.identity ||
+      !this.txSigner ||
+      !this.refundSignerPublicKey ||
+      !this.onionKey
+    ) {
       throw new Error('Keys not derived');
     }
     const manifest: KeyManifest = {
@@ -267,6 +275,7 @@ export class KeyDerivationService implements OnModuleInit {
       refundSignerX: this.refundSignerPublicKey.x,
       refundSignerY: this.refundSignerPublicKey.y,
       tlsCertificateHash,
+      onionPublicKey: hexlify(this.onionKey.publicKey),
       txSignerAddress: computeAddress(this.txSigner.publicKey),
       epoch,
     };

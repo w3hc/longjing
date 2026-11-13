@@ -30,6 +30,7 @@ const signedManifest = (
     refundSignerX: refundSigner.x,
     refundSignerY: refundSigner.y,
     tlsCertificateHash: sha256(certificate),
+    onionPublicKey: '0x' + onion.toString('hex'),
     txSignerAddress: '0x2222222222222222222222222222222222222222',
     epoch: 1,
     ...overrides,
@@ -227,6 +228,15 @@ describe('verifyKeyBinding', () => {
     ).toEqual(['The key manifest commits to a different TLS certificate']);
   });
 
+  it('rejects a manifest for another onion service', () => {
+    expect(
+      verifyKeyBinding(evidence(), {
+        nonce,
+        keyManifest: signedManifest({ onionPublicKey: '0x' + '07'.repeat(32) }),
+      }),
+    ).toEqual(['The key manifest commits to a different onion service']);
+  });
+
   it('rejects a manifest signed by another key', () => {
     const other = new SigningKey(Wallet.createRandom().privateKey);
 
@@ -244,7 +254,7 @@ describe('verifyKeyBinding', () => {
         nonce,
         keyManifest: signedManifest({}, identity, {
           ...KEY_MANIFEST_DOMAIN,
-          version: '1',
+          version: '2',
         }),
       }),
     ).toEqual(['The key manifest is not signed by the identity key']);

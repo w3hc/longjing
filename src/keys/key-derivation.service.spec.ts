@@ -262,6 +262,9 @@ describe('KeyDerivationService', () => {
       expect(manifest.appId).toBe(APP_ID);
       expect(manifest).not.toHaveProperty('mlkemPublicKeyHash');
       expect(manifest.tlsCertificateHash).toBe(ZeroHash);
+      expect(manifest.onionPublicKey).toBe(
+        hexlify(service.getOnionPublicKey()!),
+      );
       expect(manifest.txSignerAddress).toBe(service.getTxSignerAddress());
       expect(
         verifyTypedData(

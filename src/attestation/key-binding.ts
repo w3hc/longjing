@@ -103,7 +103,13 @@ export function verifyKeyBinding(
 
   if (options.keyManifest) {
     failures.push(
-      ...verifyManifest(options.keyManifest, keys, identity, tlsCertificate),
+      ...verifyManifest(
+        options.keyManifest,
+        keys,
+        identity,
+        tlsCertificate,
+        onion,
+      ),
     );
   }
 
@@ -135,6 +141,7 @@ function verifyManifest(
   keys: BoundKeys,
   identity: Buffer | undefined,
   tlsCertificate: Buffer | undefined,
+  onion: Buffer | undefined,
 ): string[] {
   const failures: string[] = [];
   const refundSigner = keys.refundSignerPublicKey;
@@ -150,6 +157,12 @@ function verifyManifest(
     : '0x' + '00'.repeat(32);
   if (manifest.tlsCertificateHash.toLowerCase() !== tlsCertificateHash) {
     failures.push('The key manifest commits to a different TLS certificate');
+  }
+  if (
+    !onion ||
+    manifest.onionPublicKey?.toLowerCase() !== `0x${onion.toString('hex')}`
+  ) {
+    failures.push('The key manifest commits to a different onion service');
   }
   if (!identity) {
     failures.push('The attestation binds no identity key');

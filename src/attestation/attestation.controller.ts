@@ -43,9 +43,9 @@ export class AttestationController {
 
   /**
    * Returns the EIP-712 key manifest signed by the enclave's identity key,
-   * which binds the refund signer and TLS keys and the transaction signer
-   * address to the app id, with the GetKey signature chains that tie the
-   * keys to the dstack KMS root.
+   * which binds the refund signer, TLS and onion service keys and the
+   * transaction signer address to the app id, with the GetKey signature
+   * chains that tie the keys to the dstack KMS root.
    * See docs/KEY_DERIVATION.md.
    */
   @Get('manifest')
@@ -81,6 +81,11 @@ export class AttestationController {
         signatureChain: this.keyDerivation
           .getRefundSignerSignatureChain()
           .map(hex),
+      },
+      onionService: {
+        address: this.keyDerivation.getOnionAddress(),
+        publicKey: hex(this.keyDerivation.getOnionPublicKey()!),
+        signatureChain: this.keyDerivation.getOnionSignatureChain().map(hex),
       },
     };
   }

@@ -40,6 +40,9 @@ describe('AttestationController', () => {
       getRefundSignerSignatureChain: jest
         .fn()
         .mockReturnValue([new Uint8Array([6])]),
+      getOnionAddress: jest.fn().mockReturnValue('abc.onion'),
+      getOnionPublicKey: jest.fn().mockReturnValue(new Uint8Array([7])),
+      getOnionSignatureChain: jest.fn().mockReturnValue([new Uint8Array([8])]),
     };
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AttestationController],
@@ -86,13 +89,18 @@ describe('AttestationController', () => {
 
       expect(result).toMatchObject({
         ...signed,
-        domain: { name: 'Longjing', version: '2' },
+        domain: { name: 'Longjing', version: '3' },
         identity: {
           address: '0xabc',
           publicKey: '0x04',
           signatureChain: ['0x05'],
         },
         refundSigner: { x: '0x01', y: '0x02', signatureChain: ['0x06'] },
+        onionService: {
+          address: 'abc.onion',
+          publicKey: '0x07',
+          signatureChain: ['0x08'],
+        },
       });
       expect(result).not.toHaveProperty('mlkemPublicKey');
     });
