@@ -65,6 +65,7 @@ services:
       - KMS_URL=${KMS_URL}
       - ETHEREUM_RPC_URLS=${ETHEREUM_RPC_URLS}
       - ZK_CONTRACT_ADDRESS=${ZK_CONTRACT_ADDRESS}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}  # The only secret that transits env
     restart: unless-stopped
 ```
 
@@ -83,6 +84,9 @@ KMS_URL=http://localhost:8001/prpc/PhactoryAPI.GetRuntimeInfo
 ZK_CONTRACT_ADDRESS=<your-contract-address>
 # Comma-separated list of Ethereum mainnet RPC URLs (API will randomly pick one)
 ETHEREUM_RPC_URLS=https://eth.drpc.org,https://rpc.mevblocker.io/fullprivacy,https://rpc.mevblocker.io/noreverts,https://rpc.mevblocker.io/fast,https://rpc.mevblocker.io,https://rpc.flashbots.net/fast,https://rpc.flashbots.net,https://mainnet.gateway.tenderly.co,https://ethereum-rpc.publicnode.com
+
+# Upstream provider's API key, required with NODE_ENV=production
+ANTHROPIC_API_KEY=<your-anthropic-api-key>
 ```
 
 `NODE_ENV` comes from the compose file as a literal. Leave out `OPERATOR_PRIVATE_KEY`, `ANVIL_RPC_URL` and `SERVER_TX_PRIVATE_KEY`: the keys are derived inside the enclave, and `NODE_ENV=production` refuses to start with them in env. Contract transactions, slashing included, are signed by the enclave's transaction signer, so fund its address (`txSignerAddress` in `GET /attestation/manifest`) for gas and set it as the contract's `serverAddress`. Placeholder values, such as Anvil addresses or `example.com` URLs, are refused too, see [LOCAL_SETUP.md](LOCAL_SETUP.md#node_env).
@@ -242,7 +246,7 @@ Phala Cloud uses end-to-end encryption for secrets:
 2. **TEE-only decryption**: Only your application inside the TEE can decrypt the secrets
 3. **No provider access**: Phala Cloud cannot access your decrypted secrets
 
-These are configuration values, never keys: every key is derived inside the enclave, see [KEY_DERIVATION.md](KEY_DERIVATION.md).
+The encrypted secrets are `KMS_URL`, `ETHEREUM_RPC_URLS`, `ZK_CONTRACT_ADDRESS` and `ANTHROPIC_API_KEY`. The first three are configuration values. `ANTHROPIC_API_KEY`, the upstream provider's API key, is the only secret: a third-party credential that necessarily transits env. Production refuses to start without it. Every key the enclave signs or decrypts with is derived inside it, never set here, see [KEY_DERIVATION.md](KEY_DERIVATION.md).
 
 ### Attestation
 
@@ -284,7 +288,7 @@ docker logs dstack-longjing-1
 
 Common issues:
 - **exec format error**: Wrong architecture (must be AMD64, not ARM64)
-- **Missing configuration**: `ETHEREUM_RPC_URLS` or `ZK_CONTRACT_ADDRESS` not set in `.env.prod`
+- **Missing configuration**: `ETHEREUM_RPC_URLS`, `ZK_CONTRACT_ADDRESS` or `ANTHROPIC_API_KEY` not set in `.env.prod`
 - **Key derivation errors**: the `/var/run/dstack.sock` mount is missing, or the compose hash isn't allowed on the `DstackApp`
 
 ### "exec format error"

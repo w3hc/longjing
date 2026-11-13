@@ -54,7 +54,7 @@ Set `ZK_CONTRACT_ADDRESS` to that address in `.env.prod`, and send no other tran
 
 ### 4. Boot the enclave
 
-Deploy the compose file and `.env.prod` on Phala Cloud ([PHALA_CONFIG.md](./PHALA_CONFIG.md#deploying)). Every key is derived inside the enclave: production refuses to start with key material in env ([KEY_DERIVATION.md](./KEY_DERIVATION.md#production-policy)).
+Deploy the compose file and `.env.prod` on Phala Cloud ([PHALA_CONFIG.md](./PHALA_CONFIG.md#deploying)). Every key is derived inside the enclave: production refuses to start with key material in env ([KEY_DERIVATION.md](./KEY_DERIVATION.md#production-policy)). The upstream provider's API key (`ANTHROPIC_API_KEY` for the reference Claude provider) is the one secret `.env.prod` must hold, and production refuses to start without it.
 
 With no contract at `ZK_CONTRACT_ADDRESS` yet, the enclave still boots: it serves `/attestation` and `/attestation/manifest`, answers 503 to every `/longjing` request and to `GET /health/ready`, and retries the contract every 30 s.
 
@@ -124,7 +124,3 @@ Publish what a user needs to check the deployment and to exit without it:
 - the release, its image digest and the compose hash
 - the mirrors of `settlement_js/settlement.wasm` and `settlement.zkey`, with their sha256
 - the trusted setup transcript, so anyone can check the keys came from it
-
-### Known gap
-
-`docker-compose.yml` doesn't pass the upstream provider's API key (`ANTHROPIC_API_KEY` for the reference Claude provider), so a production enclave answers with mock responses. Adding it changes the compose hash, so it ships as a release.

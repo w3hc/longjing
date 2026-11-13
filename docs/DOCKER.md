@@ -164,6 +164,7 @@ Both modes use the following environment variables (configured in `docker-compos
 
 - `NODE_ENV`: `development`, `test` or `production`, required. See [LOCAL_SETUP.md](LOCAL_SETUP.md#node_env)
 - `ETHEREUM_RPC_URLS`, `ZK_CONTRACT_ADDRESS`: required with `NODE_ENV=production`
+- `ANTHROPIC_API_KEY`: the upstream provider's API key, required with `NODE_ENV=production`. Development and test answer with mock responses without it
 - `KMS_URL`: KMS service endpoint (default: `http://localhost:8001/prpc/PhactoryAPI.GetRuntimeInfo`)
 
 To modify these, edit the respective `docker-compose` file before running.
@@ -221,6 +222,7 @@ services:
       - KMS_URL=${KMS_URL}
       - ETHEREUM_RPC_URLS=${ETHEREUM_RPC_URLS}
       - ZK_CONTRACT_ADDRESS=${ZK_CONTRACT_ADDRESS}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}  # The only secret that transits env
     restart: unless-stopped
 ```
 

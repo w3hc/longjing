@@ -10,6 +10,11 @@ export type { ClaudeModel } from '../../pricing/claude-pricing';
  */
 export const CLAUDE_CONFIG = {
   /**
+   * Env var holding the upstream API key, required with NODE_ENV=production
+   */
+  API_KEY_ENV: 'ANTHROPIC_API_KEY',
+
+  /**
    * Default model to use when not specified
    */
   DEFAULT_MODEL: DEFAULT_CLAUDE_MODEL,

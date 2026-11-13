@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The EIP-712 key manifest drops `mlkemPublicKeyHash` and its domain version is now `2` ([#185](https://github.com/w3hc/longjing/issues/185)).
 - In production, `SecretsService` loads from the KMS whenever `KMS_URL` is set, instead of skipping it when `ADMIN_MLKEM_PUBLIC_KEY` was also set ([#185](https://github.com/w3hc/longjing/issues/185)).
 - `docs/MLKEM.md` now explains that ML-KEM is used only in the TLS key exchange, and why Longjing has no application-layer encryption ([#185](https://github.com/w3hc/longjing/issues/185)).
+- With `NODE_ENV=production`, the server refuses to start without the upstream provider's API key (`ANTHROPIC_API_KEY` for the reference Claude provider) instead of answering with mock responses. Development and test still answer with mock responses without it ([#188](https://github.com/w3hc/longjing/issues/188)).
 
 ### Removed
 
@@ -38,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The setup steps in the README, `docs/LOCAL_SETUP.md` and `docs/DOCKER.md` copy the template to `.env`, the only file the server loads, not `.env.local` ([#176](https://github.com/w3hc/longjing/issues/176)).
+- `docker-compose.yml` passes `ANTHROPIC_API_KEY` as a `${ANTHROPIC_API_KEY}` encrypted secret, so a production enclave calls the provider instead of answering with mock responses. This changes the compose hash. `docs/DEPLOYMENT.md` drops its known gap, and `docs/PHALA_CONFIG.md` lists the key among the encrypted secrets ([#188](https://github.com/w3hc/longjing/issues/188)).
 
 ### Security
 
