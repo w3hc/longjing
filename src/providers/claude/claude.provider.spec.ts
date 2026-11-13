@@ -305,7 +305,7 @@ describe('ClaudeProvider', () => {
     });
 
     it('does not send temperature, top_p or top_k upstream', async () => {
-      const mockResponse: Anthropic.Message = {
+      const mockResponse = {
         id: 'msg_123',
         type: 'message',
         role: 'assistant',
@@ -317,7 +317,7 @@ describe('ClaudeProvider', () => {
           input_tokens: 10,
           output_tokens: 5,
         },
-      };
+      } as Anthropic.Message;
 
       const create = jest.fn().mockResolvedValue(mockResponse);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
