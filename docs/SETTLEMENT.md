@@ -123,7 +123,7 @@ Per request the server sees `N`, `x`, `y`, the root, `C_MAX` and `A_pub`.
 - `y` is a point on a line known only to the client. One point says nothing about `k`.
 - The proof is zero-knowledge.
 
-The server stores `(N, x, y)` and nothing else (see [What the server stores](#what-the-server-stores)). Timing and network correlation remain the job of the metadata hardening and of [#99](https://github.com/w3hc/longjing/issues/99).
+The server stores `(N, x, y)` and nothing else (see [What the server stores](#what-the-server-stores)). Network identity is the job of the [onion service](./ONION_SERVICE.md) and of clients that reach it through Tor with a circuit per request ([INTEGRATION_GUIDELINES.md](./INTEGRATION_GUIDELINES.md)). Timing and size correlation remain the job of the metadata hardening and of [#189](https://github.com/w3hc/longjing/issues/189).
 
 ### Sequential requests and the prefix property
 

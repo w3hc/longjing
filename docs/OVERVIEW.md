@@ -152,7 +152,7 @@ The client side is [scripts/client/note.ts](../scripts/client/note.ts), behind `
 4. **Server-free exit**: a withdrawal needs the chain, the note file and `pnpm prove`, nothing from the server
 5. **Expiry**: pausing can't be used to wait out the TTL; the expiry clock stops while paused, and a note that is exiting can't be claimed
 
-These hold against the operator and observers by cryptography. They don't cover timing and network metadata ([#99](https://github.com/w3hc/longjing/issues/99)), or whoever ran the single-party trusted setup ([#135](https://github.com/w3hc/longjing/issues/135)).
+These hold against the operator and observers by cryptography. They don't cover request timing and size ([#189](https://github.com/w3hc/longjing/issues/189)), the network identity of a client that doesn't reach the [onion service](./ONION_SERVICE.md) through Tor ([INTEGRATION_GUIDELINES.md](./INTEGRATION_GUIDELINES.md)), or whoever ran the single-party trusted setup ([#135](https://github.com/w3hc/longjing/issues/135)).
 
 ## Cryptographic Primitives
 

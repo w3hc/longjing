@@ -19,7 +19,7 @@ v0.5.0 is a testnet release. Do not deposit funds you can't afford to lose.
 - **Keys:** the circuit keys come from a single-party trusted setup, so whoever ran it could forge proofs. They are for testnets only until a public ceremony replaces them ([#135](https://github.com/w3hc/longjing/issues/135)).
 - **Audit:** the code has had internal reviews only, no external audit.
 - **Exit:** withdrawing needs the `pnpm prove` client. The standalone withdrawal page is not built yet ([#157](https://github.com/w3hc/longjing/issues/157)).
-- **Network:** request timing, size and the client's network identity are not protected yet ([#99](https://github.com/w3hc/longjing/issues/99)).
+- **Network:** the gateway serves the API at an onion service inside the enclave, whose address the attestation binds, and the reference client verifies the attestation before it sends anything ([ONION_SERVICE.md](docs/ONION_SERVICE.md)). A client that reaches it through Tor, with a circuit per request, hides its network identity ([INTEGRATION_GUIDELINES.md](docs/INTEGRATION_GUIDELINES.md)). No deployment serves it yet ([#191](https://github.com/w3hc/longjing/issues/191)), and request timing and size are not protected ([#189](https://github.com/w3hc/longjing/issues/189)).
 
 ## Design
 
@@ -92,8 +92,8 @@ Longjing is intended to protect the link between a deposit and its requests, the
 It does not protect:
 
 - the content of a request from the upstream provider;
-- the user's network identity, for which Tor or an equivalent is required;
-- request timing and size, which may still correlate requests ([#99](https://github.com/w3hc/longjing/issues/99));
+- the user's network identity, unless the client reaches the gateway's onion service through Tor with a circuit per request ([INTEGRATION_GUIDELINES.md](docs/INTEGRATION_GUIDELINES.md));
+- request timing and size, which may still correlate requests ([#189](https://github.com/w3hc/longjing/issues/189));
 - against a compromised TEE or its hardware vendor;
 - against whoever performed the trusted setup, while it remains single-party.
 
@@ -121,6 +121,7 @@ Longjing retains the original RLN design and places it behind an attested gatewa
 - [QUICK_START.md](docs/QUICK_START.md) — add your own upstream provider in 10 steps
 - [LOCAL_SETUP.md](docs/LOCAL_SETUP.md) — local development setup
 - [API_REFERENCE.md](docs/API_REFERENCE.md) — endpoints, request formats and client-side proving
+- [INTEGRATION_GUIDELINES.md](docs/INTEGRATION_GUIDELINES.md) — calling the API from an app, an agent or Tor Browser without linking requests
 
 **Zero-knowledge**
 - [ZK.md](docs/ZK.md) — circuits and proofs
@@ -137,6 +138,7 @@ Longjing retains the original RLN design and places it behind an attested gatewa
 - [TEE_SETUP.md](docs/TEE_SETUP.md) — production TEE deployment
 - [ATTESTATION.md](docs/ATTESTATION.md) — verifying the attestation and the keys it binds
 - [KEY_DERIVATION.md](docs/KEY_DERIVATION.md) — enclave-derived keys and the key manifest
+- [ONION_SERVICE.md](docs/ONION_SERVICE.md) — the attested onion service run inside the enclave
 - [GOVERNANCE.md](docs/GOVERNANCE.md) — Safe and timelock in front of the builds that can derive the keys
 - [PHALA_CONFIG.md](docs/PHALA_CONFIG.md) — Phala Cloud setup
 - [DOCKER.md](docs/DOCKER.md) — Docker environment

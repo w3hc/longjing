@@ -67,7 +67,7 @@ pnpm verify:attestation https://<gateway>/attestation
 curl https://<gateway>/attestation/manifest
 ```
 
-Take `refundSigner.x`, `refundSigner.y` and `txSignerAddress` from the manifest ([KEY_DERIVATION.md](./KEY_DERIVATION.md#key-manifest)).
+Take `refundSigner.x`, `refundSigner.y` and `txSignerAddress` from the manifest ([KEY_DERIVATION.md](./KEY_DERIVATION.md#key-manifest)). `onionService.address` is the API's `.onion` address: publish it with the deployment, and check it through Tor with `pnpm verify:attestation https://<address>.onion/attestation --socks 127.0.0.1:9050` ([ONION_SERVICE.md](./ONION_SERVICE.md)). Set `CORS_ORIGINS` in `.env.prod` only for browser apps that call the API ([INTEGRATION_GUIDELINES.md](./INTEGRATION_GUIDELINES.md#cors)).
 
 ### 6. Deploy LongjingCredits
 
