@@ -123,7 +123,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
     bytes32[ROOT_HISTORY_SIZE] public roots;
     uint256 public currentRootIndex;
 
-    /// @notice Operator's hot address, which claims expired notes. It never receives the operator balance.
+    /// @notice Operator's hot address, which claims expired notes. The operator balance goes to operatorPayout.
     address public serverAddress;
 
     /// @notice Where the operator balance is paid, meant to be the Safe or a cold address
@@ -370,7 +370,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
 
     /**
      * @notice Pay operatorPayout what closed notes owe the operator
-     * @dev Anyone can call it, since the payee is fixed: never msg.sender or serverAddress
+     * @dev Anyone can call it: the payee is operatorPayout whoever calls, never msg.sender
      */
     function withdrawOperatorBalance() external nonReentrant {
         uint256 amount = operatorBalance;
