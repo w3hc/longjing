@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test/browser/withdraw.e2e.ts` runs two exits from the page opened from `file://`, one with an RPC and a signer key, one through an injected wallet with files from a mirror, and checks that the page's only origin is the RPC (or the mirror) and that no request carries the secret key, the accumulator's blinding or the signer key ([#157](https://github.com/w3hc/longjing/issues/157)).
 - The browser client exports `ethers`, which it already bundled whole ([#157](https://github.com/w3hc/longjing/issues/157)).
 - A "Withdraw without the service" section in the README ([#157](https://github.com/w3hc/longjing/issues/157)).
+- The withdrawal page pays to a new address by default, drawn from Web Crypto randomness in the page. It shows the address and its private key, saves them to a file on request, never sends the key over the network, and enables "Prove and initiate" only once the user ticks "I saved this key". An address entered by hand is still accepted: the page reads its nonce and balance through the RPC or wallet already configured and warns when either is not zero, since paying to it links the exit to its history, and an address that has sent a transaction has published its public key ([#179](https://github.com/w3hc/longjing/issues/179)).
+- `test/browser/withdraw.e2e.ts` pays one exit to the page's new address and one to an address entered by hand, checks the warning for an address that has sent a transaction, and checks that another account sends both transactions while the recipient never signs, and that no request carries the new address's key ([#179](https://github.com/w3hc/longjing/issues/179)).
+- `pnpm demo` checks, under "A depositor can withdraw without the server", that the recipient's nonce is still 0 after the payout: the demo wallet sends both transactions ([#179](https://github.com/w3hc/longjing/issues/179)).
 
 ### Changed
 
