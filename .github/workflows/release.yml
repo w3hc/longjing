@@ -73,7 +73,7 @@ jobs:
           fi
 
   browser-client:
-    name: Build, attest and publish the browser client
+    name: Build, attest and publish the browser client and the withdrawal page
     runs-on: ubuntu-latest
     # The image job creates the release
     needs: image
@@ -102,6 +102,7 @@ jobs:
           subject-path: |
             build/browser/longjing-client.js
             build/browser/longjing-client.mjs
+            build/browser/withdraw.html
 
       - name: Publish the files and their sha256 in the release
         env:
@@ -110,9 +111,14 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" --clobber \
             build/browser/longjing-client.js \
             build/browser/longjing-client.mjs \
+            build/browser/withdraw.html \
             build/browser/SHA256SUMS
           sums=$(cat build/browser/SHA256SUMS)
-          notes=$(printf '## Browser client\n\n```\n%s\n```\n\nBuilt from %s/%s/commit/%s with `pnpm build:browser`. Rebuild it and compare with `sha256sum -c SHA256SUMS`. See [docs/API_REFERENCE.md](%s/%s/blob/%s/docs/API_REFERENCE.md#browser-client).\n' "$sums" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME")
+          page=$(grep ' withdraw.html$' build/browser/SHA256SUMS)
+          # The settlement files the page checks before proving, as circuits/artifacts.json pins them
+          pins=$(jq -r '.files | to_entries[] | select(.key == "settlement_js/settlement.wasm" or .key == "settlement.zkey") | "\(.value)  \(.key | split("/") | last)"' circuits/artifacts.json)
+          release=$(jq -r .release circuits/artifacts.json)
+          notes=$(printf '## Browser client\n\n```\n%s\n```\n\nBuilt from %s/%s/commit/%s with `pnpm build:browser`. Rebuild it and compare with `sha256sum -c SHA256SUMS`. See [docs/API_REFERENCE.md](%s/%s/blob/%s/docs/API_REFERENCE.md#browser-client).\n\n## Withdrawal page\n\n`withdraw.html` exits a note without the server, opened from disk or any mirror:\n\n```\n%s\n```\n\nIt proves with these settlement files, from %s, and refuses any other:\n\n```\n%s\n```\n\nSee [README.md](%s/%s/blob/%s/README.md#withdraw-without-the-service).\n' "$sums" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$page" "$release" "$pins" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME")
           body=$(gh release view "$GITHUB_REF_NAME" --json body -q .body)
           if grep -qF "$sums" <<<"$body"; then
             exit 0
