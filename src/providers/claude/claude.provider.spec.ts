@@ -304,6 +304,43 @@ describe('ClaudeProvider', () => {
       expect(response.usage.costUSD).toBeCloseTo(expectedCost, 10);
     });
 
+    it('does not send temperature, top_p or top_k upstream', async () => {
+      const mockResponse = {
+        id: 'msg_123',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Hello!' }],
+        model: 'claude-sonnet-4-6',
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+        },
+      } as Anthropic.Message;
+
+      const create = jest.fn().mockResolvedValue(mockResponse);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      (provider as any).anthropic = { messages: { create } };
+
+      await provider.execute({
+        endpoint: '/v1/messages',
+        method: 'POST' as const,
+        body: {
+          messages: [{ role: 'user', content: 'Hello' }],
+          model: 'claude-sonnet-4-6',
+          temperature: 0.2,
+          topP: 0.9,
+          topK: 40,
+        },
+      });
+
+      const [params] = create.mock.calls[0] as [Record<string, unknown>];
+      expect(params).not.toHaveProperty('temperature');
+      expect(params).not.toHaveProperty('top_p');
+      expect(params).not.toHaveProperty('top_k');
+    });
+
     it('should throw error for invalid request', async () => {
       const request = {
         endpoint: '/v1/messages',

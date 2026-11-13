@@ -19,10 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/MLKEM.md` no longer calls ML-KEM plainly "post-quantum secure": it names the lattice assumption it rests on and recommends a hybrid X25519 + ML-KEM KEM for any endpoint that uses it ([#176](https://github.com/w3hc/longjing/issues/176)).
 - The Groth16 trade-off in `docs/OVERVIEW.md` and `docs/SETTLEMENT.md` names the risk of a pairing break, not only the quantum one ([#176](https://github.com/w3hc/longjing/issues/176)).
 - The docs present Longjing as a template for any upstream API, with Claude as the reference provider, and say that `POST /longjing/request` still calls Claude directly ([#176](https://github.com/w3hc/longjing/issues/176)).
+- Every dependency is on its latest version: NestJS 12.5, `@anthropic-ai/sdk` 1.8, `better-sqlite3` 13.1, and the lint, format and test tooling. TypeScript stays on 6.0, since TypeScript 7.0 ships without the compiler API that `nest build`, `ts-jest`, `ts-node` and `typescript-eslint` load ([#186](https://github.com/w3hc/longjing/issues/186)).
+- The Claude provider no longer sends `temperature`, `topP` or `topK` upstream, since API version `2026-10-21` rejects them. Requests still accept them and sample at the model's defaults ([#186](https://github.com/w3hc/longjing/issues/186)).
 
 ### Fixed
 
 - The setup steps in the README, `docs/LOCAL_SETUP.md` and `docs/DOCKER.md` copy the template to `.env`, the only file the server loads, not `.env.local` ([#176](https://github.com/w3hc/longjing/issues/176)).
+
+### Security
+
+- The NestJS upgrade brings patched `body-parser`, `multer` and `qs`, which `pnpm audit --prod` flagged as high and moderate. The low `elliptic` advisory under `circomlibjs` has no patched version and remains (LJ-18) ([#186](https://github.com/w3hc/longjing/issues/186)).
 
 ## [0.5.0] - 2026-10-07
 

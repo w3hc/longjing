@@ -24,7 +24,6 @@ export const CLAUDE_CONFIG = {
    */
   DEFAULTS: {
     maxTokens: 8192,
-    temperature: 1.0,
     timeout: 120000, // 2 minutes
     retries: 2,
   },
