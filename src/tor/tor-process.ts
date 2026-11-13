@@ -95,7 +95,11 @@ export async function startOnionService(
       exited,
       options.startTimeoutMs ?? 30_000,
     );
-    control = await TorControl.connect(controlSocket);
+    control = await connectWhenListening(
+      controlSocket,
+      exited,
+      options.startTimeoutMs ?? 30_000,
+    );
     await control.command(
       `AUTHENTICATE ${readFileSync(cookieFile).toString('hex')}`,
     );
@@ -142,6 +146,27 @@ async function waitForFiles(
       throw new Error(`tor did not open its control socket in ${timeoutMs} ms`);
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+/** tor may create the socket file a moment before it accepts connections */
+async function connectWhenListening(
+  path: string,
+  exited: Promise<number | null>,
+  timeoutMs: number,
+): Promise<TorControl> {
+  let gone = false;
+  void exited.then(() => (gone = true));
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      return await TorControl.connect(path);
+    } catch (error) {
+      if (gone || Date.now() > deadline) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   }
 }
 

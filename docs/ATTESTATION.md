@@ -63,6 +63,7 @@ pnpm verify:attestation attestation.json
 - ✅ Platform is not 'mock' (real TEE)
 - ✅ `report_data` commits to the returned keys and to a fresh random nonce
 - ✅ The TLS certificate of the session is the bound one
+- ✅ `onionAddress` is the address of the bound onion service key, and a `.onion` host is that address (`--socks <host:port>` reaches it through Tor)
 - ✅ The TLS key exchange is hybrid post-quantum: it offers `SecP384r1MLKEM1024` and warns when it gets a classical group
 - ✅ The event log replays to RTMR0–3 of the quote
 - ✅ `GET /attestation/manifest` signs the same keys

@@ -10,7 +10,7 @@
 import { randomBytes } from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
-import { Socket, connect as netConnect } from 'net';
+import { Socket, isIP, connect as netConnect } from 'net';
 import * as tls from 'tls';
 import { TLS_CLIENT_GROUPS } from '../../src/tls/tls-groups';
 import type {
@@ -131,7 +131,8 @@ function tlsConnect(
   return new Promise((resolve, reject) => {
     const socket = tls.connect({
       ...(tcp ? { socket: tcp } : { host, port }),
-      servername: host,
+      // SNI takes host names only (RFC 6066)
+      servername: isIP(host) ? undefined : host,
       rejectUnauthorized: false,
       ecdhCurve: TLS_CLIENT_GROUPS,
     });
