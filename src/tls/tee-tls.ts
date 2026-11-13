@@ -32,12 +32,19 @@ import { Logger } from '@nestjs/common';
 import { DstackClient } from '@phala/dstack-sdk';
 
 import { setTlsLeafCertificate } from './tls-context';
+import { TLS_SERVER_GROUPS } from './tls-groups';
 
 export type TlsSource = 'dev-file' | 'file' | 'dstack' | 'external-proxy';
 
+export interface HttpsOptions {
+  key: string | Buffer;
+  cert: string | Buffer;
+  ecdhCurve: string;
+}
+
 export interface TlsMaterial {
   /** Passed to NestFactory.create; undefined = plain HTTP. */
-  httpsOptions: { key: string | Buffer; cert: string | Buffer } | undefined;
+  httpsOptions: HttpsOptions | undefined;
   /** Where the key material came from (for logging/health). */
   source: TlsSource;
 }
@@ -52,6 +59,13 @@ function registerLeafCertificate(certPem: string | Buffer): X509Certificate {
   const leaf = new X509Certificate(certPem);
   setTlsLeafCertificate(Buffer.from(leaf.raw));
   return leaf;
+}
+
+function httpsOptions(
+  key: string | Buffer,
+  cert: string | Buffer,
+): HttpsOptions {
+  return { key, cert, ecdhCurve: TLS_SERVER_GROUPS };
 }
 
 /**
@@ -84,10 +98,10 @@ async function loadFromDstack(): Promise<TlsMaterial | null> {
 
     registerLeafCertificate(result.certificate_chain[0]);
     return {
-      httpsOptions: {
-        key: result.key,
-        cert: result.certificate_chain.join('\n'),
-      },
+      httpsOptions: httpsOptions(
+        result.key,
+        result.certificate_chain.join('\n'),
+      ),
       source: 'dstack',
     };
   } catch (error) {
@@ -107,7 +121,7 @@ function loadFromFiles(keyPath: string, certPath: string): TlsMaterial {
   const key = fs.readFileSync(keyPath);
   const cert = fs.readFileSync(certPath);
   registerLeafCertificate(cert);
-  return { httpsOptions: { key, cert }, source: 'file' };
+  return { httpsOptions: httpsOptions(key, cert), source: 'file' };
 }
 
 /**
