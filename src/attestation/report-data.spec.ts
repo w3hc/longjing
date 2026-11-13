@@ -1,8 +1,13 @@
-import {
-  buildReportData,
-  encodeRefundSignerPublicKey,
-  parseNonce,
-} from './report-data';
+import * as reportData from './report-data';
+
+// Buffer views, for its comparison and hex helpers
+const buildReportData = (
+  ...args: Parameters<typeof reportData.buildReportData>
+) => Buffer.from(reportData.buildReportData(...args));
+const encodeRefundSignerPublicKey = (
+  ...args: Parameters<typeof reportData.encodeRefundSignerPublicKey>
+) => Buffer.from(reportData.encodeRefundSignerPublicKey(...args));
+const { parseNonce } = reportData;
 
 // Vectors computed independently in Python with hashlib and struct.pack('>I')
 const IDENTITY = new Uint8Array([0x04, ...new Uint8Array(64).fill(0x02)]);
@@ -92,8 +97,8 @@ describe('parseNonce', () => {
   });
 
   it('parses 64 hex characters, with or without 0x', () => {
-    expect(parseNonce(hex)).toEqual(Buffer.alloc(32, 0x11));
-    expect(parseNonce(`0x${hex}`)).toEqual(Buffer.alloc(32, 0x11));
+    expect(parseNonce(hex)).toEqual(new Uint8Array(32).fill(0x11));
+    expect(parseNonce(`0x${hex}`)).toEqual(new Uint8Array(32).fill(0x11));
   });
 
   it.each(['11'.repeat(31), '11'.repeat(33), 'zz'.repeat(32)])(

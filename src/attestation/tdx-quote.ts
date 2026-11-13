@@ -1,7 +1,17 @@
-import { createHash } from 'crypto';
+import { sha384 } from '@noble/hashes/sha2';
+import {
+  bytesToHex,
+  concatBytes,
+  equalBytes,
+  hexToBytes,
+  utf8ToBytes,
+} from '../common/bytes';
 
-// TDX quote v4: 48-byte header, then the TD report body
+// TDX quote v4: 48-byte header, then the TD report body, whose report_data
+// is 64 bytes at offset 520
 const QUOTE_HEADER_LENGTH = 48;
+const TDX_REPORT_DATA_OFFSET = QUOTE_HEADER_LENGTH + 520;
+const TDX_REPORT_DATA_LENGTH = 64;
 const MEASUREMENT_LENGTH = 48;
 const TDX_QUOTE_MRTD_OFFSET = QUOTE_HEADER_LENGTH + 136;
 const TDX_QUOTE_RTMR_OFFSETS = [328, 376, 424, 472].map(
@@ -31,14 +41,25 @@ export interface TdxMeasurements {
 }
 
 /**
+ * Reads the report_data a TDX quote attests to.
+ */
+export function tdxQuoteReportData(quote: Uint8Array): Uint8Array {
+  const end = TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH;
+  if (quote.length < end) {
+    throw new Error(`TDX quote too short: ${quote.length} bytes`);
+  }
+  return quote.subarray(TDX_REPORT_DATA_OFFSET, end);
+}
+
+/**
  * Reads MRTD and RTMR0–3 from a TDX quote.
  */
-export function parseTdxMeasurements(quote: Buffer): TdxMeasurements {
+export function parseTdxMeasurements(quote: Uint8Array): TdxMeasurements {
   if (quote.length < TDX_QUOTE_BODY_END) {
     throw new Error(`TDX quote too short: ${quote.length} bytes`);
   }
   const measurement = (offset: number) =>
-    quote.subarray(offset, offset + MEASUREMENT_LENGTH).toString('hex');
+    bytesToHex(quote.subarray(offset, offset + MEASUREMENT_LENGTH));
   const [rtmr0, rtmr1, rtmr2, rtmr3] = TDX_QUOTE_RTMR_OFFSETS.map(measurement);
   return {
     mrtd: measurement(TDX_QUOTE_MRTD_OFFSET),
@@ -58,33 +79,30 @@ export function replayRtmrs(
   eventLog: string,
 ): [string, string, string, string] {
   const events = JSON.parse(eventLog) as TdxEvent[];
-  const rtmrs = [0, 1, 2, 3].map(() => Buffer.alloc(MEASUREMENT_LENGTH));
+  const rtmrs: Uint8Array[] = [0, 1, 2, 3].map(
+    () => new Uint8Array(MEASUREMENT_LENGTH),
+  );
   for (const event of events) {
     if (!Number.isInteger(event.imr) || event.imr < 0 || event.imr > 3) {
       throw new Error(`Event extends an unknown RTMR: ${event.imr}`);
     }
-    const digest = Buffer.from(event.digest, 'hex');
+    const digest = hexToBytes(event.digest);
     if (digest.length > MEASUREMENT_LENGTH) {
       throw new Error('Event digest is longer than 48 bytes');
     }
     if (
       event.event_type === DSTACK_RUNTIME_EVENT_TYPE &&
-      !digest.equals(runtimeEventDigest(event))
+      !equalBytes(digest, runtimeEventDigest(event))
     ) {
       throw new Error(`Runtime event ${event.event} does not match its digest`);
     }
-    const padded = Buffer.concat([
+    const padded = concatBytes(
       digest,
-      Buffer.alloc(MEASUREMENT_LENGTH - digest.length),
-    ]);
-    rtmrs[event.imr] = createHash('sha384')
-      .update(rtmrs[event.imr])
-      .update(padded)
-      .digest();
+      new Uint8Array(MEASUREMENT_LENGTH - digest.length),
+    );
+    rtmrs[event.imr] = sha384(concatBytes(rtmrs[event.imr], padded));
   }
-  const [rtmr0, rtmr1, rtmr2, rtmr3] = rtmrs.map((rtmr) =>
-    rtmr.toString('hex'),
-  );
+  const [rtmr0, rtmr1, rtmr2, rtmr3] = rtmrs.map(bytesToHex);
   return [rtmr0, rtmr1, rtmr2, rtmr3];
 }
 
@@ -92,7 +110,7 @@ export function replayRtmrs(
  * Checks that the event log replays to the RTMRs of the quote.
  * @returns The failed checks, empty when every RTMR matches
  */
-export function verifyEventLog(quote: Buffer, eventLog: string): string[] {
+export function verifyEventLog(quote: Uint8Array, eventLog: string): string[] {
   const { rtmrs } = parseTdxMeasurements(quote);
   let replayed: string[];
   try {
@@ -109,14 +127,16 @@ export function verifyEventLog(quote: Buffer, eventLog: string): string[] {
   );
 }
 
-function runtimeEventDigest(event: TdxEvent): Buffer {
-  const eventType = Buffer.alloc(4);
-  eventType.writeUInt32LE(event.event_type);
-  return createHash('sha384')
-    .update(eventType)
-    .update(':')
-    .update(event.event)
-    .update(':')
-    .update(Buffer.from(event.event_payload, 'hex'))
-    .digest();
+function runtimeEventDigest(event: TdxEvent): Uint8Array {
+  const eventType = new Uint8Array(4);
+  new DataView(eventType.buffer).setUint32(0, event.event_type, true);
+  return sha384(
+    concatBytes(
+      eventType,
+      utf8ToBytes(':'),
+      utf8ToBytes(event.event),
+      utf8ToBytes(':'),
+      hexToBytes(event.event_payload),
+    ),
+  );
 }

@@ -42,7 +42,7 @@ import {
   RequestResponse,
 } from './note';
 import { SlashingService } from '../../src/longjing/slashing.service';
-import { openGateway } from './gateway';
+import { openGateway } from '../../src/client/gateway';
 import { nodeTransport } from './transport';
 
 function usage(): never {

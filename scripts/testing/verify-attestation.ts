@@ -66,7 +66,7 @@ import {
 import { BoundAttestation } from '../../src/attestation/attestation.types';
 import { verifyKeyBinding } from '../../src/attestation/key-binding';
 import { SignedKeyManifest } from '../../src/keys/key-derivation.service';
-import { GatewayResponse, GatewayTransport } from '../client/gateway';
+import { GatewayResponse, GatewayTransport } from '../../src/client/gateway';
 import { SocksProxy, nodeTransport } from '../client/transport';
 
 type AttestationQuote = BoundAttestation & { instructions?: string };

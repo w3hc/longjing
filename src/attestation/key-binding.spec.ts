@@ -39,9 +39,9 @@ const signedManifest = (
   return { manifest, signature: key.sign(digest).serialized };
 };
 
-const tdxQuote = (reportData: Buffer) => {
+const tdxQuote = (reportData: Uint8Array) => {
   const quote = Buffer.alloc(1024);
-  reportData.copy(quote, 568);
+  quote.set(reportData, 568);
   return quote;
 };
 
@@ -60,7 +60,7 @@ const evidence = (
   return {
     platform: 'phala',
     quote: tdxQuote(reportData).toString('base64'),
-    reportData: reportData.toString('hex'),
+    reportData: Buffer.from(reportData).toString('hex'),
     keys: {
       identityPublicKey: identity.publicKey,
       refundSignerPublicKey: refundSigner,
@@ -124,7 +124,7 @@ describe('verifyKeyBinding', () => {
     const reportData = buildReportData({}, nonce);
     const unbound = evidence({
       quote: tdxQuote(reportData).toString('base64'),
-      reportData: reportData.toString('hex'),
+      reportData: Buffer.from(reportData).toString('hex'),
       keys: {
         identityPublicKey: null,
         refundSignerPublicKey: null,

@@ -38,6 +38,13 @@ https://your-domain.com  (production)
     - [2. Make requests](#2-make-requests)
     - [3. Withdraw, without the server](#3-withdraw-without-the-server)
     - [4. Slash a double-spend](#4-slash-a-double-spend)
+  - [Browser Client](#browser-client)
+    - [Load it](#load-it)
+    - [Notes](#notes)
+    - [Artifacts](#artifacts)
+    - [Requests through a verified gateway](#requests-through-a-verified-gateway)
+    - [Exit from the user's wallet](#exit-from-the-users-wallet)
+    - [Limits in a browser](#limits-in-a-browser)
   - [Cost Calculation](#cost-calculation)
     - [Reference provider pricing: Claude (October 2026)](#reference-provider-pricing-claude-october-2026)
     - [Example Calculations](#example-calculations)
@@ -497,7 +504,7 @@ To leave:
 
 ## Client Implementation Guide
 
-`pnpm prove` ([scripts/client/prove.ts](../scripts/client/prove.ts)) is a reference client, built on [scripts/client/note.ts](../scripts/client/note.ts). It keeps the secret key and the accumulator opening in a note file, written with mode 600: keep that file, as it is what you exit with.
+`pnpm prove` ([scripts/client/prove.ts](../scripts/client/prove.ts)) is a reference client, built on the module of the [browser client](#browser-client) ([src/client/note.ts](../src/client/note.ts)), with the circuit files read from `circuits/build` and snarkjs proving in the same process. It keeps the secret key and the accumulator opening in a note file, written with mode 600: keep that file, as it is what you exit with.
 
 ### Prerequisites
 
@@ -548,6 +555,101 @@ cast send 0xContract "slash(uint256)" <secretKey>
 ```
 
 The caller gets `SLASH_BOUNTY`, the operator the rest of the note.
+
+---
+
+## Browser Client
+
+The same client runs in a browser, with no `fs`, Node `crypto`, `process` or `Buffer`: [src/client/browser.ts](../src/client/browser.ts), bundled by `pnpm build:browser` into `build/browser/`. Every release publishes the two builds with their sha256 in `SHA256SUMS` and in the release notes:
+
+| File | Format |
+|------|--------|
+| `longjing-client.js` | IIFE, defines the global `Longjing` |
+| `longjing-client.mjs` | ES module, the same exports |
+
+Each file is self-contained, about 930 KiB minified: snarkjs and the prover worker are inlined, so a page can inline the file in a `<script>` and work offline, from `file://`. Rebuild from the tag and compare with `sha256sum -c SHA256SUMS`.
+
+The secret key, the accumulator opening and the proofs stay in the page. Randomness comes from `crypto.getRandomValues`, Poseidon from `poseidon-lite`, and the refund signature check from `@zk-kit/eddsa-poseidon`, which verifies circomlib's EdDSA-Poseidon. The client doesn't load `circomlibjs`, so none of its dependencies, `elliptic` included, reach the page.
+
+### Load it
+
+```html
+<script src="longjing-client.js"></script>
+<script>
+  const { newNote, commitmentOf, createClient } = Longjing;
+</script>
+```
+
+or `import * as Longjing from './longjing-client.mjs'`.
+
+### Notes
+
+A note is a plain object of decimal strings (`NoteFile`). The client never stores it: the page keeps it where it wants, and must keep every version `proveRequest` and `receive` return, since the note is what the user exits with.
+
+| Function | Returns |
+|----------|---------|
+| `newNote(rpcUrl, contract, secretKey?)` | A note with a fresh secret key from Web Crypto, or with `secretKey` (a nonzero BN254 field element, for instance derived from a passkey) |
+| `commitmentOf(note)` | `Promise<string>`: `c = Poseidon(k)`, what `deposit()` takes |
+| `nullifierAt(note, n)` | `Promise<bigint>`: the nullifier of the note's request at index `n` |
+| `depositTx(note, value)` | `Promise<{ to, data, value }>`: the `deposit()` call for the user's wallet |
+| `createClient({ artifacts, prover?, provider? })` | A client with `proveRequest`, `receive` and `proveWithdrawal` |
+
+The client's methods take and return notes:
+
+| Method | Returns |
+|--------|---------|
+| `proveRequest(note, payload, model?)` | `{ body, note }`: the body for `POST /longjing/request`, and the note with that request pending. While it is pending, the same body comes back for a retry |
+| `receive(note, response)` | The note at its next index, once the accumulator adds up to the refund and its signature checks against the key registered onchain. Takes the 200 body or the 502 body |
+| `proveWithdrawal(note, recipient, n?)` | The arguments of `initiateWithdrawal`, paying `D + R − n · C_MAX`. `n` defaults to the indices the note used, one more if a response was lost |
+
+Proofs run in a Web Worker started from a Blob URL, one per proof, so the page stays responsive. Where there is no `Worker`, pass a `prover`: `(input, wasm, zkey) => Promise<{ proof, publicSignals }>`, as `snarkjs.groth16.fullProve` returns. The chain is read through a JSON-RPC provider on the note's `rpcUrl`, unless `provider(note)` returns an ethers `ContractRunner`.
+
+### Artifacts
+
+```js
+const client = createClient({
+  artifacts: {
+    request: { wasm: 'request_js/request.wasm', zkey: 'request.zkey' },
+    settlement: { wasm: wasmBytes, zkey: zkeyBytes },
+  },
+});
+```
+
+Each file is a URL to fetch, a `Uint8Array`, or a function returning one. Before the first proof that needs it, the client hashes it with SHA-256 (Web Crypto) and compares it with the hash pinned in [`circuits/artifacts.json`](../circuits/artifacts.json), which the bundle carries (`ARTIFACT_HASHES`, `ARTIFACT_RELEASE`). A mismatch throws `ArtifactMismatch` and nothing is proved, so the files can come from any mirror or a local copy. A page opened from `file://` can't fetch, so it passes bytes, for instance from a file input.
+
+### Requests through a verified gateway
+
+```js
+const gateway = await Longjing.openGateway(
+  Longjing.fetchTransport('https://<address>.onion'),
+);
+const { body, note: pending } = await client.proveRequest(note, 'Hello');
+const res = await gateway.post('/longjing/request', body);
+note = await client.receive(pending, res.json);
+```
+
+`openGateway` draws a 32-byte nonce, fetches `GET /attestation?nonce=<hex>` and `GET /attestation/manifest`, and runs `checkAttestation`: `report_data` must commit to the returned keys and the nonce, the quote must carry it, the event log must replay to the quote's RTMRs, the manifest must be signed by the identity key and name the same keys, and the `.onion` host must be the bound onion service. It throws `AttestationRefused` having sent nothing else, and it is the only way to get a `post`. `{ development: true }` accepts a local gateway on the mock platform over HTTP.
+
+`fetchTransport` sends no cookies, no referrer and no cache.
+
+### Exit from the user's wallet
+
+```js
+const args = await client.proveWithdrawal(note, recipient);
+await wallet.sendTransaction(Longjing.initiateWithdrawalTx(note, args));
+// after CHALLENGE_WINDOW (3 days)
+await wallet.sendTransaction(Longjing.finalizeWithdrawalTx(note, args.commitment));
+```
+
+Neither step needs the gateway: the proof needs the chain, the note and the settlement files.
+
+### Limits in a browser
+
+- **No certificate pinning.** A page can't see the TLS certificate of its session, so it can't pin the one the attestation binds. Outside development, `openGateway` over `fetchTransport` therefore requires the gateway's attested `.onion` address, in Tor Browser: there the address authenticates the enclave. On the clearnet it refuses, since nothing would bind the session to the enclave. A client that needs the certificate check runs outside the browser ([INTEGRATION_GUIDELINES.md](INTEGRATION_GUIDELINES.md#verifying-in-the-browser)).
+- **Connections.** `fetch` may reuse a connection across requests, and Tor Browser reuses a circuit per site for about ten minutes, so requests sent in that window can share both.
+- **What isn't verified.** As in Node, the client doesn't verify the quote's signature or compare the measurements with a release ([ATTESTATION.md](ATTESTATION.md#verification)).
+
+The e2e test, [test/browser/client.e2e.ts](../test/browser/client.e2e.ts) (`pnpm test:browser`, with Anvil running), runs a deposit, a request, a receive and a withdrawal in headless Chromium against a local gateway, and checks that the page reads no Node global and proves in Web Workers.
 
 ---
 

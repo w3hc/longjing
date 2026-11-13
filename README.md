@@ -18,7 +18,7 @@ v0.5.0 is a testnet release. Do not deposit funds you can't afford to lose.
 
 - **Keys:** the circuit keys come from a single-party trusted setup, so whoever ran it could forge proofs. They are for testnets only until a public ceremony replaces them ([#135](https://github.com/w3hc/longjing/issues/135)).
 - **Audit:** the code has had internal reviews only, no external audit.
-- **Exit:** withdrawing needs the `pnpm prove` client. The standalone withdrawal page is not built yet ([#157](https://github.com/w3hc/longjing/issues/157)).
+- **Exit:** withdrawing needs the `pnpm prove` client, or a page built on the browser client ([API_REFERENCE.md](docs/API_REFERENCE.md#browser-client)). The standalone withdrawal page is not built yet ([#157](https://github.com/w3hc/longjing/issues/157)).
 - **Network:** the gateway serves the API at an onion service inside the enclave, whose address the attestation binds, and the reference client verifies the attestation before it sends anything ([ONION_SERVICE.md](docs/ONION_SERVICE.md)). A client that reaches it through Tor, with a circuit per request, hides its network identity ([INTEGRATION_GUIDELINES.md](docs/INTEGRATION_GUIDELINES.md)). No deployment serves it yet ([#191](https://github.com/w3hc/longjing/issues/191)), and request timing and size are not protected ([#189](https://github.com/w3hc/longjing/issues/189)).
 
 ## Design

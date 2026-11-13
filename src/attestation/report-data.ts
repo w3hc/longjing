@@ -1,4 +1,11 @@
-import { createHash } from 'crypto';
+import { sha256 } from '@noble/hashes/sha2';
+import {
+  concatBytes,
+  hexToBytes,
+  strip0x,
+  uint32BE,
+  utf8ToBytes,
+} from '../common/bytes';
 
 export const REPORT_DATA_LABEL = 'longjing-report-v3';
 export const NONCE_LENGTH = 32;
@@ -32,25 +39,24 @@ export interface ReportDataInputs {
 export function buildReportData(
   inputs: ReportDataInputs,
   nonce?: Uint8Array,
-): Buffer {
+): Uint8Array {
   if (nonce && nonce.length !== NONCE_LENGTH) {
     throw new Error(`Nonce must be ${NONCE_LENGTH} bytes`);
   }
   const empty = new Uint8Array(0);
   const certificateHash = inputs.tlsCertificateDer
-    ? createHash('sha256').update(inputs.tlsCertificateDer).digest()
+    ? sha256(inputs.tlsCertificateDer)
     : empty;
-  const commitment = createHash('sha256')
-    .update(lengthPrefixed(Buffer.from(REPORT_DATA_LABEL, 'utf-8')))
-    .update(lengthPrefixed(inputs.identityPublicKey ?? empty))
-    .update(lengthPrefixed(inputs.refundSignerPublicKey ?? empty))
-    .update(lengthPrefixed(certificateHash))
-    .update(lengthPrefixed(inputs.onionPublicKey ?? empty))
-    .digest();
-  return Buffer.concat([
-    commitment,
-    nonce ? Buffer.from(nonce) : Buffer.alloc(NONCE_LENGTH),
-  ]);
+  const commitment = sha256(
+    concatBytes(
+      lengthPrefixed(utf8ToBytes(REPORT_DATA_LABEL)),
+      lengthPrefixed(inputs.identityPublicKey ?? empty),
+      lengthPrefixed(inputs.refundSignerPublicKey ?? empty),
+      lengthPrefixed(certificateHash),
+      lengthPrefixed(inputs.onionPublicKey ?? empty),
+    ),
+  );
+  return concatBytes(commitment, nonce ?? new Uint8Array(NONCE_LENGTH));
 }
 
 /**
@@ -59,35 +65,33 @@ export function buildReportData(
 export function encodeRefundSignerPublicKey(publicKey: {
   x: string;
   y: string;
-}): Buffer {
-  return Buffer.concat([coordinate(publicKey.x), coordinate(publicKey.y)]);
+}): Uint8Array {
+  return concatBytes(coordinate(publicKey.x), coordinate(publicKey.y));
 }
 
 /**
  * Parses a client nonce given as 64 hex characters, with or without `0x`.
  * Returns undefined when no nonce was sent.
  */
-export function parseNonce(value?: string): Buffer | undefined {
+export function parseNonce(value?: string): Uint8Array | undefined {
   if (value === undefined || value === '') {
     return undefined;
   }
-  const hex = value.startsWith('0x') ? value.slice(2) : value;
+  const hex = strip0x(value);
   if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
     throw new Error(`Nonce must be ${NONCE_LENGTH} bytes of hex`);
   }
-  return Buffer.from(hex, 'hex');
+  return hexToBytes(hex);
 }
 
-function coordinate(value: string): Buffer {
-  const hex = value.startsWith('0x') ? value.slice(2) : value;
+function coordinate(value: string): Uint8Array {
+  const hex = strip0x(value);
   if (!/^[0-9a-fA-F]{1,64}$/.test(hex)) {
     throw new Error('Refund signer coordinate must be at most 32 bytes of hex');
   }
-  return Buffer.from(hex.padStart(64, '0'), 'hex');
+  return hexToBytes(hex.padStart(64, '0'));
 }
 
-function lengthPrefixed(bytes: Uint8Array): Buffer {
-  const prefix = Buffer.alloc(4);
-  prefix.writeUInt32BE(bytes.length);
-  return Buffer.concat([prefix, bytes]);
+function lengthPrefixed(bytes: Uint8Array): Uint8Array {
+  return concatBytes(uint32BE(bytes.length), bytes);
 }

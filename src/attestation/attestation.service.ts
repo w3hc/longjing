@@ -22,7 +22,9 @@ import {
   BoundKeys,
 } from './attestation.types';
 import { ITeePlatform } from './platforms/platform.interface';
-import { PhalaPlatform, tdxQuoteReportData } from './platforms/phala.platform';
+import { PhalaPlatform } from './platforms/phala.platform';
+import { tdxQuoteReportData } from './tdx-quote';
+import { equalBytes } from '../common/bytes';
 import { TdxPlatform } from './platforms/tdx.platform';
 import { SevSnpPlatform } from './platforms/sev-snp.platform';
 import { NitroPlatform } from './platforms/nitro.platform';
@@ -138,7 +140,7 @@ export class AttestationService
     }
 
     const attested = tdxQuoteReportData(Buffer.from(quote.quote, 'base64'));
-    if (!attested.equals(requested)) {
+    if (!equalBytes(attested, requested)) {
       throw new Error(
         'Cannot start in production: the quote does not carry the requested report_data',
       );
@@ -209,13 +211,13 @@ export class AttestationService
    * @param nonce - Optional 32-byte client challenge for freshness
    * @returns The quote, with the nonce and the keys report_data commits to
    */
-  async getAttestation(nonce?: Buffer): Promise<BoundAttestation> {
+  async getAttestation(nonce?: Uint8Array): Promise<BoundAttestation> {
     if (!this.platform) {
       throw new Error('Attestation service not initialized');
     }
 
     const { inputs, keys } = this.boundKeys();
-    const reportData = buildReportData(inputs, nonce);
+    const reportData = Buffer.from(buildReportData(inputs, nonce));
 
     this.logger.log(
       `Generating attestation with platform: ${this.platform.name}`,
@@ -227,7 +229,7 @@ export class AttestationService
     const quote = await this.platform.generateQuote(reportData);
     return {
       ...quote,
-      nonce: nonce ? '0x' + nonce.toString('hex') : null,
+      nonce: nonce ? '0x' + Buffer.from(nonce).toString('hex') : null,
       keys,
       onionAddress: this.keyDerivation.getOnionAddress(),
     };

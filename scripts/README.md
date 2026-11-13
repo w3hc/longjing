@@ -6,7 +6,7 @@ Utility scripts organized by purpose: client proving, the demo, setup, deploymen
 
 ```
 scripts/
-├── client/         # Client-side proving
+├── client/         # Client-side proving, and the browser build
 ├── demo/           # Checks each goal and reports its status
 ├── setup/          # Circuit compilation and trusted setup
 ├── deploy/         # Contract generation and deployment
@@ -17,7 +17,7 @@ scripts/
 
 ### `client/prove.ts`
 
-The client side of a note, built on [client/note.ts](client/note.ts). The secret key and the accumulator opening stay in a note file on the user's machine:
+The client side of a note, built on [client/note.ts](client/note.ts), which runs the browser client's module ([src/client/note.ts](../src/client/note.ts)) with the circuit files from `circuits/build` and snarkjs in the same process. The secret key and the accumulator opening stay in a note file on the user's machine:
 
 - `pnpm prove note <note.json> <rpcUrl> <contract>`: a new note, and the commitment to deposit
 - `pnpm prove request <note.json> <payload>`: the body for `POST /longjing/request`, against a recent onchain root
@@ -28,7 +28,11 @@ The client side of a note, built on [client/note.ts](client/note.ts). The secret
 
 Usage is in the file's header and in [docs/API_REFERENCE.md](../docs/API_REFERENCE.md#client-implementation-guide).
 
-### `client/gateway.ts` and `client/transport.ts`
+### `client/build-browser.ts`
+
+`pnpm build:browser` bundles the browser client into `build/browser/`: `longjing-client.js` (global `Longjing`), `longjing-client.mjs` and their `SHA256SUMS`. The release workflow publishes the three. See [docs/API_REFERENCE.md](../docs/API_REFERENCE.md#browser-client).
+
+### `src/client/gateway.ts` and `client/transport.ts`
 
 The only way the client reaches the gateway. `openGateway` fetches `GET /attestation` with a fresh nonce, checks it with `checkAttestation`, and only then returns a `post` pinned to the attested TLS certificate; it throws `AttestationRefused` having sent nothing otherwise. `nodeTransport` opens one connection per request, offers the hybrid post-quantum TLS groups, checks the certificate before writing, and optionally goes through Tor's SOCKS port with fresh credentials per connection. See [docs/INTEGRATION_GUIDELINES.md](../docs/INTEGRATION_GUIDELINES.md).
 
@@ -61,6 +65,10 @@ Generates Poseidon hash contract for on-chain verification.
 ## Testing Scripts
 
 Manual testing utilities and verification tools.
+
+### `testing/local-gateway.ts`
+
+Deploys `LongjingCredits` on Anvil with `NODE_ENV=development` and starts the gateway pointed at it, for the demo and the browser e2e test.
 
 ### `testing/verify-attestation.ts`
 

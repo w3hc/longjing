@@ -118,7 +118,7 @@ Double-spend slashing needs no circuit: two signals at one index reveal `k`, and
 | **BlockchainService** | [blockchain.service.ts](../src/longjing/blockchain.service.ts) | Contract reads and the transaction signer |
 | **EthRateOracleService** | [eth-rate-oracle.service.ts](../src/longjing/eth-rate-oracle.service.ts) | ETH/USD rates |
 
-The client side is [scripts/client/note.ts](../scripts/client/note.ts), behind `pnpm prove`. The server never proves anything that needs the secret key.
+The client side is [src/client/note.ts](../src/client/note.ts), behind `pnpm prove` and the [browser client](API_REFERENCE.md#browser-client). The server never proves anything that needs the secret key.
 
 ## Request Flow
 

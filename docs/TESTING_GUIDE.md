@@ -20,7 +20,7 @@ The steps:
 
 1. Deploy `LongjingCredits` with `NODE_ENV=development`
 2. Start the server pointed at it
-3. Alice's client fetches `GET /attestation` with a fresh nonce and verifies it before sending anything ([`scripts/client/gateway.ts`](../scripts/client/gateway.ts)). An attacker on the path swaps the refund key, then replays the attestation Alice got: the client refuses both and sends nothing. On Anvil, the client also refuses the local mock attestation once it is not told it runs against development
+3. Alice's client fetches `GET /attestation` with a fresh nonce and verifies it before sending anything ([`src/client/gateway.ts`](../src/client/gateway.ts)). An attacker on the path swaps the refund key, then replays the attestation Alice got: the client refuses both and sends nothing. On Anvil, the client also refuses the local mock attestation once it is not told it runs against development
 4. Alice deposits 0.01 ETH and sends a request, proved on her machine with the client `pnpm prove` runs
 5. Alice retries the request and gets the same accumulator back, then sends a second request from the signed accumulator
 6. The operator tries to link Alice's two requests to each other and to her deposit, from the request bodies and, on Anvil, from its own nullifier database. The observer checks that the contract logged nothing while they were served
@@ -169,6 +169,23 @@ The contract, the server and the client of `pnpm prove`, on Anvil. The contract 
 **Carol: an exit that understates usage**
 - Two requests served, an exit claiming one: the server's watcher slashes the note within the window, and finalizing reverts
 
+### Browser Client Test (`test/browser/client.e2e.ts`)
+
+```bash
+anvil   # in another terminal
+pnpm exec playwright install chromium   # once
+pnpm test:browser
+```
+
+`pnpm test:browser` builds `build/browser/`, deploys `LongjingCredits` and starts a local gateway ([scripts/testing/local-gateway.ts](../scripts/testing/local-gateway.ts)), then runs the browser build of the client in headless Chromium, from a page served on an origin of its own:
+
+- The page draws a note and sends `deposit()` through Anvil
+- A tampered attestation, and the local mock attestation outside development, are refused, and nothing is posted
+- Circuit files that don't match `circuits/artifacts.json` are refused before any proof
+- A request is proved in a Web Worker, sent through the verified gateway, and its response received
+- The page proves the withdrawal, sends `initiateWithdrawal`, then `finalizeWithdrawal` after the window, and the recipient gets `D + R − C_MAX`
+- No request body holds the secret key, two Web Workers proved, and the page never read `process`, `require`, `Buffer` or `global`
+
 ## Contract Tests
 
 Foundry-based tests for Solidity smart contracts.
@@ -228,6 +245,7 @@ GitHub Actions workflow (`.github/workflows/test.yml`) runs:
 4. Contract tests (Foundry)
 5. Anvil startup
 6. E2E tests
+7. The browser client test, in headless Chromium
 
 All tests must pass before merging PRs.
 

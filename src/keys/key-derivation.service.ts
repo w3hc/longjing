@@ -17,6 +17,12 @@ import { OnionKey, onionAddress, onionKeyFromSeed } from '../tor/onion-key';
 import { DstackV1Client } from './dstack-v1.client';
 import { keysOutsideEnclaveAllowed } from './key-policy';
 import { isProd } from '../config/profile';
+import {
+  KEY_MANIFEST_DOMAIN,
+  KEY_MANIFEST_TYPES,
+  KeyManifest,
+  SignedKeyManifest,
+} from './key-manifest';
 
 export const REFUND_SIGNER_DOMAIN = 'longjing/refund-signer/babyjub/v1';
 export const IDENTITY_DOMAIN = 'longjing/identity/v1';
@@ -26,36 +32,8 @@ export const ONION_SERVICE_DOMAIN = 'longjing/onion-service/v1';
 const HKDF_SALT = 'longjing';
 const REFUND_SIGNER_INFO = lengthPrefixed('longjing-refund-signer-babyjub-v1');
 
-export const KEY_MANIFEST_DOMAIN = { name: 'Longjing', version: '3' };
-export const KEY_MANIFEST_TYPES = {
-  KeyManifest: [
-    { name: 'appId', type: 'address' },
-    { name: 'refundSignerX', type: 'bytes32' },
-    { name: 'refundSignerY', type: 'bytes32' },
-    { name: 'tlsCertificateHash', type: 'bytes32' },
-    { name: 'onionPublicKey', type: 'bytes32' },
-    { name: 'txSignerAddress', type: 'address' },
-    { name: 'epoch', type: 'uint64' },
-  ],
-};
-
-export interface KeyManifest {
-  appId: string;
-  refundSignerX: string;
-  refundSignerY: string;
-  /** SHA-256 of the served TLS leaf certificate (DER), or zero if none. */
-  tlsCertificateHash: string;
-  /** ed25519 public key of the onion service. */
-  onionPublicKey: string;
-  /** Signs every contract transaction in production; needs gas. */
-  txSignerAddress: string;
-  epoch: number;
-}
-
-export interface SignedKeyManifest {
-  manifest: KeyManifest;
-  signature: string;
-}
+export { KEY_MANIFEST_DOMAIN, KEY_MANIFEST_TYPES };
+export type { KeyManifest, SignedKeyManifest };
 
 /**
  * Derives Longjing's long-lived keys inside the enclave from the dstack KMS.

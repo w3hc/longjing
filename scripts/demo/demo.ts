@@ -48,11 +48,6 @@
  */
 
 import { parseArgs } from 'util';
-import { execFile } from 'child_process';
-import { mkdtempSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { promisify } from 'util';
 import { ethers } from 'ethers';
 import type { INestApplication } from '@nestjs/common';
 import {
@@ -74,13 +69,15 @@ import {
   GatewayRequest,
   GatewayTransport,
   openGateway,
-} from '../client/gateway';
+} from '../../src/client/gateway';
 import { nodeTransport } from '../client/transport';
 import type { BoundAttestation } from '../../src/attestation/attestation.types';
+import {
+  ANVIL_RPC_URL as RPC_URL,
+  deployLocal,
+  startLocalGateway,
+} from '../testing/local-gateway';
 
-const run = promisify(execFile);
-
-const RPC_URL = 'http://127.0.0.1:8545';
 const anvilKey = (index: number) =>
   ethers.HDNodeWallet.fromPhrase(
     'test test test test test test test test test test test junk',
@@ -350,74 +347,6 @@ function parseOptions(): Options {
   };
 }
 
-const workDir = mkdtempSync(join(tmpdir(), 'longjing-demo-'));
-
-async function deploy(): Promise<string> {
-  const { stdout } = await run(
-    'forge',
-    [
-      'script',
-      'script/DeployLongjingCredits.s.sol:DeployLongjingCredits',
-      '--rpc-url',
-      RPC_URL,
-      '--broadcast',
-    ],
-    {
-      cwd: 'contracts',
-      env: { ...process.env, NODE_ENV: 'development' },
-      maxBuffer: 16 * 1024 * 1024,
-    },
-  );
-  const address = /LongjingCredits deployed at: (0x[a-fA-F0-9]{40})/.exec(
-    stdout,
-  )?.[1];
-  if (!address) throw new Error(`Deployment failed:\n${stdout}`);
-  return address;
-}
-
-async function startServer(contract: string): Promise<INestApplication> {
-  Object.assign(process.env, {
-    NODE_ENV: 'development',
-    ANVIL_RPC_URL: RPC_URL,
-    ZK_CONTRACT_ADDRESS: contract,
-    DATA_DIR: workDir,
-    KMS_URL: 'http://localhost:3001',
-  });
-  for (const name of [
-    'ANTHROPIC_API_KEY',
-    'SERVER_TX_PRIVATE_KEY',
-    'ETHEREUM_RPC_URLS',
-    'DSTACK_SIMULATOR_ENDPOINT',
-  ]) {
-    delete process.env[name];
-  }
-
-  // Required after the env is set: ConfigModule validates it on import
-  /* eslint-disable @typescript-eslint/no-require-imports */
-  const { NestFactory } =
-    require('@nestjs/core') as typeof import('@nestjs/core');
-  const { ValidationPipe } =
-    require('@nestjs/common') as typeof import('@nestjs/common');
-  const { AppModule } =
-    require('../../src/app.module') as typeof import('../../src/app.module');
-  const { TeeExceptionFilter } =
-    require('../../src/filters/tee-exception.filter') as typeof import('../../src/filters/tee-exception.filter');
-  /* eslint-enable @typescript-eslint/no-require-imports */
-
-  const app = await NestFactory.create(AppModule, { logger: ['error'] });
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-  app.useGlobalFilters(new TeeExceptionFilter());
-  // Plain HTTP on loopback: dev TLS needs certificates in ./secrets
-  await app.listen(0, '127.0.0.1');
-  return app;
-}
-
 async function main() {
   const options = parseOptions();
   const provider = new ethers.JsonRpcProvider(options.rpcUrl, undefined, {
@@ -445,10 +374,10 @@ async function main() {
     console.log(`  ${url}`);
   } else {
     step('1. Deploy the contract with NODE_ENV=development');
-    address = await deploy();
+    address = await deployLocal();
     console.log(`  LongjingCredits at ${address}`);
     step('2. Start the server pointed at it');
-    app = await startServer(address);
+    app = await startLocalGateway(address);
     url = await app.getUrl();
     console.log(`  Listening on ${url}`);
   }

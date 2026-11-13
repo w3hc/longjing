@@ -71,3 +71,50 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --notes "$notes"
           fi
+
+  browser-client:
+    name: Build, attest and publish the browser client
+    runs-on: ubuntu-latest
+    # The image job creates the release
+    needs: image
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build the browser client
+        run: pnpm build:browser
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            build/browser/longjing-client.js
+            build/browser/longjing-client.mjs
+
+      - name: Publish the files and their sha256 in the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" --clobber \
+            build/browser/longjing-client.js \
+            build/browser/longjing-client.mjs \
+            build/browser/SHA256SUMS
+          sums=$(cat build/browser/SHA256SUMS)
+          notes=$(printf '## Browser client\n\n```\n%s\n```\n\nBuilt from %s/%s/commit/%s with `pnpm build:browser`. Rebuild it and compare with `sha256sum -c SHA256SUMS`. See [docs/API_REFERENCE.md](%s/%s/blob/%s/docs/API_REFERENCE.md#browser-client).\n' "$sums" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME")
+          body=$(gh release view "$GITHUB_REF_NAME" --json body -q .body)
+          if grep -qF "$sums" <<<"$body"; then
+            exit 0
+          fi
+          gh release edit "$GITHUB_REF_NAME" --notes "$body"$'\n\n'"$notes"
