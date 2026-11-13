@@ -10,6 +10,11 @@
  *   pnpm prove request <note.json> <payload> [model]
  *     Prints the body for POST /longjing/request and keeps it as pending. Run
  *     again before `receive` to get the same body back for a retry.
+ *   pnpm prove send <note.json> <gateway-url> [--socks <host:port>] [--development]
+ *     Verifies the gateway's attestation with a fresh nonce, then sends the
+ *     pending request and folds the response into the note. Sends nothing
+ *     when the attestation doesn't verify. --socks goes through Tor, with a
+ *     circuit per request; --development accepts a local mock gateway.
  *   pnpm prove receive <note.json> <response.json>
  *     Checks the server's signed accumulator against the key registered
  *     onchain and folds the refund into the opening. Takes the 200 body, or
@@ -22,7 +27,7 @@
  *     { "signal1": { "x", "y" }, "signal2": { "x", "y" } }, and prints the
  *     argument for slash().
  *
- * None of this needs the server: a note exits with the chain alone.
+ * Only send needs the server: a note exits with the chain alone.
  */
 
 import * as fs from 'fs';
@@ -37,10 +42,12 @@ import {
   RequestResponse,
 } from './note';
 import { SlashingService } from '../../src/longjing/slashing.service';
+import { openGateway } from './gateway';
+import { nodeTransport } from './transport';
 
 function usage(): never {
   console.error(
-    'Usage: pnpm prove <note|request|receive|withdrawal|slashing> ...',
+    'Usage: pnpm prove <note|request|send|receive|withdrawal|slashing> ...',
   );
   process.exit(1);
 }
@@ -70,6 +77,39 @@ const commands: Record<string, (args: string[]) => Promise<unknown>> = {
     );
     writeNote(path, note);
     return body;
+  },
+
+  async send(args) {
+    const development = args.includes('--development');
+    const socksAt = args.indexOf('--socks');
+    const socks = socksAt === -1 ? undefined : args[socksAt + 1];
+    const [path, gatewayUrl] = args.filter(
+      (arg, i) =>
+        !arg.startsWith('--') && (socksAt === -1 || i !== socksAt + 1),
+    );
+    if (!gatewayUrl || (socksAt !== -1 && !socks)) usage();
+    const note = readJson<NoteFile>(path);
+    if (!note.pending) {
+      throw new Error('No request is pending: run pnpm prove request first');
+    }
+    const gateway = await openGateway(
+      nodeTransport(
+        gatewayUrl,
+        socks
+          ? {
+              host: socks.slice(0, socks.lastIndexOf(':')),
+              port: Number(socks.slice(socks.lastIndexOf(':') + 1)),
+            }
+          : undefined,
+      ),
+      { development },
+    );
+    const res = await gateway.post('/longjing/request', note.pending.body);
+    if (res.status !== 200 && res.status !== 502) {
+      throw new Error(`HTTP ${res.status}: ${JSON.stringify(res.json)}`);
+    }
+    writeNote(path, await receive(note, res.json as RequestResponse));
+    return res.json;
   },
 
   async receive([path, responsePath]) {

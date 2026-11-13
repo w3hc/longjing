@@ -21,11 +21,16 @@ The client side of a note, built on [client/note.ts](client/note.ts). The secret
 
 - `pnpm prove note <note.json> <rpcUrl> <contract>`: a new note, and the commitment to deposit
 - `pnpm prove request <note.json> <payload>`: the body for `POST /longjing/request`, against a recent onchain root
+- `pnpm prove send <note.json> <gateway-url> [--socks <host:port>]`: verifies the gateway's attestation with a fresh nonce, then sends the pending request over the attested TLS session and folds the response into the note. It sends nothing when the attestation doesn't verify, and through Tor it uses a new circuit per request
 - `pnpm prove receive <note.json> <response.json>`: checks the server's signed accumulator and moves the note to its next index
 - `pnpm prove withdrawal <note.json> <recipient> [n]`: the arguments for `initiateWithdrawal`, with no server involved
 - `pnpm prove slashing <signals.json>`: the secret key two signals with the same nullifier reveal, for `slash(k)`
 
 Usage is in the file's header and in [docs/API_REFERENCE.md](../docs/API_REFERENCE.md#client-implementation-guide).
+
+### `client/gateway.ts` and `client/transport.ts`
+
+The only way the client reaches the gateway. `openGateway` fetches `GET /attestation` with a fresh nonce, checks it with `checkAttestation`, and only then returns a `post` pinned to the attested TLS certificate; it throws `AttestationRefused` having sent nothing otherwise. `nodeTransport` opens one connection per request, offers the hybrid post-quantum TLS groups, checks the certificate before writing, and optionally goes through Tor's SOCKS port with fresh credentials per connection. See [docs/INTEGRATION_GUIDELINES.md](../docs/INTEGRATION_GUIDELINES.md).
 
 ## Demo
 
@@ -66,6 +71,7 @@ Client-side TEE attestation verification for Intel TDX quotes from Phala Network
 **Usage:**
 ```bash
 pnpm verify:attestation https://your-server/attestation
+pnpm verify:attestation https://<address>.onion/attestation --socks 127.0.0.1:9050
 ```
 
 **What it verifies:**
