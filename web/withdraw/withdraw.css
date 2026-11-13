@@ -86,12 +86,13 @@ legend {
   font-weight: 600;
 }
 
-fieldset label {
+fieldset label,
+label.check {
   font-weight: 400;
   margin: 0.25rem 0;
 }
 
-input:not([type='radio']),
+input:not([type='radio']):not([type='checkbox']),
 textarea {
   width: 100%;
   font: inherit;
