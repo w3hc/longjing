@@ -26,11 +26,11 @@ The proofs make a request carry nothing that links it to a deposit or to another
 
 ## Verify the attestation before sending anything
 
-The reference client does this in [`openGateway`](../scripts/client/gateway.ts), which `pnpm prove send` and `pnpm demo` use. It is the only way the client gets a function that sends requests:
+The reference client does this in [`openGateway`](../src/client/gateway.ts), which `pnpm prove send`, `pnpm demo` and the browser client use. It is the only way the client gets a function that sends requests:
 
 1. Draw 32 random bytes and fetch `GET /attestation?nonce=<64 hex chars>`.
 2. Fetch `GET /attestation/manifest` over a session with the same certificate.
-3. Check the attestation ([`checkAttestation`](../scripts/client/gateway.ts), on top of [`verifyKeyBinding`](../src/attestation/key-binding.ts)):
+3. Check the attestation ([`checkAttestation`](../src/client/gateway.ts), on top of [`verifyKeyBinding`](../src/attestation/key-binding.ts)):
    - the platform is `phala`, a dstack TDX quote, and the event log replays to the quote's RTMR0–3;
    - `report_data`, both in the response and inside the quote, commits to the returned keys and to your nonce, so it is fresh ([ATTESTATION.md](./ATTESTATION.md#report_data));
    - the certificate of the TLS session that returned the attestation is `keys.tlsCertificate`, so TLS terminates in the enclave;
@@ -73,15 +73,15 @@ A page opened in Tor Browser can call the `.onion` API directly: Tor Browser rou
 
 ## Verifying in the browser
 
-A browser client runs the same checks as `openGateway`, with one difference: JavaScript can't see the TLS certificate of its session, so it can't pin it.
+The [browser client](./API_REFERENCE.md#browser-client) runs the same checks as `openGateway`, through `fetchTransport`, with one difference: JavaScript can't see the TLS certificate of its session, so it can't pin it.
 
-- Draw the nonce with `crypto.getRandomValues`, and send it as `GET /attestation?nonce=<hex>`.
-- Rebuild `report_data` with `crypto.subtle.digest('SHA-256', …)` over the length-prefixed terms ([ATTESTATION.md](./ATTESTATION.md#report_data)), and check it equals `reportData` and bytes 568–632 of the quote.
-- Recompute the `.onion` address from `keys.onionPublicKey` (SHA3-256 needs a library such as `@noble/hashes`), and check it equals `onionAddress` and `location.host` or the host you call.
-- Since the certificate can't be pinned, the onion address is what binds the session to the enclave: call the API at the attested `.onion` address. Over the clearnet, a browser has nothing to pin, and a client that needs the certificate check should run outside the browser.
-- Refuse to send when any check fails, and verify again on every page load.
+- It draws the nonce with `crypto.getRandomValues`, and sends it as `GET /attestation?nonce=<hex>`.
+- It rebuilds `report_data` over the length-prefixed terms ([ATTESTATION.md](./ATTESTATION.md#report_data)), with the same code as the server and the Node client (SHA-256 and SHA3-256 from `@noble/hashes`), and checks it equals `reportData` and bytes 568–632 of the quote.
+- It recomputes the `.onion` address from `keys.onionPublicKey`, and checks it equals `onionAddress` and the host it calls.
+- Since the certificate can't be pinned, the onion address is what binds the session to the enclave: outside development, `openGateway` refuses a `fetchTransport` whose host isn't a `.onion` address. Over the clearnet, a browser has nothing to pin, and a client that needs the certificate check should run outside the browser.
+- It sends nothing when a check fails. Verify again on every page load.
 
-The browser port of `openGateway` is tracked in [#190](https://github.com/w3hc/longjing/issues/190). Keep the transport the only environment-specific part: [`gateway.ts`](../scripts/client/gateway.ts) takes any transport.
+Keep the transport the only environment-specific part: [`gateway.ts`](../src/client/gateway.ts) takes any transport.
 
 ## CORS
 

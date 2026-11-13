@@ -154,7 +154,7 @@ Pausing blocks `deposit` and `claimExpired`, never an exit or a slash. Changes t
 | **ExitWatcherService** | Records each exit's nullifier and slashes an understated one | [exit-watcher.service.ts](../src/longjing/exit-watcher.service.ts) |
 | **EthRateOracleService** | ETH/USD rates from Kraken | [eth-rate-oracle.service.ts](../src/longjing/eth-rate-oracle.service.ts) |
 
-The client side is [scripts/client/note.ts](../scripts/client/note.ts), behind `pnpm prove`. The server never proves anything that needs `k`. See [API_REFERENCE.md](API_REFERENCE.md) for the endpoints and the client guide.
+The client side is [src/client/note.ts](../src/client/note.ts), behind `pnpm prove` and the [browser client](API_REFERENCE.md#browser-client). The server never proves anything that needs `k`. See [API_REFERENCE.md](API_REFERENCE.md) for the endpoints and the client guide.
 
 ## Cryptographic Primitives
 
