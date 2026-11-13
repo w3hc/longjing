@@ -87,6 +87,18 @@ jobs:
       - name: Run e2e tests
         run: pnpm test:e2e
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Chromium for Playwright
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
+      - name: Run browser client e2e test
+        run: pnpm test:browser
+
   format:
     name: Check Formatting
     runs-on: ubuntu-latest
