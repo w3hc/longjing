@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The image pins tor 0.4.9.17, since Alpine replaced 0.4.9.15 and the pinned build failed ([#157](https://github.com/w3hc/longjing/issues/157)).
 - The README's Status section says the withdrawal page exists, on single-party keys, and is attached from the next release on. `docs/DEPLOYMENT.md` steps 1 and 10 name the page, and `pnpm demo` says the goal "Every depositor can exit if the operator and every host disappear" is not met because the page is in no release yet and its keys come from a single-party setup ([#157](https://github.com/w3hc/longjing/issues/157)).
 - The README is shorter: status, design, threat model, a comparison with ethereum/zkapi, usage, deployment and documentation. Its threat model adds request timing and size, and enclave key derivation is no longer claimed for the provider's API key ([#176](https://github.com/w3hc/longjing/issues/176)).
 - `docs/MLKEM.md` no longer calls ML-KEM plainly "post-quantum secure": it names the lattice assumption it rests on and recommends a hybrid X25519 + ML-KEM KEM for any endpoint that uses it ([#176](https://github.com/w3hc/longjing/issues/176)).
