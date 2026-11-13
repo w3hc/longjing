@@ -2,8 +2,12 @@ import pinned from '../../circuits/artifacts.json';
 import { sha256 } from '@noble/hashes/sha2';
 import { bytesToHex } from '../common/bytes';
 
-/** A circuit file as bytes, or a URL to fetch it from */
-export type ArtifactSource = Uint8Array | string | URL;
+/** A circuit file as bytes, a URL to fetch it from, or a function that reads it */
+export type ArtifactSource =
+  | Uint8Array
+  | string
+  | URL
+  | (() => Uint8Array | Promise<Uint8Array>);
 
 export interface CircuitArtifacts {
   wasm: ArtifactSource;
@@ -53,9 +57,11 @@ export async function loadArtifact(
   const expected = ARTIFACT_HASHES[name];
   if (!expected) throw new Error(`${name} is not a pinned circuit file`);
   const bytes =
-    source instanceof Uint8Array
-      ? source.slice()
-      : new Uint8Array(await fetchBytes(source));
+    typeof source === 'function'
+      ? new Uint8Array(await source())
+      : source instanceof Uint8Array
+        ? source.slice()
+        : new Uint8Array(await fetchBytes(source));
   const actual = bytesToHex(await digest(bytes));
   if (actual !== expected) throw new ArtifactMismatch(name, expected, actual);
   return bytes;
