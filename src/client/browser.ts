@@ -48,6 +48,7 @@ export {
 } from './gateway';
 export type { Gateway, GatewayTransport } from './gateway';
 export type { FullProof, Groth16Proof, Prover } from './prover';
+export { ethers } from 'ethers';
 
 /**
  * Proves in a new Web Worker, started from the bundled source, and ends it
