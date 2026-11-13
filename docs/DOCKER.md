@@ -306,7 +306,6 @@ docker compose logs -f
 
 Common issues:
 - Missing environment variables
-- Invalid ML-KEM keys
 - Port conflicts
 
 ### Volume permission issues (Linux)

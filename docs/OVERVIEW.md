@@ -13,9 +13,9 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
 
 ### What Longjing adds
 
-- **TEE gateway**: Intel TDX with in-enclave TLS termination; attestation `report_data` binds the ML-KEM, identity and refund signer public keys, the TLS certificate and a client nonce, so a client can verify the endpoint before sending secrets ([ATTESTATION.md](./ATTESTATION.md), [TEE_SETUP.md](./TEE_SETUP.md)).
+- **TEE gateway**: Intel TDX with in-enclave TLS termination; attestation `report_data` binds the identity and refund signer public keys, the TLS certificate and a client nonce, so a client can verify the endpoint before sending secrets ([ATTESTATION.md](./ATTESTATION.md), [TEE_SETUP.md](./TEE_SETUP.md)).
 - **Generic provider layer**: dynamic provider registration, per-provider pricing and pre-request cost estimation. Longjing is a template for any upstream API, and Claude is only the reference provider ([PROVIDERS.md](./PROVIDERS.md), [QUICK_START.md](./QUICK_START.md)). Today `POST /longjing/request` still calls Claude directly from `LongjingService` instead of going through the provider registry, so a new provider also has to be wired into that path.
-- **Metadata hardening**: `MetadataSanitizerInterceptor`, `TimingProtectionInterceptor`, response padding and cost quantization. An attested ML-KEM key is available but not used yet ([MLKEM.md](./MLKEM.md)).
+- **Metadata hardening**: `MetadataSanitizerInterceptor`, `TimingProtectionInterceptor`, response padding and cost quantization. There is no application-layer encryption: TLS in the enclave, with a hybrid ML-KEM key exchange, is the only encryption layer ([MLKEM.md](./MLKEM.md)).
 - **ZK-first settlement**: a withdrawal is a Groth16 proof of `D + R − n · C_max` that the user generates, so exiting needs neither the server nor the secret key onchain.
 - **Production infrastructure**: ETH/USD oracle, rate limiting, persistent nullifier storage.
 
@@ -49,7 +49,7 @@ The protocol is the shared foundation. What Longjing adds is the part the protoc
 | | Longjing | ethereum/zkapi (v2) |
 |---|---|---|
 | **Request path** | Client → TEE gateway → upstream provider; the gateway holds provider credentials and executes the call | Browser → inference provider directly; the server issues leases and handles settlement |
-| **Trust in the server** | Enclave attestation bound to the TLS and ML-KEM keys | Protocol-level guarantees; the operator runs ordinary services |
+| **Trust in the server** | Enclave attestation bound to the TLS certificate and the refund and identity keys | Protocol-level guarantees; the operator runs ordinary services |
 | **Providers** | Generic provider abstraction (pricing, cost estimation, registration) | Inference providers, OpenAI-compatible local client |
 | **Stack** | Circom + snarkjs, NestJS backend, Foundry contracts | Rust operator services (`serverd`, `indexerd`, `challenged`), Rust/WASM browser SDK, Foundry contracts |
 
@@ -390,7 +390,6 @@ This is a research implementation of the protocol described in the [Ethresear.ch
   - Mistral AI
   - Generic HTTP proxy mode
 - [ ] **w3pk integration**
-  - ML-KEM encrypted document injection
   - Private context management (PDFs, code, etc.)
   - Multi-turn conversations with TEE storage
 
