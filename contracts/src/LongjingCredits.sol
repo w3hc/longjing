@@ -370,7 +370,7 @@ contract LongjingCredits is ReentrancyGuard, Pausable, Ownable {
 
     /**
      * @notice Pay operatorPayout what closed notes owe the operator
-     * @dev Anyone can call it: the payee is operatorPayout whoever calls, never msg.sender
+     * @dev Anyone can call it: the payee is operatorPayout, whoever calls
      */
     function withdrawOperatorBalance() external nonReentrant {
         uint256 amount = operatorBalance;
