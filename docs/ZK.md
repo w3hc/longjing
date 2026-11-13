@@ -200,13 +200,15 @@ Privacy and funds rest on different assumptions. Hash functions are designed to 
 | EdDSA-Poseidon | The refund key signing accumulators | Discrete log on Baby Jubjub | **Funds.** A user forges accumulators, capped by `P ≤ D` at their own deposit |
 | ECDSA | `serverAddress`, the Safe's signers | Discrete log on secp256k1 | **Operator funds.** A recovered `serverAddress` key takes the operator balance. A recovered Safe can only queue admin changes, which wait `ADMIN_DELAY`, so users can exit first |
 | ML-KEM-1024 | Nothing yet: the key is attested but unused ([MLKEM.md](MLKEM.md)) | Lattices (Module-LWE) | Nothing today |
+| TLS key exchange | Confidentiality of each request and answer on the way to and from the enclave: prompt, proof, answer, accumulator | Hybrid: discrete log on P-384 or X25519 **and** Module-LWE (ML-KEM-1024 or ML-KEM-768). The certificate signature only has to hold at handshake time | **Privacy of recorded traffic, only if both halves break.** Someone who recorded a session reads its prompt and answer. A signature key broken later decrypts nothing already recorded |
 
 What follows:
 
-- **A break of curves or pairings costs no privacy.** Nothing encrypted is ever posted onchain, the accumulator is perfectly hiding and the proofs are perfectly zero-knowledge, so no past request or withdrawal can be deanonymized later. Privacy depends only on Poseidon.
+- **Onchain, a break of curves or pairings costs no privacy.** Nothing encrypted is ever posted onchain, the accumulator is perfectly hiding and the proofs are perfectly zero-knowledge, so no past request or withdrawal can be deanonymized later. Onchain privacy depends only on Poseidon.
 - **It does cost funds.** A Groth16 break is the worst case: the 7-day `ADMIN_DELAY` guards changes to a verifier, not a verifier that is itself broken.
 - **Rotating the refund key doesn't revoke the old one.** Every refund key ever accepted stays valid for withdrawals, so that exits never depend on the operator. Recovering any past key is enough to forge accumulators.
 - **The way out is hash-only soundness**: a STARK instead of Groth16, which is what the paper uses, and a hash-based signature for refunds. See [SETTLEMENT.md](SETTLEMENT.md#departures-from-the-paper).
+- **In transit, TLS sets a floor, not a generous margin.** The enclave prefers `SecP384r1MLKEM1024`, then `X25519MLKEM768`, then plain `X25519` for clients that offer no hybrid group, whose recordings a curve break alone opens. The client picks what it offers: browsers and default OpenSSL and curl clients get `X25519MLKEM768`, the reference client gets `SecP384r1MLKEM1024`. Lattice parameters may need to grow as cryptanalysis improves. This holds only when TLS terminates in the enclave, not behind `ALLOW_EXTERNAL_TLS_TERMINATION`.
 
 ## Cost Calculation
 
