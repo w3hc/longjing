@@ -63,6 +63,7 @@ pnpm verify:attestation attestation.json
 - ✅ Platform is not 'mock' (real TEE)
 - ✅ `report_data` commits to the returned keys and to a fresh random nonce
 - ✅ The TLS certificate of the session is the bound one
+- ✅ `onionAddress` is the address of the bound onion service key, and a `.onion` host is that address (`--socks <host:port>` reaches it through Tor)
 - ✅ The TLS key exchange is hybrid post-quantum: it offers `SecP384r1MLKEM1024` and warns when it gets a classical group
 - ✅ The event log replays to RTMR0–3 of the quote
 - ✅ `GET /attestation/manifest` signs the same keys
@@ -88,20 +89,22 @@ curl -k "$SERVER_URL/attestation?nonce=$NONCE" > attestation.json
 `report_data` is the 64-byte, user-controlled field of the quote that the TEE hardware signs. Longjing builds it in [`report-data.ts`](../src/attestation/report-data.ts):
 
 ```
-report_data[0..32]  = SHA-256( LP("longjing-report-v2")
+report_data[0..32]  = SHA-256( LP("longjing-report-v3")
                              || LP(identity_public_key)
                              || LP(refund_signer_x || refund_signer_y)
-                             || LP(SHA-256(tls_leaf_cert_der)) )
+                             || LP(SHA-256(tls_leaf_cert_der))
+                             || LP(onion_service_public_key) )
 report_data[32..64] = client nonce, or 32 zero bytes
 ```
 
 - `LP(x)` is `x` prefixed with its length as a 4-byte big-endian integer, so no two inputs encode the same way. A new term is appended at the end, with a new label.
 - `identity_public_key` is the 65-byte uncompressed secp256k1 key that signs the key manifest.
 - `refund_signer_x || refund_signer_y` is the Baby Jubjub public key that signs refund tickets, each coordinate as 32 big-endian bytes.
+- `onion_service_public_key` is the 32-byte ed25519 public key of the onion service. Its `.onion` address is derived from it, as Tor's [rend-spec](https://spec.torproject.org/rend-spec/encoding-onion-addresses.html) defines: `base32(key || SHA3-256(".onion checksum" || key || 0x03)[:2] || 0x03)`. A verifier recomputes the address from the key, so the address needs no term of its own.
 - A key that was not derived from dstack (development only), or a TLS certificate that is not served from inside the enclave, is an empty term: `LP(empty)` is four zero bytes.
-- `longjing-report-v1`, up to v0.5.0, also committed to an ML-KEM-1024 key, after the label. That key was never used and is gone (see [MLKEM.md](./MLKEM.md)); a v1 `report_data` doesn't verify as v2.
+- `longjing-report-v2` had no onion service term. `longjing-report-v1`, up to v0.5.0, also committed to an ML-KEM-1024 key, after the label. That key was never used and is gone (see [MLKEM.md](./MLKEM.md)). A `report_data` of one version doesn't verify as another.
 
-`GET /attestation` returns every input under `keys`, the nonce it bound under `nonce`, and on dstack the event log under `eventLog`:
+`GET /attestation` returns every input under `keys`, the nonce it bound under `nonce`, the onion service's address under `onionAddress`, and on dstack the event log under `eventLog`:
 
 ```json
 {
@@ -112,15 +115,17 @@ report_data[32..64] = client nonce, or 32 zero bytes
   "keys": {
     "identityPublicKey": "0x04...",
     "refundSignerPublicKey": { "x": "0x...", "y": "0x..." },
-    "tlsCertificate": "<base64 DER>"
+    "tlsCertificate": "<base64 DER>",
+    "onionPublicKey": "0x<64 hex chars>"
   },
+  "onionAddress": "<56 base32 chars>.onion",
   "eventLog": "[{\"imr\":0,\"event_type\":...,\"digest\":\"...\"}, ...]"
 }
 ```
 
 The nonce is optional, 32 bytes as 64 hex characters with or without `0x`. A malformed one gets a 400. Without one, the second half of `report_data` is zero and the quote proves nothing about freshness.
 
-The identity and refund signer keys are derived inside the enclave from the dstack KMS, see [KEY_DERIVATION.md](./KEY_DERIVATION.md).
+The identity, refund signer and onion service keys are derived inside the enclave from the dstack KMS, see [KEY_DERIVATION.md](./KEY_DERIVATION.md).
 
 ## Verification
 
@@ -129,9 +134,10 @@ The identity and refund signer keys are derived inside the enclave from the dsta
 1. Send a fresh 32-byte random nonce: `GET /attestation?nonce=<hex>`.
 2. Rebuild `report_data` from `keys` and your nonce, and check it equals both `reportData` and the `report_data` inside the quote (offset 568 of a TDX quote).
 3. Check that `keys.tlsCertificate` is the certificate your TLS session presented. A null certificate means TLS terminates outside the enclave.
-4. Replay RTMR0–3 from `eventLog` ([`replayRtmrs`](../src/attestation/tdx-quote.ts)): each RTMR starts at 48 zero bytes and every event extends it as `RTMR = SHA-384(RTMR || digest)`. Check the result equals RTMR0–3 of the quote. A dstack runtime event (type `0x08000001`) must also carry `digest = SHA-384(event_type as u32 LE || ":" || event || ":" || event_payload)`, so its payload, the `compose-hash` for one, can be trusted.
-5. Check that `GET /attestation/manifest` commits to the same keys and is signed by `keys.identityPublicKey`.
-6. Verify the quote signature with the platform's verification service, and compare the measurements and the `compose-hash` against the published release.
+4. Recompute the `.onion` address from `keys.onionPublicKey` and check it equals `onionAddress` and, when you reached the gateway at a `.onion` host, that host.
+5. Replay RTMR0–3 from `eventLog` ([`replayRtmrs`](../src/attestation/tdx-quote.ts)): each RTMR starts at 48 zero bytes and every event extends it as `RTMR = SHA-384(RTMR || digest)`. Check the result equals RTMR0–3 of the quote. A dstack runtime event (type `0x08000001`) must also carry `digest = SHA-384(event_type as u32 LE || ":" || event || ":" || event_payload)`, so its payload, the `compose-hash` for one, can be trusted.
+6. Check that `GET /attestation/manifest` commits to the same keys and is signed by `keys.identityPublicKey`.
+7. Verify the quote signature with the platform's verification service, and compare the measurements and the `compose-hash` against the published release.
 
 ## Platform-Specific Verification
 
@@ -308,8 +314,9 @@ def report_data(keys: dict, nonce: bytes) -> bytes:
     refund = (int(rs['x'], 16).to_bytes(32, 'big') + int(rs['y'], 16).to_bytes(32, 'big')) if rs else b''
     cert = keys['tlsCertificate']
     cert_hash = hashlib.sha256(base64.b64decode(cert)).digest() if cert else b''
+    onion = bytes.fromhex(keys['onionPublicKey'][2:]) if keys['onionPublicKey'] else b''
     commitment = hashlib.sha256(
-        lp(b'longjing-report-v2') + lp(identity) + lp(refund) + lp(cert_hash)
+        lp(b'longjing-report-v3') + lp(identity) + lp(refund) + lp(cert_hash) + lp(onion)
     ).digest()
     return commitment + nonce
 

@@ -8,6 +8,7 @@ import {
 const IDENTITY = new Uint8Array([0x04, ...new Uint8Array(64).fill(0x02)]);
 const REFUND_SIGNER = { x: '0x05', y: '0x' + '03'.repeat(32) };
 const CERT = Buffer.from('cert');
+const ONION = new Uint8Array(32).fill(0x06);
 
 describe('buildReportData', () => {
   it('commits to empty terms with a zero nonce', () => {
@@ -15,7 +16,7 @@ describe('buildReportData', () => {
 
     expect(reportData).toHaveLength(64);
     expect(reportData.subarray(0, 32).toString('hex')).toBe(
-      'fd2d3683f797923d007b6c6d1e421106efcfecfad43c9409d4dbfc24a57ef210',
+      '8d54af7daf4235f2d9c6e661fa1287edb51a4e339171a319d97c7636f79b94df',
     );
     expect(reportData.subarray(32).equals(Buffer.alloc(32))).toBe(true);
   });
@@ -25,10 +26,11 @@ describe('buildReportData', () => {
       identityPublicKey: IDENTITY,
       refundSignerPublicKey: encodeRefundSignerPublicKey(REFUND_SIGNER),
       tlsCertificateDer: CERT,
+      onionPublicKey: ONION,
     });
 
     expect(reportData.subarray(0, 32).toString('hex')).toBe(
-      'a56de41403c09631b02e292e166116d9ce633d226eb4afc5dca2b6d864942231',
+      'e5fa441eb0ce07753011262eb97c4b5eba30a1c1f2b4730e747c5d606cabeec8',
     );
   });
 
@@ -47,6 +49,15 @@ describe('buildReportData', () => {
       }).subarray(0, 32);
 
     expect(commitment('0x01').equals(commitment('0x02'))).toBe(false);
+  });
+
+  it('changes the commitment when the onion service key changes', () => {
+    const commitment = (fill: number) =>
+      buildReportData({
+        onionPublicKey: new Uint8Array(32).fill(fill),
+      }).subarray(0, 32);
+
+    expect(commitment(1).equals(commitment(2))).toBe(false);
   });
 
   it('rejects a nonce that is not 32 bytes', () => {

@@ -13,6 +13,7 @@ import {
   sha256,
 } from 'ethers';
 import { getTlsLeafCertificate } from '../tls/tls-context';
+import { OnionKey, onionAddress, onionKeyFromSeed } from '../tor/onion-key';
 import { DstackV1Client } from './dstack-v1.client';
 import { keysOutsideEnclaveAllowed } from './key-policy';
 import { isProd } from '../config/profile';
@@ -20,17 +21,19 @@ import { isProd } from '../config/profile';
 export const REFUND_SIGNER_DOMAIN = 'longjing/refund-signer/babyjub/v1';
 export const IDENTITY_DOMAIN = 'longjing/identity/v1';
 export const TX_SIGNER_DOMAIN = 'longjing/tx-signer/v1';
+export const ONION_SERVICE_DOMAIN = 'longjing/onion-service/v1';
 
 const HKDF_SALT = 'longjing';
 const REFUND_SIGNER_INFO = lengthPrefixed('longjing-refund-signer-babyjub-v1');
 
-export const KEY_MANIFEST_DOMAIN = { name: 'Longjing', version: '2' };
+export const KEY_MANIFEST_DOMAIN = { name: 'Longjing', version: '3' };
 export const KEY_MANIFEST_TYPES = {
   KeyManifest: [
     { name: 'appId', type: 'address' },
     { name: 'refundSignerX', type: 'bytes32' },
     { name: 'refundSignerY', type: 'bytes32' },
     { name: 'tlsCertificateHash', type: 'bytes32' },
+    { name: 'onionPublicKey', type: 'bytes32' },
     { name: 'txSignerAddress', type: 'address' },
     { name: 'epoch', type: 'uint64' },
   ],
@@ -42,6 +45,8 @@ export interface KeyManifest {
   refundSignerY: string;
   /** SHA-256 of the served TLS leaf certificate (DER), or zero if none. */
   tlsCertificateHash: string;
+  /** ed25519 public key of the onion service. */
+  onionPublicKey: string;
   /** Signs every contract transaction in production; needs gas. */
   txSignerAddress: string;
   epoch: number;
@@ -70,6 +75,8 @@ export class KeyDerivationService implements OnModuleInit {
   private identity: SigningKey | null = null;
   private identitySignatureChain: Uint8Array[] = [];
   private txSigner: SigningKey | null = null;
+  private onionKey: OnionKey | null = null;
+  private onionSignatureChain: Uint8Array[] = [];
   private appId: string | null = null;
   private keyManifest: SignedKeyManifest | null = null;
 
@@ -129,6 +136,17 @@ export class KeyDerivationService implements OnModuleInit {
     const txSigningKey = new SigningKey(hexlify(txSigner.key));
     txSigner.key.fill(0);
 
+    // v1 returns the RFC 8032 seed and its public key, which the signature
+    // chain claims, so the onion service's key is the chain's key
+    const onion = await this.dstack.getKey(ONION_SERVICE_DOMAIN, 'ed25519');
+    const onionKey = onionKeyFromSeed(onion.key);
+    onion.key.fill(0);
+    if (!onionKey.publicKey.equals(onion.publicKey)) {
+      throw new Error(
+        "dstack GetKey returned an ed25519 public key that is not the seed's",
+      );
+    }
+
     const appId = await this.dstack.getAppId();
 
     this.refundSignerKey = refundSignerKey;
@@ -137,6 +155,8 @@ export class KeyDerivationService implements OnModuleInit {
     this.identity = signingKey;
     this.identitySignatureChain = identity.signatureChain;
     this.txSigner = txSigningKey;
+    this.onionKey = onionKey;
+    this.onionSignatureChain = onion.signatureChain;
     this.appId = appId;
   }
 
@@ -144,7 +164,8 @@ export class KeyDerivationService implements OnModuleInit {
     return (
       this.refundSignerKey !== null &&
       this.identity !== null &&
-      this.txSigner !== null
+      this.txSigner !== null &&
+      this.onionKey !== null
     );
   }
 
@@ -184,6 +205,30 @@ export class KeyDerivationService implements OnModuleInit {
   }
 
   /**
+   * The onion service's key pair, secret included. Only OnionService calls
+   * this, to hand the key to tor over its control socket.
+   */
+  getOnionKey(): OnionKey | null {
+    return this.onionKey;
+  }
+
+  /** The onion service's ed25519 public key, 32 bytes. */
+  getOnionPublicKey(): Buffer | null {
+    return this.onionKey?.publicKey ?? null;
+  }
+
+  /** The onion service's address, with ".onion". */
+  getOnionAddress(): string | null {
+    return this.onionKey
+      ? `${onionAddress(this.onionKey.publicKey)}.onion`
+      : null;
+  }
+
+  getOnionSignatureChain(): Uint8Array[] {
+    return this.onionSignatureChain;
+  }
+
+  /**
    * In production the only key that sends transactions, so its address
    * needs gas and is the contract's serverAddress.
    */
@@ -217,7 +262,12 @@ export class KeyDerivationService implements OnModuleInit {
     tlsCertificateHash: string,
     epoch = 1,
   ): SignedKeyManifest {
-    if (!this.identity || !this.txSigner || !this.refundSignerPublicKey) {
+    if (
+      !this.identity ||
+      !this.txSigner ||
+      !this.refundSignerPublicKey ||
+      !this.onionKey
+    ) {
       throw new Error('Keys not derived');
     }
     const manifest: KeyManifest = {
@@ -225,6 +275,7 @@ export class KeyDerivationService implements OnModuleInit {
       refundSignerX: this.refundSignerPublicKey.x,
       refundSignerY: this.refundSignerPublicKey.y,
       tlsCertificateHash,
+      onionPublicKey: hexlify(this.onionKey.publicKey),
       txSignerAddress: computeAddress(this.txSigner.publicKey),
       epoch,
     };

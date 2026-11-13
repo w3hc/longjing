@@ -44,6 +44,8 @@ export interface BoundKeys {
   refundSignerPublicKey: { x: string; y: string } | null;
   /** Base64 DER of the TLS leaf certificate served from inside the enclave */
   tlsCertificate: string | null;
+  /** 0x-hex ed25519 public key of the onion service, 32 bytes */
+  onionPublicKey: string | null;
 }
 
 /** A quote with the nonce and the keys its report_data commits to. */
@@ -51,4 +53,6 @@ export interface BoundAttestation extends AttestationQuote {
   /** 0x-hex client nonce in report_data[32..64], or null */
   nonce: string | null;
   keys: BoundKeys;
+  /** The onion service's address, derived from keys.onionPublicKey */
+  onionAddress: string | null;
 }

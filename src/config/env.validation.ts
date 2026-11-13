@@ -10,6 +10,7 @@ import {
   validateSync,
 } from 'class-validator';
 import { assertNoKeyMaterialInEnv } from '../keys/key-policy';
+import { parseCorsOrigins } from './cors';
 import { CLAUDE_CONFIG } from '../providers/claude/claude.config';
 import { findPlaceholders, isProd, NODE_ENVS } from './profile';
 import type { NodeEnv } from './profile';
@@ -54,6 +55,10 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   MAX_CONCURRENT_PROOFS?: number;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  ONION_SERVICE?: string;
 }
 
 // The provider's key too: without it, the service would answer with mock
@@ -64,10 +69,13 @@ const PROD_REQUIRED = [
   CLAUDE_CONFIG.API_KEY_ENV,
 ] as const;
 
+// ONION_SERVICE only turns the onion service on locally: production always
+// runs it
 const PROD_REFUSED = [
   'ANVIL_RPC_URL',
   'SERVER_TX_PRIVATE_KEY',
   'DSTACK_SIMULATOR_ENDPOINT',
+  'ONION_SERVICE',
 ] as const;
 
 /**
@@ -107,6 +115,12 @@ function profileErrors(config: Record<string, unknown>): string[] {
  */
 export function validateEnvironment(config: Record<string, unknown>) {
   const problems = profileErrors(config);
+  try {
+    // Optional in every mode: empty disables browser access in production
+    parseCorsOrigins(config.CORS_ORIGINS);
+  } catch (error) {
+    problems.push((error as Error).message);
+  }
   if (problems.length > 0) {
     throw new Error(`Environment validation failed:\n${problems.join('\n')}`);
   }

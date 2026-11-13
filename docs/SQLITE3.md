@@ -62,7 +62,7 @@ Signed responses are kept in memory for 10 minutes, keyed by `N`, so a client th
 
 ⚠️ **Potential Timing Correlation**:
 - The database holds no timestamps, but the operator's network sees when requests arrive. If only one user deposits at 10:00 AM and a request appears at 10:05 AM, timing suggests correlation
-- Mitigation: Users should deposit in advance or during high-activity periods ([#99](https://github.com/w3hc/longjing/issues/99))
+- Mitigation: Users should deposit in advance or during high-activity periods ([#189](https://github.com/w3hc/longjing/issues/189))
 
 ## Implementation
 

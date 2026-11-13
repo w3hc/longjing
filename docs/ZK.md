@@ -267,7 +267,7 @@ Assuming ETH = $2,000:
 - **Request to request**: nullifiers are fresh per index and the published accumulator is re-randomized every time, so two requests share no value
 - **Anonymity set**: a request proves membership among every note in the tree, whatever its amount
 - **Exit**: shows that a note closed, to which recipient and for what payout, so `D − P` is its net spending. It doesn't show which requests it made
-- **Not covered**: timing and network metadata ([#99](https://github.com/w3hc/longjing/issues/99)), and whoever ran the single-party trusted setup could forge proofs ([#135](https://github.com/w3hc/longjing/issues/135))
+- **Not covered**: request timing and size ([#189](https://github.com/w3hc/longjing/issues/189)), the network identity of a client that doesn't reach the [onion service](./ONION_SERVICE.md) through Tor with a circuit per request ([INTEGRATION_GUIDELINES.md](./INTEGRATION_GUIDELINES.md)), and whoever ran the single-party trusted setup could forge proofs ([#135](https://github.com/w3hc/longjing/issues/135))
 
 ## Testing
 

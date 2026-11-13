@@ -28,8 +28,20 @@ FROM base AS prod-deps
 RUN pnpm install --prod --frozen-lockfile \
   && rm -f node_modules/.modules.yaml node_modules/.pnpm-workspace-state-v1.json
 
-# Runtime stage: dist, production dependencies and the verification key only, no pnpm
+# Runtime stage: dist, production dependencies, the verification key and tor only, no pnpm
 FROM ${NODE_IMAGE}
+
+# tor runs the onion service (docs/ONION_SERVICE.md). tor and its dependencies are pinned, so a
+# rebuild installs the same files or fails once Alpine replaces a version. --no-scripts skips the
+# tor user the package adds, since tor runs as node, and with it the build date in /etc/shadow;
+# --no-logfile keeps the build time out of /var/log/apk.log
+RUN apk add --no-cache --no-scripts --no-logfile \
+  tor=0.4.9.15-r0 \
+  libcap2=2.78-r0 \
+  libevent=2.1.13-r0 \
+  libseccomp=2.6.1-r0 \
+  xz-libs=5.8.4-r0 \
+  zstd-libs=1.5.7-r2
 
 WORKDIR /app
 

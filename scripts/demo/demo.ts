@@ -22,20 +22,23 @@
  *
  * 1. Deploy LongjingCredits with NODE_ENV=development, or use the deployed one
  * 2. Start the server pointed at it, or use the gateway
- * 3. Alice deposits and sends a request, proved on her machine
+ * 3. Alice's client verifies the gateway's attestation, with a fresh nonce,
+ *    before it sends anything; an attacker on the path swaps a key or
+ *    replays an old attestation, and the client sends nothing
+ * 4. Alice deposits and sends a request, proved on her machine
  *    (scripts/client/note.ts, what pnpm prove runs)
- * 4. Alice retries it, then sends a second request from the signed accumulator
- * 5. The operator tries to link Alice's requests to each other and to her
+ * 5. Alice retries it, then sends a second request from the signed accumulator
+ * 6. The operator tries to link Alice's requests to each other and to her
  *    deposit; the observer looks for her requests onchain
- * 6. The attacker double-spends, and a wallet that is not serverAddress
+ * 7. The attacker double-spends, and a wallet that is not serverAddress
  *    slashes them with the revealed key
- * 7. The attacker exits claiming fewer requests than they made, and the
+ * 8. The attacker exits claiming fewer requests than they made, and the
  *    operator slashes the exit with the signal it stored
- * 8. Alice exits: the attacker can't redirect her payout, she proves the
+ * 9. Alice exits: the attacker can't redirect her payout, she proves the
  *    withdrawal herself, and it pays D + R − n · C_MAX after the window
- * 9. Alice's closed note can make no request, and no request body contained
- *    a secret key
- * 10. serverAddress (on Anvil) or the demo wallet withdraws the operator's
+ * 10. Alice's closed note can make no request, and no request body contained
+ *     a secret key
+ * 11. serverAddress (on Anvil) or the demo wallet withdraws the operator's
  *     balance, which goes to operatorPayout, not the caller
  *
  * On Anvil, the server answers with mock responses: ANTHROPIC_API_KEY is
@@ -65,6 +68,15 @@ import {
   WithdrawalArgs,
 } from '../client/note';
 import { SlashingService } from '../../src/longjing/slashing.service';
+import {
+  AttestationRefused,
+  Gateway,
+  GatewayRequest,
+  GatewayTransport,
+  openGateway,
+} from '../client/gateway';
+import { nodeTransport } from '../client/transport';
+import type { BoundAttestation } from '../../src/attestation/attestation.types';
 
 const run = promisify(execFile);
 
@@ -171,8 +183,7 @@ const goals = {
   ),
   attestation: goal(
     'The client verifies the attestation before sending anything',
-    'not checked yet',
-    [99],
+    'verified',
   ),
   tlsKeyExchange: goal(
     "An eavesdropper's recording needs both the classical and the ML-KEM key exchange broken",
@@ -447,15 +458,15 @@ async function main() {
   const cMax = (await contract.C_MAX()) as bigint;
   const sent: string[] = [];
   const secrets: bigint[] = [];
+  // On Anvil, the local server attests with the mock platform over HTTP
+  const development = onAnvil;
+  let gateway: Gateway | undefined;
   const post = async (body: RequestBody) => {
-    const json = JSON.stringify(body);
-    sent.push(json);
-    const res = await fetch(`${url}/longjing/request`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: json,
-    });
-    return { status: res.status, json: (await res.json()) as any };
+    sent.push(JSON.stringify(body));
+    return required(gateway, 'verified gateway').post(
+      '/longjing/request',
+      body,
+    );
   };
   const open = async () => {
     const note = newNote(options.rpcUrl, address);
@@ -477,7 +488,99 @@ async function main() {
     );
 
   try {
-    step('3. Alice deposits and sends a request, proved on her machine');
+    step(
+      "3. Alice's client verifies the attestation, and refuses a tampered one",
+    );
+    await verify(goals.attestation, async () => {
+      const seen: GatewayRequest[] = [];
+      const recording = (
+        tamper?: (attestation: BoundAttestation) => BoundAttestation,
+      ): GatewayTransport => {
+        const inner = nodeTransport(url);
+        return {
+          host: inner.host,
+          secure: inner.secure,
+          async request(request) {
+            seen.push(request);
+            const res = await inner.request(request);
+            return tamper && request.path.startsWith('/attestation?')
+              ? {
+                  ...res,
+                  body: JSON.stringify(
+                    tamper(JSON.parse(res.body) as BoundAttestation),
+                  ),
+                }
+              : res;
+          },
+        };
+      };
+      const posts = () => seen.filter((r) => r.method === 'POST').length;
+      // Opens the gateway and sends a request through it; true if refused
+      // with nothing sent
+      const refuses = async (
+        transport: GatewayTransport,
+        dev = development,
+      ) => {
+        const before = posts();
+        try {
+          const opened = await openGateway(transport, { development: dev });
+          await opened.post('/longjing/request', { probe: true });
+          return false;
+        } catch (error) {
+          return error instanceof AttestationRefused && posts() === before;
+        }
+      };
+
+      gateway = await openGateway(recording(), { development });
+      const first = seen[0];
+      check(
+        goals.attestation,
+        'the first request is GET /attestation with a fresh 32-byte nonce',
+        first?.method === 'GET' &&
+          /^\/attestation\?nonce=[0-9a-f]{64}$/.test(first.path) &&
+          first.path.endsWith(gateway.attestation.nonce!.slice(2)),
+        first?.path,
+      );
+      check(
+        goals.attestation,
+        'the honest gateway is accepted before anything is sent',
+        posts() === 0,
+      );
+      const honest = gateway.attestation;
+
+      check(
+        goals.attestation,
+        'an attestation with a swapped refund key is refused, nothing sent',
+        await refuses(
+          recording((a) => ({
+            ...a,
+            keys: {
+              ...a.keys,
+              refundSignerPublicKey: { x: '0x01', y: '0x02' },
+            },
+          })),
+        ),
+      );
+      check(
+        goals.attestation,
+        'an attestation replayed for an earlier nonce is refused, nothing sent',
+        await refuses(recording(() => honest)),
+      );
+      if (development) {
+        check(
+          goals.attestation,
+          'outside development, a gateway not in a TEE is refused, nothing sent',
+          await refuses(recording(), false),
+        );
+      }
+      console.log(
+        development
+          ? '    (mock platform: the quote signature is not checked on Anvil)'
+          : `    ${honest.platform} quote over TLS, onion service ${honest.onionAddress ?? 'none'}`,
+      );
+    });
+
+    step('4. Alice deposits and sends a request, proved on her machine');
     let note: NoteFile | undefined;
     let firstBody: RequestBody | undefined;
     let firstResponse: RequestResponse | undefined;
@@ -538,7 +641,7 @@ async function main() {
       );
     });
 
-    step('4. Alice retries her request, then sends a second one');
+    step('5. Alice retries her request, then sends a second one');
     await verify(goals.nullifier, async () => {
       const retry = await post(required(firstBody, 'request'));
       check(
@@ -563,7 +666,7 @@ async function main() {
       note = await receive(proved.note, res.json as RequestResponse);
     });
 
-    step("5. The operator and the observer try to link Alice's requests");
+    step("6. The operator and the observer try to link Alice's requests");
     await verify(goals.requestToRequest, async () => {
       const first = publicFields(required(firstBody, 'request') as never);
       const second = publicFields(required(secondBody, 'request') as never);
@@ -632,7 +735,7 @@ async function main() {
     });
 
     step(
-      '6. The attacker double-spends, a wallet that is not serverAddress slashes them',
+      '7. The attacker double-spends, a wallet that is not serverAddress slashes them',
     );
     await verify(goals.slashing, async () => {
       const attacker = await open();
@@ -695,7 +798,7 @@ async function main() {
       );
     });
 
-    step('7. The attacker exits claiming fewer requests than they made');
+    step('8. The attacker exits claiming fewer requests than they made');
     if (!app) {
       goals.understatedExit.status = 'not checked yet';
       goals.understatedExit.detail = "needs the operator's database";
@@ -750,7 +853,7 @@ async function main() {
       });
     }
 
-    step('8. Alice exits, with a withdrawal she proves herself');
+    step('9. Alice exits, with a withdrawal she proves herself');
     let exit: WithdrawalArgs | undefined;
     await verify(goals.withdrawalRecipient, async () => {
       const recipient = ethers.Wallet.createRandom().address;
@@ -814,7 +917,7 @@ async function main() {
       );
     });
 
-    step("9. Alice's note is closed, and no body carried a secret key");
+    step("10. Alice's note is closed, and no body carried a secret key");
     await verify(goals.closedNote, async () => {
       const refused = await proveRequest(required(note, 'note'), 'One more?')
         .then(() => '')
@@ -841,8 +944,8 @@ async function main() {
 
     step(
       onAnvil
-        ? "10. serverAddress withdraws the operator's balance"
-        : "10. The demo wallet withdraws the operator's balance",
+        ? "11. serverAddress withdraws the operator's balance"
+        : "11. The demo wallet withdraws the operator's balance",
     );
     await verify(goals.operatorPayout, async () => {
       const caller = onAnvil ? new ethers.Wallet(SERVER_KEY, provider) : alice;

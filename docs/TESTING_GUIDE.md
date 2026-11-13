@@ -20,14 +20,15 @@ The steps:
 
 1. Deploy `LongjingCredits` with `NODE_ENV=development`
 2. Start the server pointed at it
-3. Alice deposits 0.01 ETH and sends a request, proved on her machine with the client `pnpm prove` runs
-4. Alice retries the request and gets the same accumulator back, then sends a second request from the signed accumulator
-5. The operator tries to link Alice's two requests to each other and to her deposit, from the request bodies and, on Anvil, from its own nullifier database. The observer checks that the contract logged nothing while they were served
-6. The attacker deposits and sends two requests at the same index. The server refuses the second; a wallet that is not `serverAddress` recovers the key from the two signals and calls `slash(k)`
-7. The attacker deposits again, makes two requests, and exits claiming one. The operator finds the exit's nullifier in its database and slashes the note within the window
-8. Alice exits: the attacker can't redirect her proof to another recipient. With the server stopped, she initiates the withdrawal with her own proof, and it pays `D + R − 2 · C_max` after the window
-9. Alice's closed note can make no request, and no request body contained a secret key
-10. `serverAddress` calls `withdrawOperatorBalance`: the whole operator balance goes to `operatorPayout`, and the caller gets nothing
+3. Alice's client fetches `GET /attestation` with a fresh nonce and verifies it before sending anything ([`scripts/client/gateway.ts`](../scripts/client/gateway.ts)). An attacker on the path swaps the refund key, then replays the attestation Alice got: the client refuses both and sends nothing. On Anvil, the client also refuses the local mock attestation once it is not told it runs against development
+4. Alice deposits 0.01 ETH and sends a request, proved on her machine with the client `pnpm prove` runs
+5. Alice retries the request and gets the same accumulator back, then sends a second request from the signed accumulator
+6. The operator tries to link Alice's two requests to each other and to her deposit, from the request bodies and, on Anvil, from its own nullifier database. The observer checks that the contract logged nothing while they were served
+7. The attacker deposits and sends two requests at the same index. The server refuses the second; a wallet that is not `serverAddress` recovers the key from the two signals and calls `slash(k)`
+8. The attacker deposits again, makes two requests, and exits claiming one. The operator finds the exit's nullifier in its database and slashes the note within the window
+9. Alice exits: the attacker can't redirect her proof to another recipient. With the server stopped, she initiates the withdrawal with her own proof, and it pays `D + R − 2 · C_max` after the window
+10. Alice's closed note can make no request, and no request body contained a secret key
+11. `serverAddress` calls `withdrawOperatorBalance`: the whole operator balance goes to `operatorPayout`, and the caller gets nothing
 
 The table reads:
 
@@ -47,7 +48,7 @@ The table reads:
 | The operator's balance goes only to its payout address, whoever withdraws it | verified | |
 | A closed note can't make requests | verified | |
 | The client sends nothing that contains the secret key | verified | |
-| The client verifies the attestation before sending anything | not checked yet | [#99](https://github.com/w3hc/longjing/issues/99) |
+| The client verifies the attestation before sending anything | verified | |
 | An eavesdropper's recording needs both the classical and the ML-KEM key exchange broken | not checked yet, the demo runs over plain HTTP | |
 | Protocol, pricing and refunds work with any provider | not checked yet | |
 | A depositor can withdraw without the server | verified | |
@@ -70,7 +71,7 @@ The demo skips the deployment and the local server, and pays the deposits from t
 - Alice's exit is initiated but not finalized: call `finalizeWithdrawal` after the 3-day window.
 - The operator check calls `withdrawOperatorBalance` from the `DEMO_PRIVATE_KEY` wallet instead of `serverAddress`, which moves the operator's whole balance to `operatorPayout`.
 - The operator's database checks, and the understated exit, run only on Anvil, where the server runs in the demo's process.
-- The demo doesn't verify the attestation yet, so it can't tell that the gateway runs in an enclave with `NODE_ENV=production`.
+- The client verifies the attestation before its first request: it requires a dstack quote whose `report_data` binds its nonce and the returned keys, an event log that replays to the quote, the key manifest, and a TLS session whose certificate is the bound one, then pins that certificate for every request. It doesn't verify the quote signature or compare the measurements with a release, so it can't tell by itself that the gateway runs a published build: check that with `pnpm verify:attestation` and the platform's verification service.
 
 ## Overview
 
@@ -212,10 +213,10 @@ Computes Poseidon hash for identity commitments.
 ### Verify TEE Attestation
 
 ```bash
-pnpm verify:attestation <url-or-file>
+pnpm verify:attestation <url-or-file> [--socks 127.0.0.1:9050]
 ```
 
-Verifies Intel TDX attestation quotes from Phala deployments.
+Verifies Intel TDX attestation quotes from Phala deployments, with a fresh nonce: the key binding, the TLS certificate and, at a `.onion` URL through Tor's SOCKS port, that the host is the bound onion service.
 
 ## CI/CD Testing
 

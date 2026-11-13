@@ -22,6 +22,7 @@ Longjing derives its keys at boot from the [dstack](https://github.com/Dstack-TE
 | Refund signer | `longjing/refund-signer/babyjub/v1` | `ed25519` (used as a 32-byte seed) | Signing refund accumulators (EdDSA on Baby Jubjub), checked by the circuits against `LongjingCredits.serverPublicKey` |
 | Identity key | `longjing/identity/v1` | `secp256k1` | Signing the [key manifest](#key-manifest) |
 | Transaction signer | `longjing/tx-signer/v1` | `secp256k1` | Signing contract transactions (slashing, expiry claims) as `LongjingCredits.serverAddress` |
+| Onion service key | `longjing/onion-service/v1` | `ed25519` | The v3 onion service's identity, whose `.onion` address clients reach the API at |
 | TLS key | `GetTlsKey` | — | In-enclave TLS termination |
 
 `GetKey` is deterministic in `(app_id, domain, algorithm)`: every instance of the app, on every restart, gets the same keys, so nothing needs to be persisted or backed up. The KMS releases the app's root key only to a CVM whose boot measurements match the app's on-chain policy (allowed compose hash, allowed OS image), so only code the app owner has registered on chain can derive them. Under [GOVERNANCE.md](./GOVERNANCE.md), a Safe and a 7-day timelock own the app, so every new build is public for that delay before it can boot.
@@ -75,6 +76,17 @@ tx_signer = GetKey("longjing/tx-signer/v1", "secp256k1").key
 
 Used directly as the private key, like the identity key. It is the operator's hot wallet: it signs every contract transaction in production, so its address needs ETH for gas and must be the contract's `serverAddress`. It never receives the operator balance, which goes to `operatorPayout`. Keeping it apart from the identity key means the key that pays gas never signs the manifest.
 
+### Onion service key
+
+```text
+seed                        = GetKey("longjing/onion-service/v1", "ed25519").key
+public_key                  = RFC 8032 public key of seed, checked against GetKey's public_key
+expanded_secret_key         = SHA-512(seed), first 32 bytes clamped (scalar || PRF secret)
+onion_address               = base32(public_key || SHA3-256(".onion checksum" || public_key || 0x03)[:2] || 0x03)
+```
+
+v1 returns the RFC 8032 seed with its public key, and the signature chain claims that public key, so the chain also vouches for the onion service. Startup fails if `public_key` isn't the seed's. The expanded key goes to tor only over its control socket, with `ADD_ONION ED25519-V3:<base64>` ([control-spec](https://spec.torproject.org/control-spec/commands.html#add_onion)), so it is never written to disk, see [ONION_SERVICE.md](./ONION_SERVICE.md).
+
 ### TLS key
 
 The TLS key and certificate come from `GetTlsKey` on `dstack.sock`, with the private key generated inside the CVM. `report_data` binds the certificate, see [TEE_SETUP.md](./TEE_SETUP.md#3-verify-tls-termination-inside-tee).
@@ -84,29 +96,30 @@ The TLS key and certificate come from `GetTlsKey` on `dstack.sock`, with the pri
 The identity key signs an [EIP-712](https://eips.ethereum.org/EIPS/eip-712) manifest:
 
 ```solidity
-// domain: { name: "Longjing", version: "2" }
+// domain: { name: "Longjing", version: "3" }
 struct KeyManifest {
     address appId;              // the DstackApp contract address
     bytes32 refundSignerX;      // Baby Jubjub public key, as serverPublicKey
     bytes32 refundSignerY;
     bytes32 tlsCertificateHash; // SHA-256(TLS leaf certificate DER), or zero
+    bytes32 onionPublicKey;     // ed25519 public key of the onion service
     address txSignerAddress;    // signs transactions, the contract's serverAddress
     uint64  epoch;              // key generation, 1 for now
 }
 ```
 
-Version `1`, up to v0.5.0, also carried `mlkemPublicKeyHash` after `appId`.
+Version `2` had no `onionPublicKey`. Version `1`, up to v0.5.0, also carried `mlkemPublicKeyHash` after `appId`.
 
-`GET /attestation/manifest` returns the manifest and its signature, the EIP-712 domain and types, the identity address and public key, the refund signer public key, and the `GetKey` signature chains of the identity and refund signer keys. It answers 503 when the keys were not derived from dstack, which happens only in development.
+`GET /attestation/manifest` returns the manifest and its signature, the EIP-712 domain and types, the identity address and public key, the refund signer public key, the onion service's address and public key, and the `GetKey` signature chains of the identity, refund signer and onion service keys. It answers 503 when the keys were not derived from dstack, which happens only in development.
 
-`report_data` commits to the same keys as the manifest, the identity and refund signer public keys and the TLS certificate, followed by the client's nonce. See [ATTESTATION.md](./ATTESTATION.md#report_data).
+`report_data` commits to the same keys as the manifest, the identity, refund signer and onion service public keys and the TLS certificate, followed by the client's nonce. See [ATTESTATION.md](./ATTESTATION.md#report_data).
 
 ## Verification
 
 1. **Attestation**: fetch `GET /attestation?nonce=<32 random bytes, hex>`, verify the TDX quote, and check that `report_data` commits to the returned keys, to the certificate of your TLS session and to your nonce, see [ATTESTATION.md](./ATTESTATION.md#verification).
 2. **Code**: replay the returned `eventLog` into RTMR0–3, check it matches the quote, and read `compose-hash` and `app-id` from RTMR3. Check that `compose_hash` belongs to a published Longjing release, see [DOCKER.md](./DOCKER.md#releases).
-3. **Manifest**: fetch `GET /attestation/manifest`, recover the EIP-712 signer and check that it is the identity address, that `appId` is the one from step 2, and that `refundSignerX`, `refundSignerY` and `tlsCertificateHash` match the keys of step 1.
-4. **Signature chains**: check that the identity and refund signer chains lead to the KMS root anchored in the `DstackKms` contract.
+3. **Manifest**: fetch `GET /attestation/manifest`, recover the EIP-712 signer and check that it is the identity address, that `appId` is the one from step 2, and that `refundSignerX`, `refundSignerY`, `tlsCertificateHash` and `onionPublicKey` match the keys of step 1.
+4. **Signature chains**: check that the identity, refund signer and onion service chains lead to the KMS root anchored in the `DstackKms` contract.
 5. **Contract**: check that `LongjingCredits.serverPublicKey` equals `(refundSignerX, refundSignerY)` and that `LongjingCredits.serverAddress` equals `txSignerAddress`.
 
 ## Production policy

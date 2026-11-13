@@ -65,8 +65,14 @@ jobs:
       - name: Run linter
         run: pnpm lint:check
 
+      # The onion service tests start a real tor, offline
+      - name: Install tor
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tor
+
       - name: Run unit tests
         run: pnpm test
+        env:
+          TOR_BINARY: /usr/bin/tor
 
       - name: Build application
         run: pnpm build

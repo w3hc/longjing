@@ -9,6 +9,7 @@ import { BoundKeys } from './attestation.types';
 import { tdxQuoteReportData } from './platforms/phala.platform';
 import { buildReportData, encodeRefundSignerPublicKey } from './report-data';
 import { verifyEventLog } from './tdx-quote';
+import { onionAddress } from '../tor/onion-key';
 
 /** The fields of `GET /attestation` that bind the keys. */
 export interface KeyBindingEvidence {
@@ -19,6 +20,7 @@ export interface KeyBindingEvidence {
   reportData: string;
   keys: BoundKeys;
   eventLog?: string;
+  onionAddress?: string | null;
 }
 
 /**
@@ -31,6 +33,8 @@ export interface KeyBindingEvidence {
  * presented, to check TLS terminates inside the enclave
  * @param options.keyManifest The `GET /attestation/manifest` response, to
  * check it signs the same keys
+ * @param options.host The host the client reached the gateway at: a .onion
+ * host must be the bound onion service
  * @returns The failed checks, empty when the binding holds
  */
 export function verifyKeyBinding(
@@ -39,6 +43,7 @@ export function verifyKeyBinding(
     nonce?: Buffer;
     servedCertificate?: Buffer;
     keyManifest?: SignedKeyManifest;
+    host?: string;
   } = {},
 ): string[] {
   const failures: string[] = [];
@@ -49,6 +54,9 @@ export function verifyKeyBinding(
   const tlsCertificate = keys.tlsCertificate
     ? Buffer.from(keys.tlsCertificate, 'base64')
     : undefined;
+  const onion = keys.onionPublicKey
+    ? Buffer.from(strip0x(keys.onionPublicKey), 'hex')
+    : undefined;
 
   const expected = buildReportData(
     {
@@ -57,6 +65,7 @@ export function verifyKeyBinding(
         ? encodeRefundSignerPublicKey(keys.refundSignerPublicKey)
         : undefined,
       tlsCertificateDer: tlsCertificate,
+      onionPublicKey: onion,
     },
     options.nonce,
   );
@@ -76,6 +85,8 @@ export function verifyKeyBinding(
     }
   }
 
+  failures.push(...verifyOnion(evidence.onionAddress, onion, options.host));
+
   if (evidence.platform === 'phala' || evidence.platform === 'intel-tdx') {
     const quote = Buffer.from(evidence.quote, 'base64');
     try {
@@ -92,10 +103,36 @@ export function verifyKeyBinding(
 
   if (options.keyManifest) {
     failures.push(
-      ...verifyManifest(options.keyManifest, keys, identity, tlsCertificate),
+      ...verifyManifest(
+        options.keyManifest,
+        keys,
+        identity,
+        tlsCertificate,
+        onion,
+      ),
     );
   }
 
+  return failures;
+}
+
+function verifyOnion(
+  address: string | null | undefined,
+  publicKey: Buffer | undefined,
+  host: string | undefined,
+): string[] {
+  if (publicKey && publicKey.length !== 32) {
+    return ['The bound onion service key is not 32 bytes'];
+  }
+  const bound = publicKey ? `${onionAddress(publicKey)}.onion` : null;
+  const failures: string[] = [];
+  if (address && address.toLowerCase() !== bound) {
+    failures.push('The onion address is not the bound onion service key');
+  }
+  const onionHost = host?.toLowerCase().replace(/\.$/, '');
+  if (onionHost?.endsWith('.onion') && onionHost !== bound) {
+    failures.push('The .onion host is not the bound onion service');
+  }
   return failures;
 }
 
@@ -104,6 +141,7 @@ function verifyManifest(
   keys: BoundKeys,
   identity: Buffer | undefined,
   tlsCertificate: Buffer | undefined,
+  onion: Buffer | undefined,
 ): string[] {
   const failures: string[] = [];
   const refundSigner = keys.refundSignerPublicKey;
@@ -119,6 +157,12 @@ function verifyManifest(
     : '0x' + '00'.repeat(32);
   if (manifest.tlsCertificateHash.toLowerCase() !== tlsCertificateHash) {
     failures.push('The key manifest commits to a different TLS certificate');
+  }
+  if (
+    !onion ||
+    manifest.onionPublicKey?.toLowerCase() !== `0x${onion.toString('hex')}`
+  ) {
+    failures.push('The key manifest commits to a different onion service');
   }
   if (!identity) {
     failures.push('The attestation binds no identity key');

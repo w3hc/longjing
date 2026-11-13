@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 
-export const REPORT_DATA_LABEL = 'longjing-report-v2';
+export const REPORT_DATA_LABEL = 'longjing-report-v3';
 export const NONCE_LENGTH = 32;
 
 /**
@@ -14,6 +14,8 @@ export interface ReportDataInputs {
   refundSignerPublicKey?: Uint8Array;
   /** DER of the TLS leaf certificate served from inside the enclave. */
   tlsCertificateDer?: Uint8Array;
+  /** ed25519 public key of the onion service, 32 bytes. */
+  onionPublicKey?: Uint8Array;
 }
 
 /**
@@ -21,7 +23,8 @@ export interface ReportDataInputs {
  *
  *   [0..32]  SHA-256(LP(label) || LP(identity_pubkey)
  *                    || LP(refund_signer_x || refund_signer_y)
- *                    || LP(SHA-256(tls_leaf_cert_der)))
+ *                    || LP(SHA-256(tls_leaf_cert_der))
+ *                    || LP(onion_service_pubkey))
  *   [32..64] client nonce, or zeros
  *
  * See docs/ATTESTATION.md#report_data.
@@ -42,6 +45,7 @@ export function buildReportData(
     .update(lengthPrefixed(inputs.identityPublicKey ?? empty))
     .update(lengthPrefixed(inputs.refundSignerPublicKey ?? empty))
     .update(lengthPrefixed(certificateHash))
+    .update(lengthPrefixed(inputs.onionPublicKey ?? empty))
     .digest();
   return Buffer.concat([
     commitment,

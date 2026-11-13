@@ -8,11 +8,14 @@ import {
 } from '../keys/key-derivation.service';
 import { KeyBindingEvidence, verifyKeyBinding } from './key-binding';
 import { buildReportData, encodeRefundSignerPublicKey } from './report-data';
+import { onionAddress } from '../tor/onion-key';
 
 const identity = new SigningKey('0x' + '42'.repeat(32));
 const refundSigner = { x: '0x' + '03'.repeat(32), y: '0x' + '04'.repeat(32) };
 const certificate = Buffer.from([0x30, 0x82, 0x01, 0x0a]);
 const nonce = Buffer.alloc(32, 0x7f);
+const onion = Buffer.alloc(32, 0x06);
+const onionHost = `${onionAddress(onion)}.onion`;
 
 const sha256 = (bytes: Buffer) =>
   '0x' + createHash('sha256').update(bytes).digest('hex');
@@ -27,6 +30,7 @@ const signedManifest = (
     refundSignerX: refundSigner.x,
     refundSignerY: refundSigner.y,
     tlsCertificateHash: sha256(certificate),
+    onionPublicKey: '0x' + onion.toString('hex'),
     txSignerAddress: '0x2222222222222222222222222222222222222222',
     epoch: 1,
     ...overrides,
@@ -49,6 +53,7 @@ const evidence = (
       identityPublicKey: Buffer.from(identity.publicKey.slice(2), 'hex'),
       refundSignerPublicKey: encodeRefundSignerPublicKey(refundSigner),
       tlsCertificateDer: certificate,
+      onionPublicKey: onion,
     },
     nonce,
   );
@@ -60,7 +65,9 @@ const evidence = (
       identityPublicKey: identity.publicKey,
       refundSignerPublicKey: refundSigner,
       tlsCertificate: certificate.toString('base64'),
+      onionPublicKey: '0x' + onion.toString('hex'),
     },
+    onionAddress: onionHost,
     eventLog: '[]',
     ...overrides,
   };
@@ -75,6 +82,61 @@ describe('verifyKeyBinding', () => {
         keyManifest: signedManifest(),
       }),
     ).toEqual([]);
+  });
+
+  it('accepts the bound onion service as the host', () => {
+    expect(
+      verifyKeyBinding(evidence(), { nonce, host: onionHost.toUpperCase() }),
+    ).toEqual([]);
+  });
+
+  it('rejects a .onion host other than the bound onion service', () => {
+    const other = `${onionAddress(Buffer.alloc(32, 0x07))}.onion`;
+
+    expect(verifyKeyBinding(evidence(), { nonce, host: other })).toEqual([
+      'The .onion host is not the bound onion service',
+    ]);
+  });
+
+  it('rejects an onion address that is not the bound key', () => {
+    const other = `${onionAddress(Buffer.alloc(32, 0x07))}.onion`;
+
+    expect(
+      verifyKeyBinding(evidence({ onionAddress: other }), { nonce }),
+    ).toEqual(['The onion address is not the bound onion service key']);
+  });
+
+  it('rejects a swapped onion service key', () => {
+    const valid = evidence();
+    const otherKey = Buffer.alloc(32, 0x07);
+    const swapped = evidence({
+      keys: { ...valid.keys, onionPublicKey: '0x' + otherKey.toString('hex') },
+      onionAddress: `${onionAddress(otherKey)}.onion`,
+    });
+
+    expect(verifyKeyBinding(swapped, { nonce })).toEqual([
+      'reportData does not commit to the returned keys and nonce',
+      'The quote report_data does not match',
+    ]);
+  });
+
+  it('rejects a .onion host when no onion service is bound', () => {
+    const reportData = buildReportData({}, nonce);
+    const unbound = evidence({
+      quote: tdxQuote(reportData).toString('base64'),
+      reportData: reportData.toString('hex'),
+      keys: {
+        identityPublicKey: null,
+        refundSignerPublicKey: null,
+        tlsCertificate: null,
+        onionPublicKey: null,
+      },
+      onionAddress: null,
+    });
+
+    expect(verifyKeyBinding(unbound, { nonce, host: onionHost })).toEqual([
+      'The .onion host is not the bound onion service',
+    ]);
   });
 
   it('rejects a swapped refund signer', () => {
@@ -166,6 +228,15 @@ describe('verifyKeyBinding', () => {
     ).toEqual(['The key manifest commits to a different TLS certificate']);
   });
 
+  it('rejects a manifest for another onion service', () => {
+    expect(
+      verifyKeyBinding(evidence(), {
+        nonce,
+        keyManifest: signedManifest({ onionPublicKey: '0x' + '07'.repeat(32) }),
+      }),
+    ).toEqual(['The key manifest commits to a different onion service']);
+  });
+
   it('rejects a manifest signed by another key', () => {
     const other = new SigningKey(Wallet.createRandom().privateKey);
 
@@ -183,7 +254,7 @@ describe('verifyKeyBinding', () => {
         nonce,
         keyManifest: signedManifest({}, identity, {
           ...KEY_MANIFEST_DOMAIN,
-          version: '1',
+          version: '2',
         }),
       }),
     ).toEqual(['The key manifest is not signed by the identity key']);

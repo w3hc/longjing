@@ -17,10 +17,12 @@ import {
   KEY_MANIFEST_TYPES,
   IDENTITY_DOMAIN,
   KeyDerivationService,
+  ONION_SERVICE_DOMAIN,
   REFUND_SIGNER_DOMAIN,
   TX_SIGNER_DOMAIN,
 } from './key-derivation.service';
 import { RefundSignerService } from '../longjing/refund-signer.service';
+import { onionKeyFromSeed } from '../tor/onion-key';
 import {
   clearTlsLeafCertificate,
   setTlsLeafCertificate,
@@ -75,7 +77,7 @@ class FakeDstack {
     const publicKey =
       algorithm === 'secp256k1'
         ? getBytes(SigningKey.computePublicKey(key, true))
-        : new Uint8Array(0);
+        : new Uint8Array(onionKeyFromSeed(key).publicKey);
     return Promise.resolve({ key, publicKey, signatureChain: [] });
   }
 }
@@ -134,6 +136,9 @@ describe('KeyDerivationService', () => {
       );
       expect(service.getTxSignerAddress()).toBe(
         '0xa3C8d0EB3af2AB1d70571F60ecB84c803530c383',
+      );
+      expect(service.getOnionAddress()).toBe(
+        'gbl2c326jl5hobwewmorlusuto6s7bglhpmctsfsy4hxzbvo527qzfqd.onion',
       );
     });
   });
@@ -211,14 +216,40 @@ describe('KeyDerivationService', () => {
       );
     });
 
-    it('derives only the refund signer, identity and transaction signer keys', async () => {
+    it('derives only the refund signer, identity, transaction signer and onion service keys', async () => {
       await create();
 
       expect(dstack.requested).toEqual([
         REFUND_SIGNER_DOMAIN,
         IDENTITY_DOMAIN,
         TX_SIGNER_DOMAIN,
+        ONION_SERVICE_DOMAIN,
       ]);
+    });
+
+    it('uses the onion service GetKey output as the ed25519 seed', async () => {
+      const service = await create();
+      const { key, publicKey } = await dstack.getKey(
+        ONION_SERVICE_DOMAIN,
+        'ed25519',
+      );
+
+      expect(service.getOnionKey()).toEqual(onionKeyFromSeed(key));
+      expect(hex(service.getOnionPublicKey()!)).toBe(hex(publicKey));
+      expect(service.getOnionAddress()).toMatch(/^[a-z2-7]{56}\.onion$/);
+    });
+
+    it("refuses an ed25519 public key that is not the seed's", async () => {
+      process.env.NODE_ENV = 'production';
+      const getKey = dstack.getKey.bind(dstack);
+      dstack.getKey = async (domain, algorithm) => {
+        const result = await getKey(domain, algorithm);
+        return domain === ONION_SERVICE_DOMAIN
+          ? { ...result, publicKey: new Uint8Array(32) }
+          : result;
+      };
+
+      await expect(create()).rejects.toThrow('Key derivation');
     });
   });
 
@@ -231,6 +262,9 @@ describe('KeyDerivationService', () => {
       expect(manifest.appId).toBe(APP_ID);
       expect(manifest).not.toHaveProperty('mlkemPublicKeyHash');
       expect(manifest.tlsCertificateHash).toBe(ZeroHash);
+      expect(manifest.onionPublicKey).toBe(
+        hexlify(service.getOnionPublicKey()!),
+      );
       expect(manifest.txSignerAddress).toBe(service.getTxSignerAddress());
       expect(
         verifyTypedData(

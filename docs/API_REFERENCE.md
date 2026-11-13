@@ -282,7 +282,7 @@ curl -k https://localhost:3000/longjing/server-pubkey
 
 ### GET /attestation
 
-Returns a TEE attestation quote whose `report_data` commits to every public key the service uses (identity, refund signer) and to the in-enclave TLS certificate, followed by the client's nonce. This prevents key substitution and replays. See [ATTESTATION.md](ATTESTATION.md#report_data).
+Returns a TEE attestation quote whose `report_data` commits to every public key the service uses (identity, refund signer, onion service) and to the in-enclave TLS certificate, followed by the client's nonce. This prevents key substitution and replays. See [ATTESTATION.md](ATTESTATION.md#report_data).
 
 **Authentication:** None (public endpoint)
 
@@ -305,7 +305,9 @@ Returns a TEE attestation quote whose `report_data` commits to every public key 
     identityPublicKey: string | null;                // 0x-hex secp256k1 key
     refundSignerPublicKey: { x: string; y: string } | null; // Baby Jubjub
     tlsCertificate: string | null;                   // Base64 DER
+    onionPublicKey: string | null;                   // 0x-hex ed25519 key, 32 bytes
   };
+  onionAddress: string | null; // <56 base32 chars>.onion, derived from keys.onionPublicKey
   instructions: string;       // Platform-specific verification instructions
 }
 ```
@@ -324,8 +326,10 @@ Returns a TEE attestation quote whose `report_data` commits to every public key 
   "keys": {
     "identityPublicKey": "0x04...",
     "refundSignerPublicKey": { "x": "0x...", "y": "0x..." },
-    "tlsCertificate": "MIIB...base64...=="
+    "tlsCertificate": "MIIB...base64...==",
+    "onionPublicKey": "0x..."
   },
+  "onionAddress": "<56 base32 chars>.onion",
   "instructions": "Verify this quote using Phala verification service..."
 }
 ```
@@ -334,8 +338,9 @@ Returns a TEE attestation quote whose `report_data` commits to every public key 
 1. `platform` is not 'mock' (real TEE required)
 2. `reportData` and the quote's `report_data` equal the value rebuilt from `keys` and their own nonce
 3. `keys.tlsCertificate` is the certificate of their TLS session
-4. `eventLog` replays to RTMR0–3 of the quote
-5. Platform-specific quote signature (see [ATTESTATION.md](ATTESTATION.md#verification))
+4. `onionAddress` is the address of `keys.onionPublicKey`, and a `.onion` host they connected to is that address
+5. `eventLog` replays to RTMR0–3 of the quote
+6. Platform-specific quote signature (see [ATTESTATION.md](ATTESTATION.md#verification))
 
 **Verification Script:**
 

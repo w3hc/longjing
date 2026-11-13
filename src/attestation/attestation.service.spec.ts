@@ -8,12 +8,16 @@ import { KeyDerivationService } from '../keys/key-derivation.service';
 
 const IDENTITY_PUBLIC_KEY = new Uint8Array([4, ...new Uint8Array(64).fill(2)]);
 const REFUND_SIGNER = { x: '0x' + '03'.repeat(32), y: '0x' + '04'.repeat(32) };
+const ONION_PUBLIC_KEY = Buffer.alloc(32, 6);
+const ONION_ADDRESS =
+  'aydambqgaydambqgaydambqgaydambqgaydambqgaydambqgaydlv2id.onion';
 
 const expectedReportData = (nonce?: Buffer) =>
   buildReportData(
     {
       identityPublicKey: IDENTITY_PUBLIC_KEY,
       refundSignerPublicKey: encodeRefundSignerPublicKey(REFUND_SIGNER),
+      onionPublicKey: ONION_PUBLIC_KEY,
     },
     nonce,
   );
@@ -41,6 +45,8 @@ describe('AttestationService', () => {
       {
         getIdentityPublicKey: () => IDENTITY_PUBLIC_KEY,
         getRefundSignerPublicKey: () => REFUND_SIGNER,
+        getOnionPublicKey: () => ONION_PUBLIC_KEY,
+        getOnionAddress: () => ONION_ADDRESS,
       } as unknown as KeyDerivationService,
     );
 
@@ -191,7 +197,9 @@ describe('AttestationService', () => {
           '0x' + Buffer.from(IDENTITY_PUBLIC_KEY).toString('hex'),
         refundSignerPublicKey: REFUND_SIGNER,
         tlsCertificate: null,
+        onionPublicKey: '0x' + '06'.repeat(32),
       });
+      expect(attestation.onionAddress).toBe(ONION_ADDRESS);
     });
 
     it('rejects a nonce that is not 32 bytes', async () => {

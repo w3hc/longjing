@@ -7,6 +7,7 @@ import { AttestationModule } from './attestation/attestation.module';
 import { HealthController } from './health/health.controller';
 import { validateEnvironment } from './config/env.validation';
 import { LongjingModule } from './longjing/longjing.module';
+import { TorModule } from './tor/tor.module';
 import { RequestFingerprintThrottler } from './guards/request-fingerprint-throttler.guard';
 import { TimingProtectionInterceptor } from './interceptors/timing-protection.interceptor';
 import { MetadataSanitizerInterceptor } from './interceptors/metadata-sanitizer.interceptor';
@@ -32,6 +33,7 @@ import { isProd } from './config/profile';
     ]),
     AttestationModule,
     LongjingModule,
+    TorModule,
   ],
   controllers: [HealthController],
   providers: [

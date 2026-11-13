@@ -3,7 +3,8 @@
  *
  * Orchestrates cross-platform TEE attestation with report_data binding.
  * The first 32 bytes of report_data commit to every public key the service
- * uses (identity, refund signer) and to the in-enclave TLS certificate; the
+ * uses (identity, refund signer, onion service) and to the in-enclave TLS
+ * certificate; the
  * last 32 bytes carry the client's nonce. See report-data.ts and
  * docs/ATTESTATION.md#report_data.
  */
@@ -179,6 +180,7 @@ export class AttestationService
     const identityPublicKey = this.keyDerivation.getIdentityPublicKey();
     const refundSigner = this.keyDerivation.getRefundSignerPublicKey();
     const tlsCertificate = getTlsLeafCertificate();
+    const onionPublicKey = this.keyDerivation.getOnionPublicKey();
     return {
       inputs: {
         identityPublicKey: identityPublicKey ?? undefined,
@@ -186,6 +188,7 @@ export class AttestationService
           ? encodeRefundSignerPublicKey(refundSigner)
           : undefined,
         tlsCertificateDer: tlsCertificate ?? undefined,
+        onionPublicKey: onionPublicKey ?? undefined,
       },
       keys: {
         identityPublicKey: identityPublicKey
@@ -193,6 +196,9 @@ export class AttestationService
           : null,
         refundSignerPublicKey: refundSigner,
         tlsCertificate: tlsCertificate?.toString('base64') ?? null,
+        onionPublicKey: onionPublicKey
+          ? '0x' + onionPublicKey.toString('hex')
+          : null,
       },
     };
   }
@@ -223,6 +229,7 @@ export class AttestationService
       ...quote,
       nonce: nonce ? '0x' + nonce.toString('hex') : null,
       keys,
+      onionAddress: this.keyDerivation.getOnionAddress(),
     };
   }
 
