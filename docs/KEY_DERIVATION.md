@@ -19,7 +19,6 @@ Longjing derives its keys at boot from the [dstack](https://github.com/Dstack-TE
 
 | Key | `GetKey` domain | Algorithm | Used for |
 | --- | --- | --- | --- |
-| ML-KEM-1024 decapsulation key | `longjing/mlkem-1024/v1` | `ed25519` (used as a 32-byte seed) | Decrypting what clients encrypt to the server |
 | Refund signer | `longjing/refund-signer/babyjub/v1` | `ed25519` (used as a 32-byte seed) | Signing refund accumulators (EdDSA on Baby Jubjub), checked by the circuits against `LongjingCredits.serverPublicKey` |
 | Identity key | `longjing/identity/v1` | `secp256k1` | Signing the [key manifest](#key-manifest) |
 | Transaction signer | `longjing/tx-signer/v1` | `secp256k1` | Signing contract transactions (slashing, operator withdrawals) as `LongjingCredits.serverAddress` |
@@ -47,22 +46,9 @@ key = HKDF-SHA256(
 
 where `LP(x) = uint32_be(len(x)) || x`. The client is [`src/keys/dstack-v1.client.ts`](../src/keys/dstack-v1.client.ts), and [`KeyDerivationService`](../src/keys/key-derivation.service.ts) derives the keys.
 
-### ML-KEM-1024
-
-ML-KEM key generation takes a 64-byte seed `d || z` ([FIPS 203](https://csrc.nist.gov/pubs/fips/203/final)), so the 32 bytes from `GetKey` are expanded:
-
-```text
-s        = GetKey("longjing/mlkem-1024/v1", "ed25519").key
-seed     = HKDF-SHA256(salt = "longjing", IKM = s,
-                       info = LP("longjing-mlkem-1024-seed-v1"), L = 64)
-(ek, dk) = mlkem.deriveKeyPair(seed)
-```
-
-`ed25519` is requested only because its 32 bytes are used as an opaque seed. The ed25519 key itself is never used.
-
 ### Refund signer
 
-Refund accumulators are signed with EdDSA on Baby Jubjub over `Poseidon(A.x, A.y)`, verified inside `request.circom` and `settlement.circom`. A Baby Jubjub private key is any 32 bytes, which circomlibjs hashes before use:
+Refund accumulators are signed with EdDSA on Baby Jubjub over `Poseidon(A.x, A.y)`, verified inside `request.circom` and `settlement.circom`. A Baby Jubjub private key is any 32 bytes, which circomlibjs hashes before use, so `ed25519` is requested only for its 32 bytes, used as an opaque seed:
 
 ```text
 s           = GetKey("longjing/refund-signer/babyjub/v1", "ed25519").key
@@ -70,6 +56,8 @@ private_key = HKDF-SHA256(salt = "longjing", IKM = s,
                           info = LP("longjing-refund-signer-babyjub-v1"), L = 32)
 (x, y)      = eddsa.prv2pub(private_key)
 ```
+
+Up to v0.5.0, an ML-KEM-1024 key was also derived, from the domain `longjing/mlkem-1024/v1`. Nothing decrypted to it, and it was removed (see [MLKEM.md](./MLKEM.md)). Removing it changes none of the other keys, since each depends only on its own domain.
 
 ### Identity key
 
@@ -96,10 +84,9 @@ The TLS key and certificate come from `GetTlsKey` on `dstack.sock`, with the pri
 The identity key signs an [EIP-712](https://eips.ethereum.org/EIPS/eip-712) manifest:
 
 ```solidity
-// domain: { name: "Longjing", version: "1" }
+// domain: { name: "Longjing", version: "2" }
 struct KeyManifest {
     address appId;              // the DstackApp contract address
-    bytes32 mlkemPublicKeyHash; // SHA-256(ek)
     bytes32 refundSignerX;      // Baby Jubjub public key, as serverPublicKey
     bytes32 refundSignerY;
     bytes32 tlsCertificateHash; // SHA-256(TLS leaf certificate DER), or zero
@@ -108,15 +95,17 @@ struct KeyManifest {
 }
 ```
 
-`GET /attestation/manifest` returns the manifest and its signature, the EIP-712 domain and types, the full ML-KEM public key, the identity address and public key, the refund signer public key, and the `GetKey` signature chains of the identity and refund signer keys. It answers 503 when the keys were not derived from dstack, which happens only in development.
+Version `1`, up to v0.5.0, also carried `mlkemPublicKeyHash` after `appId`.
 
-`report_data` commits to the same keys as the manifest, the ML-KEM, identity and refund signer public keys and the TLS certificate, followed by the client's nonce. See [ATTESTATION.md](./ATTESTATION.md#report_data).
+`GET /attestation/manifest` returns the manifest and its signature, the EIP-712 domain and types, the identity address and public key, the refund signer public key, and the `GetKey` signature chains of the identity and refund signer keys. It answers 503 when the keys were not derived from dstack, which happens only in development.
+
+`report_data` commits to the same keys as the manifest, the identity and refund signer public keys and the TLS certificate, followed by the client's nonce. See [ATTESTATION.md](./ATTESTATION.md#report_data).
 
 ## Verification
 
 1. **Attestation**: fetch `GET /attestation?nonce=<32 random bytes, hex>`, verify the TDX quote, and check that `report_data` commits to the returned keys, to the certificate of your TLS session and to your nonce, see [ATTESTATION.md](./ATTESTATION.md#verification).
 2. **Code**: replay the returned `eventLog` into RTMR0–3, check it matches the quote, and read `compose-hash` and `app-id` from RTMR3. Check that `compose_hash` belongs to a published Longjing release, see [DOCKER.md](./DOCKER.md#releases).
-3. **Manifest**: fetch `GET /attestation/manifest`, recover the EIP-712 signer and check that it is the identity address, that `appId` is the one from step 2, and that `mlkemPublicKeyHash`, `refundSignerX`, `refundSignerY` and `tlsCertificateHash` match the keys of step 1.
+3. **Manifest**: fetch `GET /attestation/manifest`, recover the EIP-712 signer and check that it is the identity address, that `appId` is the one from step 2, and that `refundSignerX`, `refundSignerY` and `tlsCertificateHash` match the keys of step 1.
 4. **Signature chains**: check that the identity and refund signer chains lead to the KMS root anchored in the `DstackKms` contract.
 5. **Contract**: check that `LongjingCredits.serverPublicKey` equals `(refundSignerX, refundSignerY)` and that `LongjingCredits.serverAddress` equals `txSignerAddress`.
 
@@ -125,7 +114,7 @@ struct KeyManifest {
 With `NODE_ENV=production`:
 
 - Startup fails if `GetKey` fails, or if `DSTACK_SIMULATOR_ENDPOINT` is set, since the simulator's root key is public.
-- Startup fails if `ADMIN_MLKEM_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `SERVER_TX_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` is set ([`key-policy.ts`](../src/keys/key-policy.ts)).
+- Startup fails if `OPERATOR_PRIVATE_KEY`, `SERVER_TX_PRIVATE_KEY`, `TLS_KEY_PATH` or `TLS_CERT_PATH` is set ([`key-policy.ts`](../src/keys/key-policy.ts)).
 - Contract transactions are signed by the derived transaction signer, never `SERVER_TX_PRIVATE_KEY`, which stays refused even under the opt-out below ([LOCAL_SETUP.md](./LOCAL_SETUP.md#node_env)). Fund `txSignerAddress` for gas.
 - Startup fails if `LongjingCredits.serverPublicKey` isn't the key the refund signer signs with, since every request proof would fail against it. A `serverAddress` that isn't `txSignerAddress` is logged as a warning, as a pending `serverAddress` change can explain it ([`blockchain.service.ts`](../src/longjing/blockchain.service.ts)).
 - If the RPC or the contract at `ZK_CONTRACT_ADDRESS` doesn't answer at boot, the enclave still starts, so a first boot can publish the manifest the contract is deployed with. It retries every 30 s, and until the contract answers every `/longjing` endpoint and `GET /health/ready` return 503. A wrong refund key found by a later retry keeps them at 503 and is logged as an error.
@@ -136,7 +125,7 @@ With `NODE_ENV=production`:
 
 ## Development
 
-Without `/var/run/dstack.sock`, with `NODE_ENV=development` or `test`, the keys fall back to `ADMIN_MLKEM_PUBLIC_KEY` / `ADMIN_MLKEM_PRIVATE_KEY` and `OPERATOR_PRIVATE_KEY`, or a deterministic dev refund key, and there is no manifest. Transactions are signed with `SERVER_TX_PRIVATE_KEY` (Anvil account #0 in `.env.template`).
+Without `/var/run/dstack.sock`, with `NODE_ENV=development` or `test`, the refund signer falls back to `OPERATOR_PRIVATE_KEY` or a deterministic dev refund key, the identity key is absent, and there is no manifest. Transactions are signed with `SERVER_TX_PRIVATE_KEY` (Anvil account #0 in `.env.template`).
 
 To exercise derivation locally, run the [dstack simulator](https://github.com/Dstack-TEE/dstack/tree/master/sdk/simulator) and point Longjing at it:
 

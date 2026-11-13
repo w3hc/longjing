@@ -199,7 +199,6 @@ Privacy and funds rest on different assumptions. Hash functions are designed to 
 | Pedersen, binding | Refund accumulator | Discrete log on Baby Jubjub | **Funds.** A user opens the accumulator to a larger `R`, capped by `P ≤ D` at their own deposit |
 | EdDSA-Poseidon | The refund key signing accumulators | Discrete log on Baby Jubjub | **Funds.** A user forges accumulators, capped by `P ≤ D` at their own deposit |
 | ECDSA | `serverAddress`, the Safe's signers | Discrete log on secp256k1 | **Operator funds.** A recovered `serverAddress` key takes the operator balance. A recovered Safe can only queue admin changes, which wait `ADMIN_DELAY`, so users can exit first |
-| ML-KEM-1024 | Nothing yet: the key is attested but unused ([MLKEM.md](MLKEM.md)) | Lattices (Module-LWE) | Nothing today |
 | TLS key exchange | Confidentiality of each request and answer on the way to and from the enclave: prompt, proof, answer, accumulator | Hybrid: discrete log on P-384 or X25519 **and** Module-LWE (ML-KEM-1024 or ML-KEM-768). The certificate signature only has to hold at handshake time | **Privacy of recorded traffic, only if both halves break.** Someone who recorded a session reads its prompt and answer. A signature key broken later decrypts nothing already recorded |
 
 What follows:

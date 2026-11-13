@@ -14,13 +14,13 @@ This guide explains how to verify Longjing's TEE attestation quotes to ensure yo
 
 ## Overview
 
-Longjing implements **application attestation** using the `report_data` field of the quote. It commits to every public key the service uses (the ML-KEM key, the identity key and the refund signer key) and to the TLS certificate served from inside the enclave, followed by a nonce chosen by the client. This prevents man-in-the-middle attacks where an attacker substitutes their own key, and replays of an old quote.
+Longjing implements **application attestation** using the `report_data` field of the quote. It commits to every public key the service uses (the identity key and the refund signer key) and to the TLS certificate served from inside the enclave, followed by a nonce chosen by the client. This prevents man-in-the-middle attacks where an attacker substitutes their own key, and replays of an old quote.
 
 ### What Gets Verified
 
 1. **Platform Authenticity**: Quote is signed by real TEE hardware (Phala/dstack in production)
 2. **Code Measurement**: RTMR0–3, replayed from the event log, match the published values, and RTMR3's `compose-hash` event names a published release
-3. **Key Binding**: `report_data` commits to the ML-KEM, identity and refund signer public keys and to the TLS certificate of your session
+3. **Key Binding**: `report_data` commits to the identity and refund signer public keys and to the TLS certificate of your session
 4. **Freshness**: `report_data` carries the nonce you just sent
 
 ### Attack Prevention
@@ -28,14 +28,14 @@ Longjing implements **application attestation** using the `report_data` field of
 **Without key binding:**
 ```
 ❌ Attacker intercepts traffic
-❌ Serves their own ML-KEM key, or signs refund tickets outside the enclave
+❌ Serves their own TLS certificate, or signs refund tickets outside the enclave
 ❌ Replays valid TEE quote from real server
-❌ Client encrypts secrets to attacker's key, or trusts forged refunds
+❌ Client sends its request to the attacker, or trusts forged refunds
 ```
 
 **With key binding and a nonce:**
 ```
-✅ report_data = SHA-256(label, ML-KEM key, identity key, refund signer key, TLS cert) || nonce
+✅ report_data = SHA-256(label, identity key, refund signer key, TLS cert) || nonce
 ✅ TEE hardware signs the quote including report_data
 ✅ Client rebuilds report_data from the returned keys and its own nonce
 ✅ Attacker cannot forge a quote for other keys or a new nonce (no TEE hardware)
@@ -88,19 +88,18 @@ curl -k "$SERVER_URL/attestation?nonce=$NONCE" > attestation.json
 `report_data` is the 64-byte, user-controlled field of the quote that the TEE hardware signs. Longjing builds it in [`report-data.ts`](../src/attestation/report-data.ts):
 
 ```
-report_data[0..32]  = SHA-256( LP("longjing-report-v1")
-                             || LP(mlkem_public_key)
+report_data[0..32]  = SHA-256( LP("longjing-report-v2")
                              || LP(identity_public_key)
                              || LP(refund_signer_x || refund_signer_y)
                              || LP(SHA-256(tls_leaf_cert_der)) )
 report_data[32..64] = client nonce, or 32 zero bytes
 ```
 
-- `LP(x)` is `x` prefixed with its length as a 4-byte big-endian integer, so no two inputs encode the same way.
-- `mlkem_public_key` is the 1568-byte ML-KEM-1024 encapsulation key.
+- `LP(x)` is `x` prefixed with its length as a 4-byte big-endian integer, so no two inputs encode the same way. A new term is appended at the end, with a new label.
 - `identity_public_key` is the 65-byte uncompressed secp256k1 key that signs the key manifest.
 - `refund_signer_x || refund_signer_y` is the Baby Jubjub public key that signs refund tickets, each coordinate as 32 big-endian bytes.
 - A key that was not derived from dstack (development only), or a TLS certificate that is not served from inside the enclave, is an empty term: `LP(empty)` is four zero bytes.
+- `longjing-report-v1`, up to v0.5.0, also committed to an ML-KEM-1024 key, after the label. That key was never used and is gone (see [MLKEM.md](./MLKEM.md)); a v1 `report_data` doesn't verify as v2.
 
 `GET /attestation` returns every input under `keys`, the nonce it bound under `nonce`, and on dstack the event log under `eventLog`:
 
@@ -111,7 +110,6 @@ report_data[32..64] = client nonce, or 32 zero bytes
   "reportData": "<128 hex chars>",
   "nonce": "0x<64 hex chars>",
   "keys": {
-    "mlkemPublicKey": "<base64>",
     "identityPublicKey": "0x04...",
     "refundSignerPublicKey": { "x": "0x...", "y": "0x..." },
     "tlsCertificate": "<base64 DER>"
@@ -122,7 +120,7 @@ report_data[32..64] = client nonce, or 32 zero bytes
 
 The nonce is optional, 32 bytes as 64 hex characters with or without `0x`. A malformed one gets a 400. Without one, the second half of `report_data` is zero and the quote proves nothing about freshness.
 
-The ML-KEM, identity and refund signer keys are derived inside the enclave from the dstack KMS, see [KEY_DERIVATION.md](./KEY_DERIVATION.md).
+The identity and refund signer keys are derived inside the enclave from the dstack KMS, see [KEY_DERIVATION.md](./KEY_DERIVATION.md).
 
 ## Verification
 
@@ -305,14 +303,13 @@ def lp(data: bytes) -> bytes:
     return struct.pack('>I', len(data)) + data
 
 def report_data(keys: dict, nonce: bytes) -> bytes:
-    ek = base64.b64decode(keys['mlkemPublicKey'])
     identity = bytes.fromhex(keys['identityPublicKey'][2:]) if keys['identityPublicKey'] else b''
     rs = keys['refundSignerPublicKey']
     refund = (int(rs['x'], 16).to_bytes(32, 'big') + int(rs['y'], 16).to_bytes(32, 'big')) if rs else b''
     cert = keys['tlsCertificate']
     cert_hash = hashlib.sha256(base64.b64decode(cert)).digest() if cert else b''
     commitment = hashlib.sha256(
-        lp(b'longjing-report-v1') + lp(ek) + lp(identity) + lp(refund) + lp(cert_hash)
+        lp(b'longjing-report-v2') + lp(identity) + lp(refund) + lp(cert_hash)
     ).digest()
     return commitment + nonce
 
@@ -340,8 +337,8 @@ def verify_server_attestation(server_url: str) -> dict:
 1. **Always verify before sending secrets**
    ```typescript
    await verifyAttestation(serverUrl);  // MUST succeed
-   // Only then:
-   const encrypted = await encryptWithMLKEM(data, publicKey);
+   // Only then, over the TLS session whose certificate was checked:
+   await sendRequest(serverUrl, request);
    ```
 
 2. **Reject mock platforms in production**
@@ -395,15 +392,14 @@ def verify_server_attestation(server_url: str) -> dict:
 ❌ **DON'T: Skip key binding verification**
 ```typescript
 // WRONG - vulnerable to MITM
-const { keys } = await (await fetch(`${url}/attestation`)).json();
-encrypt(data, keys.mlkemPublicKey);  // ❌ No attestation check
+await fetch(`${url}/longjing/request`, { method: 'POST', body });  // ❌ No attestation check
 ```
 
 ✅ **DO: Verify the key binding**
 ```typescript
 // CORRECT
-const keys = await verifyAttestation(url);  // ✅ Checks report_data and the nonce
-encrypt(data, keys.mlkemPublicKey);
+await verifyAttestation(url);  // ✅ Checks report_data, the nonce and the TLS certificate
+await fetch(`${url}/longjing/request`, { method: 'POST', body });
 ```
 
 ❌ **DON'T: Trust old quotes**
